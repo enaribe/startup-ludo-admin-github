@@ -1,0 +1,450 @@
+/**
+ * AI Generation Prompts - Templates for each content type
+ * ALIGNED with mobile app data structures
+ */
+
+export type GenerationType =
+  | 'edition_quiz'
+  | 'edition_duels'
+  | 'edition_fundings'
+  | 'edition_opportunities'
+  | 'edition_challenges'
+  | 'edition_full'
+  | 'challenge_levels'
+  | 'challenge_sectors'
+  | 'challenge_full'
+  | 'ideation_targets'
+  | 'ideation_missions'
+  | 'ideation_sectors'
+  | 'sublevel_content'
+  | 'achievements'
+  | 'default_projects';
+
+interface PromptConfig {
+  systemPrompt: string;
+  buildUserPrompt: (userInput: string, context?: Record<string, unknown>) => string;
+  label: string;
+  placeholder: string;
+  description: string;
+}
+
+const BASE_SYSTEM = `Tu es un assistant specialise dans la creation de contenu pour "Startup Ludo", un jeu de plateau educatif sur l'entrepreneuriat en Afrique. Le jeu enseigne la creation de startups, le financement, la strategie business, etc.
+
+REGLES IMPORTANTES:
+- Reponds UNIQUEMENT avec du JSON valide, sans markdown ni texte avant/apres
+- Le contenu doit etre educatif, pertinent au contexte africain
+- Les questions doivent avoir exactement 3 options de reponse
+- Les descriptions doivent etre concises (1-2 phrases max)
+- Genere du contenu en francais`;
+
+export const PROMPTS: Record<GenerationType, PromptConfig> = {
+  edition_quiz: {
+    label: 'Quiz',
+    placeholder: 'Ex: 10 questions sur le financement des startups en Afrique de l\'Ouest',
+    description: 'Genere des questions de quiz avec 3 options et la bonne reponse',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de questions de quiz. Format:
+[
+  {
+    "id": "quiz_1",
+    "question": "La question...",
+    "options": ["Option A", "Option B", "Option C"],
+    "correctAnswer": 0,
+    "category": "financement",
+    "difficulty": "facile",
+    "explanation": "Explication courte"
+  }
+]
+correctAnswer est l'index (0, 1, ou 2) de la bonne reponse.
+category: une des valeurs "business-model", "financement", "marketing", "legal", "management", "tech", "pitch", "strategie", "aspects-techniques".
+difficulty: "facile", "moyen", ou "difficile".`,
+    buildUserPrompt: (input, ctx) =>
+      `Edition: ${ctx?.editionName || 'generale'}. Secteurs: ${ctx?.sectors || 'multi-secteurs'}.\n\nDemande: ${input}`,
+  },
+
+  edition_duels: {
+    label: 'Duels',
+    placeholder: 'Ex: 12 questions de duel sur l\'entrepreneuriat en Afrique',
+    description: 'Genere des questions de duel (3 reponses avec points differents)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de questions de duel. En jeu, 2 joueurs repondent aux memes 3 questions. Chaque question a 3 reponses, toutes valides mais avec des points differents (30 = meilleure, 20 = bonne, 10 = acceptable). Le joueur avec le plus de points gagne le duel.
+
+Format:
+[
+  {
+    "id": "duel_1",
+    "question": "La question sur l'entrepreneuriat...",
+    "options": [
+      { "text": "La meilleure reponse", "points": 30 },
+      { "text": "Une bonne reponse", "points": 20 },
+      { "text": "Une reponse acceptable", "points": 10 }
+    ],
+    "category": "business"
+  }
+]
+
+IMPORTANT: Melange l'ordre des options (la meilleure reponse ne doit PAS toujours etre en premier).
+Categories possibles: business, financement, pitch, marketing, strategie, management, tech, recrutement, pricing, validation, metriques.`,
+    buildUserPrompt: (input, ctx) =>
+      `Edition: ${ctx?.editionName || 'generale'}.\n\nDemande: ${input}`,
+  },
+
+  edition_fundings: {
+    label: 'Fundings',
+    placeholder: 'Ex: 6 evenements de financement realistes pour des startups tech',
+    description: 'Genere des evenements de financement (levee de fonds, subventions...)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON d'evenements de financement. Format:
+[
+  {
+    "id": "fund_1",
+    "title": "Titre court",
+    "description": "Description de l'evenement (1-2 phrases)",
+    "tokens": 3,
+    "source": "Tontine"
+  }
+]
+tokens: nombre de jetons gagnes (1-10 typiquement).
+source: type de financement (ex: "Tontine", "Microcredit", "Investisseur providentiel", "Subvention gouvernementale", "Crowdfunding").`,
+    buildUserPrompt: (input, ctx) =>
+      `Edition: ${ctx?.editionName || 'generale'}.\n\nDemande: ${input}`,
+  },
+
+  edition_opportunities: {
+    label: 'Opportunites',
+    placeholder: 'Ex: 15 opportunites positives pour les startups africaines',
+    description: 'Genere des cartes opportunite (evenements positifs)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de cartes opportunite. Les opportunites sont TOUJOURS positives. Format:
+[
+  {
+    "id": "opp_1",
+    "title": "Titre court",
+    "description": "Ce qui se passe... Gagnez X jetons.",
+    "tokens": 3
+  }
+]
+tokens: nombre de jetons gagnes (toujours positif, 1-5 typiquement).`,
+    buildUserPrompt: (input, ctx) =>
+      `Edition: ${ctx?.editionName || 'generale'}.\n\nDemande: ${input}`,
+  },
+
+  edition_challenges: {
+    label: 'Challenges en jeu',
+    placeholder: 'Ex: 10 defis/obstacles pour les startups',
+    description: 'Genere des challenges (evenements negatifs) pour le plateau',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de challenges de plateau. Les challenges sont des evenements NEGATIFS (obstacles, difficultes). Format:
+[
+  {
+    "id": "chal_1",
+    "title": "Titre du defi",
+    "description": "Ce qui arrive au joueur. Perdez X jetons.",
+    "tokens": -3
+  }
+]
+tokens: nombre de jetons perdus (toujours NEGATIF, ex: -2, -3, -5).`,
+    buildUserPrompt: (input, ctx) =>
+      `Edition: ${ctx?.editionName || 'generale'}.\n\nDemande: ${input}`,
+  },
+
+  edition_full: {
+    label: 'Edition complete',
+    placeholder: 'Ex: Edition complete sur les energies renouvelables en Afrique',
+    description: 'Genere TOUT le contenu d\'une edition d\'un coup',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un objet JSON complet pour une edition du jeu. Format:
+{
+  "name": "Nom de l'edition",
+  "description": "Description courte",
+  "icon": "nom-icone-ionicons",
+  "color": "#HEXCOLOR",
+  "sectors": ["secteur1", "secteur2"],
+  "quizzes": [
+    { "id": "quiz_1", "question": "...", "options": ["A","B","C"], "correctAnswer": 0, "category": "financement", "difficulty": "facile", "explanation": "..." }
+  ],
+  "duels": [
+    { "id": "duel_1", "question": "...", "options": [{"text": "Meilleure", "points": 30}, {"text": "Bonne", "points": 20}, {"text": "Acceptable", "points": 10}], "category": "business" }
+  ],
+  "fundings": [
+    { "id": "fund_1", "title": "...", "description": "...", "tokens": 3, "source": "Tontine" }
+  ],
+  "opportunities": [
+    { "id": "opp_1", "title": "...", "description": "...", "tokens": 3 }
+  ],
+  "challenges": [
+    { "id": "chal_1", "title": "...", "description": "...", "tokens": -3 }
+  ],
+  "defaultProjects": [
+    { "id": "proj_1", "name": "Nom de la startup", "description": "Pitch court (2-3 phrases)", "sector": "secteur_correspondant", "target": "Cible client", "mission": "Mission/vision de la startup", "initialBudget": 100000 }
+  ],
+  "enabled": true
+}
+
+Genere au minimum: 5 quiz, 4 duels, 4 fundings, 10 opportunites, 6 challenges, 4 defaultProjects. Plus si demande.
+
+Pour les defaultProjects:
+- Chaque projet doit avoir un id unique (slug, ex: "agritech-smart-irrigation")
+- Le nom doit sonner africain et moderne
+- La description doit etre un pitch realiste et concis (2-3 phrases max)
+- Le secteur doit correspondre a un des secteurs de l'edition
+- La cible doit decrire qui sont les clients
+- La mission doit exprimer la vision de la startup
+- initialBudget est optionnel, entre 50000 et 200000`,
+    buildUserPrompt: (input) => input,
+  },
+
+  challenge_levels: {
+    label: 'Niveaux de challenge',
+    placeholder: 'Ex: 4 niveaux progressifs (ideation, validation, lancement, croissance) avec 4 sous-niveaux chacun',
+    description: 'Genere des niveaux et sous-niveaux pour un programme de challenges',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de niveaux pour un programme de challenge entrepreneurial. Format:
+[
+  {
+    "id": "lvl_1",
+    "title": "Nom du niveau",
+    "description": "Description",
+    "order": 1,
+    "subLevels": [
+      {
+        "id": "sub_1_1",
+        "title": "Nom du sous-niveau",
+        "description": "Ce que l'entrepreneur doit accomplir",
+        "order": 1,
+        "deliverables": [],
+        "xpReward": 50
+      }
+    ]
+  }
+]`,
+    buildUserPrompt: (input, ctx) =>
+      `Programme: ${ctx?.programName || 'Challenge Entrepreneurial'}.\n\nDemande: ${input}`,
+  },
+
+  challenge_sectors: {
+    label: 'Secteurs',
+    placeholder: 'Ex: 6 secteurs porteurs pour les startups africaines',
+    description: 'Genere des secteurs pour un programme de challenges',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de secteurs. Format:
+[
+  {
+    "id": "sec_1",
+    "name": "Nom du secteur",
+    "description": "Description courte du secteur",
+    "icon": "nom-icone-ionicons"
+  }
+]
+Utilise des noms d'icones Ionicons valides (ex: leaf-outline, medical-outline, school-outline, etc.)`,
+    buildUserPrompt: (input) => input,
+  },
+
+  challenge_full: {
+    label: 'Programme complet',
+    placeholder: 'Instructions supplementaires pour la generation du programme...',
+    description: 'Genere un programme de challenge complet (niveaux + sous-niveaux + secteurs)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un objet JSON complet pour un programme de challenge entrepreneurial. Format:
+{
+  "name": "Nom du programme",
+  "description": "Description du programme (2-3 phrases)",
+  "levels": [
+    {
+      "id": "lvl_1",
+      "title": "Nom du niveau",
+      "description": "Description du niveau et ses objectifs",
+      "order": 1,
+      "subLevels": [
+        {
+          "id": "sub_1_1",
+          "title": "Nom du sous-niveau",
+          "description": "Ce que l'entrepreneur doit accomplir a cette etape",
+          "order": 1,
+          "deliverables": [],
+          "xpReward": 50,
+          "cardCategories": ["quiz", "opportunity", "funding"]
+        }
+      ]
+    }
+  ],
+  "sectors": [
+    {
+      "id": "sec_1",
+      "name": "Nom du secteur",
+      "description": "Description courte du secteur",
+      "icon": "nom-icone-ionicons"
+    }
+  ],
+  "enabled": true
+}
+
+REGLES:
+- Les niveaux doivent etre progressifs (du plus simple au plus avance)
+- Exemples de progression: Ideation -> Validation -> Lancement -> Croissance
+- Chaque sous-niveau doit avoir un objectif clair et actionnable
+- xpReward augmente avec la difficulte (50-200 pour les premiers niveaux, 200-500 pour les avances)
+- Les secteurs doivent etre pertinents au contexte africain
+- Utilise des icones Ionicons valides (ex: bulb-outline, rocket-outline, people-outline, leaf-outline, medical-outline, school-outline, cart-outline, globe-outline)
+- Les IDs doivent etre uniques: lvl_1, lvl_2... et sub_1_1, sub_1_2, sub_2_1...
+- Chaque sous-niveau doit avoir un champ "cardCategories" : tableau parmi ["quiz", "duel", "opportunity", "funding", "challenge"]
+- Progression des cardCategories: niveaux debut = ["quiz", "opportunity", "funding"] (positif), niveaux milieu = ["quiz", "challenge", "opportunity", "duel"] (mixte), niveaux avances = ["quiz", "duel", "challenge", "funding"] (difficile)`,
+    buildUserPrompt: (input, ctx) => {
+      const parts: string[] = [];
+      parts.push('=== BRIEFING DU PROGRAMME ===');
+      if (ctx?.programName) parts.push(`Nom: ${ctx.programName}`);
+      if (ctx?.organization) parts.push(`Organisation: ${ctx.organization}`);
+      if (ctx?.thematic) parts.push(`Thematique/domaine: ${ctx.thematic}`);
+      if (ctx?.targetAudience) parts.push(`Public cible: ${ctx.targetAudience}`);
+      if (ctx?.levelCount) parts.push(`Nombre de niveaux: ${ctx.levelCount}`);
+      if (ctx?.subLevelCount) parts.push(`Sous-niveaux par niveau: ${ctx.subLevelCount}`);
+      if (ctx?.sectorCount) parts.push(`Nombre de secteurs: ${ctx.sectorCount}`);
+      if (input.trim()) parts.push(`\nInstructions supplementaires: ${input}`);
+      return parts.join('\n');
+    },
+  },
+
+  ideation_targets: {
+    label: 'Cartes Cibles',
+    placeholder: 'Ex: 20 cibles de marche variees pour des startups africaines',
+    description: 'Genere des cartes "cible" pour l\'ideation (qui est le client?)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de cartes d'ideation de type "cible" (target audience). Format:
+[
+  { "id": "card_1", "type": "target", "text": "Description de la cible de marche" }
+]
+Chaque carte decrit un segment de marche ou un type de client potentiel.`,
+    buildUserPrompt: (input) => input,
+  },
+
+  ideation_missions: {
+    label: 'Cartes Missions',
+    placeholder: 'Ex: 25 missions/problemes a resoudre dans le contexte africain',
+    description: 'Genere des cartes "mission" (quel probleme resoudre?)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de cartes d'ideation de type "mission". Format:
+[
+  { "id": "card_1", "type": "mission", "text": "La mission/le probleme a resoudre" }
+]
+Chaque carte decrit un probleme concret ou une mission entrepreneuriale.`,
+    buildUserPrompt: (input) => input,
+  },
+
+  ideation_sectors: {
+    label: 'Cartes Secteurs',
+    placeholder: 'Ex: 15 secteurs d\'activite innovants',
+    description: 'Genere des cartes "secteur" (dans quel domaine?)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de cartes d'ideation de type "secteur". Format:
+[
+  { "id": "card_1", "type": "sector", "text": "Nom du secteur d'activite" }
+]`,
+    buildUserPrompt: (input) => input,
+  },
+
+  sublevel_content: {
+    label: 'Contenu du sous-niveau',
+    placeholder: 'Instructions supplementaires (optionnel)',
+    description: 'Genere le pack de contenu (quiz, duels, etc.) pour un sous-niveau',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un objet JSON de contenu educatif pour un sous-niveau de challenge. Le contenu doit etre SPECIFIQUE au theme du sous-niveau et du programme.
+
+Selon les "cardCategories" demandees, genere UNIQUEMENT les types correspondants:
+
+{
+  "quizzes": [
+    { "id": "quiz_1", "question": "...", "options": ["A","B","C"], "correctAnswer": 0, "category": "...", "difficulty": "facile|moyen|difficile", "explanation": "..." }
+  ],
+  "duels": [
+    { "id": "duel_1", "question": "...", "options": [{"text": "Meilleure", "points": 30}, {"text": "Bonne", "points": 20}, {"text": "Acceptable", "points": 10}], "category": "..." }
+  ],
+  "fundings": [
+    { "id": "fund_1", "title": "...", "description": "...", "tokens": 3, "source": "..." }
+  ],
+  "opportunities": [
+    { "id": "opp_1", "title": "...", "description": "...", "tokens": 3 }
+  ],
+  "challengeEvents": [
+    { "id": "chal_1", "title": "...", "description": "...", "tokens": -3 }
+  ]
+}
+
+REGLES:
+- Genere ~5 quiz, ~3 duels, ~3 fundings, ~3 opportunites, ~3 challengeEvents (seulement les types demandes)
+- Les questions de quiz DOIVENT etre en rapport direct avec le theme du sous-niveau
+- Les duels doivent melanger l'ordre des options (meilleure reponse pas toujours en premier)
+- Les fundings ont des tokens positifs (1-10), les challengeEvents ont des tokens NEGATIFS (-1 a -5)
+- Ne genere QUE les types listes dans cardCategories
+- Le contenu doit etre educatif et pertinent au contexte africain`,
+    buildUserPrompt: (input, ctx) => {
+      const parts: string[] = [];
+      parts.push(`=== CONTEXTE ===`);
+      if (ctx?.programName) parts.push(`Programme: ${ctx.programName}`);
+      if (ctx?.programDescription) parts.push(`Description: ${ctx.programDescription}`);
+      if (ctx?.levelTitle) parts.push(`Niveau: ${ctx.levelTitle}`);
+      if (ctx?.levelDescription) parts.push(`Description du niveau: ${ctx.levelDescription}`);
+      if (ctx?.subLevelTitle) parts.push(`Sous-niveau: ${ctx.subLevelTitle}`);
+      if (ctx?.subLevelDescription) parts.push(`Description du sous-niveau: ${ctx.subLevelDescription}`);
+      if (ctx?.cardCategories) parts.push(`\nTypes de contenu a generer: ${(ctx.cardCategories as string[]).join(', ')}`);
+      if (input.trim()) parts.push(`\nInstructions supplementaires: ${input}`);
+      return parts.join('\n');
+    },
+  },
+
+  achievements: {
+    label: 'Achievements',
+    placeholder: 'Ex: 10 achievements varies (jeux, social, challenges) avec des rarete differentes',
+    description: 'Genere des achievements/badges de jeu',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON d'achievements. Format:
+[
+  {
+    "id": "ach_1",
+    "title": "Nom du badge",
+    "description": "Condition pour debloquer",
+    "icon": "trophy-outline",
+    "category": "games|social|challenge|collection|special",
+    "condition": { "type": "games_played|wins|challenge_complete|etc", "target": 5 },
+    "xpReward": 50,
+    "rarity": "common|rare|epic|legendary",
+    "enabled": true
+  }
+]
+Varie les categories et les raretes. Les legendaires doivent etre rares et difficiles.`,
+    buildUserPrompt: (input) => input,
+  },
+
+  default_projects: {
+    label: 'Projets par defaut',
+    placeholder: 'Ex: 4 startups fictives pour l\'edition agriculture',
+    description: 'Genere des projets/startups fictifs pour les joueurs sans compte',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de projets de startup fictifs. Format:
+[
+  {
+    "id": "proj_1",
+    "name": "Nom de la startup",
+    "description": "Description courte de la startup et son activite",
+    "sector": "secteur_en_minuscule"
+  }
+]
+Les noms doivent sonner africains et modernes. Les descriptions doivent etre realistes.`,
+    buildUserPrompt: (input, ctx) =>
+      `Edition: ${ctx?.edition || 'classic'}. Secteurs possibles: ${ctx?.sectors || 'variés'}.\n\nDemande: ${input}`,
+  },
+};
