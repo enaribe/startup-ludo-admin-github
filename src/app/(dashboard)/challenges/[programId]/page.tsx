@@ -1,14 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, ChevronDown, ChevronRight, Layers, Target, Sparkles, BookOpen, X } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, ChevronDown, ChevronRight, Layers, Target, Sparkles, BookOpen, X, Edit } from 'lucide-react';
 import { getChallengeProgram, saveChallengeProgram } from '@/lib/firestore-service';
 import type { ChallengeProgram, ChallengeLevel, ChallengeSubLevel, ChallengeSector, CardCategory, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
+import UnsavedChangesDialog from '@/components/ui/UnsavedChangesDialog';
+import QuizEditor from '@/components/events/QuizEditor';
+import DuelEditor from '@/components/events/DuelEditor';
+import FundingEditor from '@/components/events/FundingEditor';
+import OpportunityEditor from '@/components/events/OpportunityEditor';
+import ChallengeEventEditor from '@/components/events/ChallengeEventEditor';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'levels' | 'sectors';
@@ -38,11 +45,14 @@ export default function ChallengeEditorPage() {
   const [data, setData] = useState<Omit<ChallengeProgram, 'id'>>({
     name: '', description: '', levels: [], sectors: [], enabled: true,
   });
+  const [originalData, setOriginalData] = useState<Omit<ChallengeProgram, 'id'> | null>(null);
   const [newId, setNewId] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<Set<number>>(new Set());
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
   const [aiModalType, setAiModalType] = useState<GenerationType | null>(null);
   const [aiAutoPrompt, setAiAutoPrompt] = useState<string | undefined>(undefined);
   const [showBriefingForm, setShowBriefingForm] = useState(false);
@@ -57,6 +67,12 @@ export default function ChallengeEditorPage() {
   // Content detail modal
   const [contentModal, setContentModal] = useState<{ levelIdx: number; subIdx: number } | null>(null);
   const [contentTab, setContentTab] = useState<ContentTab>('quizzes');
+  // Event editors
+  const [editingQuiz, setEditingQuiz] = useState<{ quiz: Quiz | null; index: number | null }>({ quiz: null, index: null });
+  const [editingDuel, setEditingDuel] = useState<{ duel: Duel | null; index: number | null }>({ duel: null, index: null });
+  const [editingFunding, setEditingFunding] = useState<{ funding: Funding | null; index: number | null }>({ funding: null, index: null });
+  const [editingOpportunity, setEditingOpportunity] = useState<{ opportunity: Opportunity | null; index: number | null }>({ opportunity: null, index: null });
+  const [editingChallengeEvent, setEditingChallengeEvent] = useState<{ challengeEvent: ChallengeEvent | null; index: number | null }>({ challengeEvent: null, index: null });
 
   const aiContext = (() => {
     if (aiModalType === 'challenge_full') return { ...briefing };
@@ -202,12 +218,23 @@ export default function ChallengeEditorPage() {
     }
   };
 
+  // Check for unsaved changes
+  const hasUnsavedChanges = originalData !== null && JSON.stringify(data) !== JSON.stringify(originalData);
+
+  const { allowNavigation } = useUnsavedChanges({
+    hasUnsavedChanges,
+  });
+
   useEffect(() => {
     if (isNew) return;
     (async () => {
       try {
         const prog = await getChallengeProgram(programId);
-        if (prog) { const { id, ...rest } = prog; setData(rest); }
+        if (prog) {
+          const { id, ...rest } = prog;
+          setData(rest);
+          setOriginalData(rest);
+        }
         else { toast.error('Programme non trouve'); router.push('/challenges'); }
       } catch { toast.error('Erreur de chargement'); }
       finally { setLoading(false); }
@@ -220,10 +247,38 @@ export default function ChallengeEditorPage() {
     setSaving(true);
     try {
       await saveChallengeProgram(id, data);
+      setOriginalData(data); // Update original data after successful save
       toast.success(isNew ? 'Programme cree !' : 'Sauvegarde !');
       if (isNew) router.push(`/challenges/${id}`);
     } catch { toast.error('Erreur de sauvegarde'); }
     finally { setSaving(false); }
+  };
+
+  const handleNavigate = (path: string) => {
+    if (hasUnsavedChanges) {
+      pendingNavigationRef.current = path;
+      setShowUnsavedDialog(true);
+    } else {
+      router.push(path);
+    }
+  };
+
+  const handleSaveAndNavigate = async () => {
+    await handleSave();
+    if (pendingNavigationRef.current) {
+      allowNavigation();
+      router.push(pendingNavigationRef.current);
+      pendingNavigationRef.current = null;
+    }
+  };
+
+  const handleDiscardAndNavigate = () => {
+    if (pendingNavigationRef.current) {
+      allowNavigation();
+      router.push(pendingNavigationRef.current);
+      pendingNavigationRef.current = null;
+    }
+    setShowUnsavedDialog(false);
   };
 
   const toggleLevel = (i: number) => {
@@ -371,6 +426,82 @@ export default function ChallengeEditorPage() {
     updateSubLevel(levelIdx, subIdx, field, arr);
   };
 
+  // Event CRUD handlers
+  const handleSaveQuiz = (quiz: Quiz) => {
+    if (!contentModal) return;
+    const { levelIdx, subIdx } = contentModal;
+    const sub = data.levels[levelIdx]?.subLevels[subIdx];
+    if (!sub) return;
+    const quizzes = [...(sub.quizzes || [])];
+    if (editingQuiz.index !== null && editingQuiz.index >= 0) {
+      quizzes[editingQuiz.index] = quiz;
+    } else {
+      quizzes.push(quiz);
+    }
+    updateSubLevel(levelIdx, subIdx, 'quizzes', quizzes);
+    setEditingQuiz({ quiz: null, index: null });
+  };
+
+  const handleSaveDuel = (duel: Duel) => {
+    if (!contentModal) return;
+    const { levelIdx, subIdx } = contentModal;
+    const sub = data.levels[levelIdx]?.subLevels[subIdx];
+    if (!sub) return;
+    const duels = [...(sub.duels || [])];
+    if (editingDuel.index !== null && editingDuel.index >= 0) {
+      duels[editingDuel.index] = duel;
+    } else {
+      duels.push(duel);
+    }
+    updateSubLevel(levelIdx, subIdx, 'duels', duels);
+    setEditingDuel({ duel: null, index: null });
+  };
+
+  const handleSaveFunding = (funding: Funding) => {
+    if (!contentModal) return;
+    const { levelIdx, subIdx } = contentModal;
+    const sub = data.levels[levelIdx]?.subLevels[subIdx];
+    if (!sub) return;
+    const fundings = [...(sub.fundings || [])];
+    if (editingFunding.index !== null && editingFunding.index >= 0) {
+      fundings[editingFunding.index] = funding;
+    } else {
+      fundings.push(funding);
+    }
+    updateSubLevel(levelIdx, subIdx, 'fundings', fundings);
+    setEditingFunding({ funding: null, index: null });
+  };
+
+  const handleSaveOpportunity = (opportunity: Opportunity) => {
+    if (!contentModal) return;
+    const { levelIdx, subIdx } = contentModal;
+    const sub = data.levels[levelIdx]?.subLevels[subIdx];
+    if (!sub) return;
+    const opportunities = [...(sub.opportunities || [])];
+    if (editingOpportunity.index !== null && editingOpportunity.index >= 0) {
+      opportunities[editingOpportunity.index] = opportunity;
+    } else {
+      opportunities.push(opportunity);
+    }
+    updateSubLevel(levelIdx, subIdx, 'opportunities', opportunities);
+    setEditingOpportunity({ opportunity: null, index: null });
+  };
+
+  const handleSaveChallengeEvent = (challengeEvent: ChallengeEvent) => {
+    if (!contentModal) return;
+    const { levelIdx, subIdx } = contentModal;
+    const sub = data.levels[levelIdx]?.subLevels[subIdx];
+    if (!sub) return;
+    const challengeEvents = [...(sub.challengeEvents || [])];
+    if (editingChallengeEvent.index !== null && editingChallengeEvent.index >= 0) {
+      challengeEvents[editingChallengeEvent.index] = challengeEvent;
+    } else {
+      challengeEvents.push(challengeEvent);
+    }
+    updateSubLevel(levelIdx, subIdx, 'challengeEvents', challengeEvents);
+    setEditingChallengeEvent({ challengeEvent: null, index: null });
+  };
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
 
   return (
@@ -378,7 +509,7 @@ export default function ChallengeEditorPage() {
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <button className="p-2 rounded-lg" onClick={() => router.push('/challenges')} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
+          <button className="p-2 rounded-lg" onClick={() => handleNavigate('/challenges')} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
             <ArrowLeft size={18} />
           </button>
           <div>
@@ -797,11 +928,22 @@ export default function ChallengeEditorPage() {
             <div className="flex-1 overflow-auto px-5 py-4">
               {contentTab === 'quizzes' && (
                 <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => setEditingQuiz({ quiz: null, index: -1 })}
+                    className="btn-primary flex items-center gap-2 self-start"
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                  >
+                    <Plus size={14} />
+                    Ajouter un quiz
+                  </button>
                   {(contentModalSub.quizzes || []).map((q, qi) => (
                     <div key={q.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
                         <span style={{ fontSize: 10, color: '#2196F3', fontWeight: 600 }}>Quiz #{qi + 1} — {q.category} ({q.difficulty})</span>
-                        <button onClick={() => removeContentItem('quizzes', qi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingQuiz({ quiz: q, index: qi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
+                          <button onClick={() => removeContentItem('quizzes', qi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff', marginBottom: 4 }}>{q.question}</p>
                       <div className="flex flex-col gap-1">
@@ -819,11 +961,22 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'duels' && (
                 <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => setEditingDuel({ duel: null, index: -1 })}
+                    className="btn-primary flex items-center gap-2 self-start"
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                  >
+                    <Plus size={14} />
+                    Ajouter un duel
+                  </button>
                   {(contentModalSub.duels || []).map((d, di) => (
                     <div key={d.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
                         <span style={{ fontSize: 10, color: '#9C27B0', fontWeight: 600 }}>Duel #{di + 1} — {d.category}</span>
-                        <button onClick={() => removeContentItem('duels', di)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingDuel({ duel: d, index: di })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
+                          <button onClick={() => removeContentItem('duels', di)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff', marginBottom: 4 }}>{d.question}</p>
                       <div className="flex flex-col gap-1">
@@ -840,11 +993,22 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'fundings' && (
                 <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => setEditingFunding({ funding: null, index: -1 })}
+                    className="btn-primary flex items-center gap-2 self-start"
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                  >
+                    <Plus size={14} />
+                    Ajouter un financement
+                  </button>
                   {(contentModalSub.fundings || []).map((f, fi) => (
                     <div key={f.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
                         <span style={{ fontSize: 10, color: '#FF9800', fontWeight: 600 }}>Funding #{fi + 1}</span>
-                        <button onClick={() => removeContentItem('fundings', fi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingFunding({ funding: f, index: fi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
+                          <button onClick={() => removeContentItem('fundings', fi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff' }}>{f.title} — <span style={{ color: '#4CAF50' }}>+{f.tokens} tokens</span></p>
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{f.description}</p>
@@ -855,11 +1019,22 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'opportunities' && (
                 <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => setEditingOpportunity({ opportunity: null, index: -1 })}
+                    className="btn-primary flex items-center gap-2 self-start"
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                  >
+                    <Plus size={14} />
+                    Ajouter une opportunité
+                  </button>
                   {(contentModalSub.opportunities || []).map((o, oi) => (
                     <div key={o.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
                         <span style={{ fontSize: 10, color: '#4CAF50', fontWeight: 600 }}>Opportunite #{oi + 1}</span>
-                        <button onClick={() => removeContentItem('opportunities', oi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingOpportunity({ opportunity: o, index: oi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
+                          <button onClick={() => removeContentItem('opportunities', oi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff' }}>{o.title} — <span style={{ color: '#4CAF50' }}>+{o.tokens} tokens</span></p>
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{o.description}</p>
@@ -870,11 +1045,22 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'challengeEvents' && (
                 <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => setEditingChallengeEvent({ challengeEvent: null, index: -1 })}
+                    className="btn-primary flex items-center gap-2 self-start"
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                  >
+                    <Plus size={14} />
+                    Ajouter un défi
+                  </button>
                   {(contentModalSub.challengeEvents || []).map((c, ci) => (
                     <div key={c.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
                         <span style={{ fontSize: 10, color: '#F44336', fontWeight: 600 }}>Defi #{ci + 1}</span>
-                        <button onClick={() => removeContentItem('challengeEvents', ci)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingChallengeEvent({ challengeEvent: c, index: ci })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
+                          <button onClick={() => removeContentItem('challengeEvents', ci)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
+                        </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff' }}>{c.title} — <span style={{ color: '#F44336' }}>{c.tokens} tokens</span></p>
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{c.description}</p>
@@ -903,6 +1089,59 @@ export default function ChallengeEditorPage() {
         context={aiContext}
         onGenerated={handleAIGenerated}
         autoPrompt={aiAutoPrompt}
+      />
+
+      {/* Event Editors */}
+      {(editingQuiz.index !== null || editingQuiz.quiz !== null) && (
+        <QuizEditor
+          quiz={editingQuiz.quiz}
+          onSave={handleSaveQuiz}
+          onClose={() => setEditingQuiz({ quiz: null, index: null })}
+        />
+      )}
+
+      {(editingDuel.index !== null || editingDuel.duel !== null) && (
+        <DuelEditor
+          duel={editingDuel.duel}
+          onSave={handleSaveDuel}
+          onClose={() => setEditingDuel({ duel: null, index: null })}
+        />
+      )}
+
+      {(editingFunding.index !== null || editingFunding.funding !== null) && (
+        <FundingEditor
+          funding={editingFunding.funding}
+          onSave={handleSaveFunding}
+          onClose={() => setEditingFunding({ funding: null, index: null })}
+        />
+      )}
+
+      {(editingOpportunity.index !== null || editingOpportunity.opportunity !== null) && (
+        <OpportunityEditor
+          opportunity={editingOpportunity.opportunity}
+          onSave={handleSaveOpportunity}
+          onClose={() => setEditingOpportunity({ opportunity: null, index: null })}
+        />
+      )}
+
+      {(editingChallengeEvent.index !== null || editingChallengeEvent.challengeEvent !== null) && (
+        <ChallengeEventEditor
+          challengeEvent={editingChallengeEvent.challengeEvent}
+          onSave={handleSaveChallengeEvent}
+          onClose={() => setEditingChallengeEvent({ challengeEvent: null, index: null })}
+        />
+      )}
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        open={showUnsavedDialog}
+        onSave={handleSaveAndNavigate}
+        onDiscard={handleDiscardAndNavigate}
+        onCancel={() => {
+          setShowUnsavedDialog(false);
+          pendingNavigationRef.current = null;
+        }}
+        saving={saving}
       />
     </div>
   );

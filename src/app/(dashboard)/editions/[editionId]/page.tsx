@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   ArrowLeft, Save, Plus, Trash2,
@@ -12,8 +12,10 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
 import SectorSelectionModal from '@/components/ui/SectorSelectionModal';
+import UnsavedChangesDialog from '@/components/ui/UnsavedChangesDialog';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'quiz' | 'duels' | 'fundings' | 'opportunities' | 'challenges' | 'projects';
@@ -55,6 +57,7 @@ export default function EditionEditorPage() {
   const isNew = editionId === 'new';
 
   const [data, setData] = useState<Omit<EditionData, 'id'>>(EMPTY_EDITION);
+  const [originalData, setOriginalData] = useState<Omit<EditionData, 'id'> | null>(null);
   const [newId, setNewId] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [loading, setLoading] = useState(!isNew);
@@ -64,6 +67,8 @@ export default function EditionEditorPage() {
   const [aiModalType, setAiModalType] = useState<GenerationType | null>(null);
   const [showSectorSelection, setShowSectorSelection] = useState(false);
   const [autoPrompt, setAutoPrompt] = useState<string | undefined>(undefined);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
 
   // AI generation context
   const aiContext = { editionName: data.name || editionId, sectors: data.sectors.join(', ') || 'multi-secteurs' };
@@ -162,6 +167,13 @@ Pour les projets par défaut, chaque projet doit avoir :
     }
   };
 
+  // Check for unsaved changes
+  const hasUnsavedChanges = originalData !== null && JSON.stringify(data) !== JSON.stringify(originalData);
+
+  const { allowNavigation } = useUnsavedChanges({
+    hasUnsavedChanges,
+  });
+
   // Load existing edition
   useEffect(() => {
     if (isNew) return;
@@ -171,6 +183,7 @@ Pour les projets par défaut, chaque projet doit avoir :
         if (edition) {
           const { id, ...rest } = edition;
           setData(rest);
+          setOriginalData(rest);
         } else {
           toast.error('Edition non trouvee');
           router.push('/editions');
@@ -198,6 +211,7 @@ Pour les projets par défaut, chaque projet doit avoir :
     setSaving(true);
     try {
       await saveEdition(id, data);
+      setOriginalData(data); // Update original data after successful save
       toast.success(isNew ? 'Edition creee !' : 'Edition sauvegardee !');
       if (isNew) {
         router.push(`/editions/${id}`);
@@ -212,6 +226,33 @@ Pour les projets par défaut, chaque projet doit avoir :
 
   const updateField = <K extends keyof typeof data>(key: K, value: (typeof data)[K]) => {
     setData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleNavigate = (path: string) => {
+    if (hasUnsavedChanges) {
+      pendingNavigationRef.current = path;
+      setShowUnsavedDialog(true);
+    } else {
+      router.push(path);
+    }
+  };
+
+  const handleSaveAndNavigate = async () => {
+    await handleSave();
+    if (pendingNavigationRef.current) {
+      allowNavigation();
+      router.push(pendingNavigationRef.current);
+      pendingNavigationRef.current = null;
+    }
+  };
+
+  const handleDiscardAndNavigate = () => {
+    if (pendingNavigationRef.current) {
+      allowNavigation();
+      router.push(pendingNavigationRef.current);
+      pendingNavigationRef.current = null;
+    }
+    setShowUnsavedDialog(false);
   };
 
   // ===== Quiz helpers =====
@@ -379,7 +420,7 @@ Pour les projets par défaut, chaque projet doit avoir :
         <div className="flex items-center gap-3">
           <button
             className="p-2 rounded-lg transition-colors"
-            onClick={() => router.push('/editions')}
+            onClick={() => handleNavigate('/editions')}
             style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
           >
             <ArrowLeft size={18} />
@@ -1075,6 +1116,18 @@ Pour les projets par défaut, chaque projet doit avoir :
         message="Etes-vous sur de vouloir supprimer cet element ? Cette action est irreversible."
         confirmLabel="Supprimer"
         danger
+      />
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        open={showUnsavedDialog}
+        onSave={handleSaveAndNavigate}
+        onDiscard={handleDiscardAndNavigate}
+        onCancel={() => {
+          setShowUnsavedDialog(false);
+          pendingNavigationRef.current = null;
+        }}
+        saving={saving}
       />
     </div>
   );
