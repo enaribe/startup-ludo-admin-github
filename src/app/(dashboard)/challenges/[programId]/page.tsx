@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, ChevronDown, ChevronRight, Layers, Target, Sparkles, BookOpen, X, Edit } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, ChevronDown, ChevronRight, Layers, Target, Sparkles, BookOpen, X, Edit, Upload } from 'lucide-react';
 import { getChallengeProgram, saveChallengeProgram } from '@/lib/firestore-service';
 import type { ChallengeProgram, ChallengeLevel, ChallengeSubLevel, ChallengeSector, CardCategory, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -13,6 +13,7 @@ import DuelEditor from '@/components/events/DuelEditor';
 import FundingEditor from '@/components/events/FundingEditor';
 import OpportunityEditor from '@/components/events/OpportunityEditor';
 import ChallengeEventEditor from '@/components/events/ChallengeEventEditor';
+import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
@@ -73,6 +74,7 @@ export default function ChallengeEditorPage() {
   const [editingFunding, setEditingFunding] = useState<{ funding: Funding | null; index: number | null }>({ funding: null, index: null });
   const [editingOpportunity, setEditingOpportunity] = useState<{ opportunity: Opportunity | null; index: number | null }>({ opportunity: null, index: null });
   const [editingChallengeEvent, setEditingChallengeEvent] = useState<{ challengeEvent: ChallengeEvent | null; index: number | null }>({ challengeEvent: null, index: null });
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const aiContext = (() => {
     if (aiModalType === 'challenge_full') return { ...briefing };
@@ -502,6 +504,35 @@ export default function ChallengeEditorPage() {
     setEditingChallengeEvent({ challengeEvent: null, index: null });
   };
 
+  const handleImportContent = (imported: ImportedContent, mode: 'replace' | 'append') => {
+    if (!contentModal) return;
+    const { levelIdx, subIdx } = contentModal;
+    const sub = data.levels[levelIdx]?.subLevels[subIdx];
+    if (!sub) return;
+
+    const merge = <T,>(existing: T[], incoming: T[]) =>
+      mode === 'replace' ? incoming : [...existing, ...incoming];
+
+    const updates: Partial<typeof sub> = {};
+    if (imported.quizzes.length > 0) updates.quizzes = merge(sub.quizzes || [], imported.quizzes);
+    if (imported.duels.length > 0) updates.duels = merge(sub.duels || [], imported.duels);
+    if (imported.fundings.length > 0) updates.fundings = merge(sub.fundings || [], imported.fundings);
+    if (imported.opportunities.length > 0) updates.opportunities = merge(sub.opportunities || [], imported.opportunities);
+    if (imported.challengeEvents.length > 0) updates.challengeEvents = merge(sub.challengeEvents || [], imported.challengeEvents);
+
+    const updatedLevels = data.levels.map((lvl, li) =>
+      li !== levelIdx ? lvl : {
+        ...lvl,
+        subLevels: lvl.subLevels.map((s, si) =>
+          si !== subIdx ? s : { ...s, ...updates }
+        ),
+      }
+    );
+    setData(prev => ({ ...prev, levels: updatedLevels }));
+    setShowImportModal(false);
+    toast.success(`Contenu importé (${mode === 'append' ? 'ajouté' : 'remplacé'})`);
+  };
+
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
 
   return (
@@ -890,9 +921,24 @@ export default function ChallengeEditorPage() {
                 </h3>
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>{getContentLabel(contentModalSub)}</p>
               </div>
-              <button onClick={() => setContentModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                  style={{
+                    background: 'rgba(255,188,64,0.12)',
+                    border: '1px solid rgba(255,188,64,0.25)',
+                    color: '#FFBC40',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Upload size={13} />
+                  Importer via l&apos;IA
+                </button>
+                <button onClick={() => setContentModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Content tabs */}
@@ -1079,6 +1125,17 @@ export default function ChallengeEditorPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Import Content Modal */}
+      {showImportModal && contentModal && (
+        <ImportContentModal
+          programName={data.name}
+          levelTitle={data.levels[contentModal.levelIdx]?.title}
+          subLevelTitle={data.levels[contentModal.levelIdx]?.subLevels[contentModal.subIdx]?.title}
+          onImport={handleImportContent}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
 
       {/* AI Generate Modal */}

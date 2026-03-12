@@ -17,6 +17,7 @@ export type GenerationType =
   | 'ideation_missions'
   | 'ideation_sectors'
   | 'sublevel_content'
+  | 'sublevel_content_import'
   | 'achievements'
   | 'default_projects';
 
@@ -400,6 +401,56 @@ REGLES:
       if (ctx?.subLevelDescription) parts.push(`Description du sous-niveau: ${ctx.subLevelDescription}`);
       if (ctx?.cardCategories) parts.push(`\nTypes de contenu a generer: ${(ctx.cardCategories as string[]).join(', ')}`);
       if (input.trim()) parts.push(`\nInstructions supplementaires: ${input}`);
+      return parts.join('\n');
+    },
+  },
+
+  sublevel_content_import: {
+    label: 'Import texte brut',
+    placeholder: 'Colle ici ton texte contenant les quiz, duels, opportunites, financements, defis...',
+    description: 'Analyse un texte brut et extrait le contenu structuré (quiz, duels, etc.)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Tu reçois un texte brut (notes, document, copier-coller) contenant des informations sur des quiz, duels, financements, opportunités ou défis entrepreneuriaux.
+
+Analyse ce texte et extrais le contenu pour le transformer en JSON valide selon ce format:
+
+{
+  "quizzes": [
+    { "id": "quiz_1", "question": "...", "options": ["A","B","C"], "correctAnswer": 0, "category": "financement", "difficulty": "facile|moyen|difficile", "explanation": "..." }
+  ],
+  "duels": [
+    { "id": "duel_1", "question": "...", "options": [{"text": "Meilleure reponse", "points": 30}, {"text": "Bonne reponse", "points": 20}, {"text": "Reponse acceptable", "points": 10}], "category": "business" }
+  ],
+  "fundings": [
+    { "id": "fund_1", "title": "...", "description": "...", "tokens": 3, "source": "..." }
+  ],
+  "opportunities": [
+    { "id": "opp_1", "title": "...", "description": "...", "tokens": 3 }
+  ],
+  "challengeEvents": [
+    { "id": "chal_1", "title": "...", "description": "...", "tokens": -2 }
+  ]
+}
+
+REGLES D'EXTRACTION:
+- Si le texte contient des questions avec des reponses numerotees ou lettrees (A/B/C, 1/2/3), c'est probablement des quiz ou duels
+- Pour les quiz: identifie quelle reponse est correcte (mention explicite ou implicite)
+- Pour les duels: toutes les reponses sont valides mais avec des points differents (30/20/10). Deduis les points selon la qualite de chaque reponse
+- Si le texte mentionne des financements, subventions, levees de fonds → c'est des fundings (tokens positifs 1-10)
+- Si le texte mentionne des opportunites, bonnes nouvelles, reussites → c'est des opportunities (tokens positifs 1-5)
+- Si le texte mentionne des obstacles, problemes, crises → c'est des challengeEvents (tokens NEGATIFS -1 a -5)
+- Genere des IDs uniques (quiz_1, quiz_2, duel_1, fund_1, opp_1, chal_1...)
+- Inclus UNIQUEMENT les types pour lesquels tu trouves du contenu dans le texte
+- Si le texte est incomplet ou ambigu, complète intelligemment en restant fidèle au sujet
+- Ne rajoute PAS de contenu inventé si le texte n'en contient pas
+- category pour les quiz: "business-model", "financement", "marketing", "legal", "management", "tech", "pitch", "strategie"`,
+    buildUserPrompt: (input, ctx) => {
+      const parts: string[] = [];
+      if (ctx?.subLevelTitle) parts.push(`Contexte - Sous-niveau: ${ctx.subLevelTitle}`);
+      if (ctx?.levelTitle) parts.push(`Niveau: ${ctx.levelTitle}`);
+      if (ctx?.programName) parts.push(`Programme: ${ctx.programName}`);
+      parts.push(`\n=== TEXTE A ANALYSER ===\n${input}`);
       return parts.join('\n');
     },
   },
