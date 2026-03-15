@@ -28,11 +28,11 @@ type ImportMode = 'replace' | 'append';
 function assignIds(content: Partial<ImportedContent>): ImportedContent {
   const prefix = Date.now();
   return {
-    quizzes: (content.quizzes || []).map((q, i) => ({ ...q, id: q.id || `quiz_${prefix}_${i}` })),
-    duels: (content.duels || []).map((d, i) => ({ ...d, id: d.id || `duel_${prefix}_${i}` })),
-    fundings: (content.fundings || []).map((f, i) => ({ ...f, id: f.id || `fund_${prefix}_${i}` })),
-    opportunities: (content.opportunities || []).map((o, i) => ({ ...o, id: o.id || `opp_${prefix}_${i}` })),
-    challengeEvents: (content.challengeEvents || []).map((c, i) => ({ ...c, id: c.id || `chal_${prefix}_${i}` })),
+    quizzes: (content.quizzes || []).map((q, i) => ({ ...q, id: `quiz_${prefix}_${i}` })),
+    duels: (content.duels || []).map((d, i) => ({ ...d, id: `duel_${prefix}_${i}` })),
+    fundings: (content.fundings || []).map((f, i) => ({ ...f, id: `fund_${prefix}_${i}` })),
+    opportunities: (content.opportunities || []).map((o, i) => ({ ...o, id: `opp_${prefix}_${i}` })),
+    challengeEvents: (content.challengeEvents || []).map((c, i) => ({ ...c, id: `chal_${prefix}_${i}` })),
   };
 }
 

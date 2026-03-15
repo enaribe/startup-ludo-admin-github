@@ -974,14 +974,24 @@ export default function ChallengeEditorPage() {
             <div className="flex-1 overflow-auto px-5 py-4">
               {contentTab === 'quizzes' && (
                 <div className="flex flex-col gap-3">
-                  <button
-                    onClick={() => setEditingQuiz({ quiz: null, index: -1 })}
-                    className="btn-primary flex items-center gap-2 self-start"
-                    style={{ fontSize: 12, padding: '6px 12px' }}
-                  >
-                    <Plus size={14} />
-                    Ajouter un quiz
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingQuiz({ quiz: null, index: -1 })}
+                      className="btn-primary flex items-center gap-2"
+                      style={{ fontSize: 12, padding: '6px 12px' }}
+                    >
+                      <Plus size={14} />
+                      Ajouter un quiz
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="btn-secondary flex items-center gap-1.5"
+                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                    >
+                      <Upload size={13} />
+                      Importer
+                    </button>
+                  </div>
                   {(contentModalSub.quizzes || []).map((q, qi) => (
                     <div key={q.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1007,14 +1017,24 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'duels' && (
                 <div className="flex flex-col gap-3">
-                  <button
-                    onClick={() => setEditingDuel({ duel: null, index: -1 })}
-                    className="btn-primary flex items-center gap-2 self-start"
-                    style={{ fontSize: 12, padding: '6px 12px' }}
-                  >
-                    <Plus size={14} />
-                    Ajouter un duel
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingDuel({ duel: null, index: -1 })}
+                      className="btn-primary flex items-center gap-2"
+                      style={{ fontSize: 12, padding: '6px 12px' }}
+                    >
+                      <Plus size={14} />
+                      Ajouter un duel
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="btn-secondary flex items-center gap-1.5"
+                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                    >
+                      <Upload size={13} />
+                      Importer
+                    </button>
+                  </div>
                   {(contentModalSub.duels || []).map((d, di) => (
                     <div key={d.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1039,14 +1059,24 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'fundings' && (
                 <div className="flex flex-col gap-3">
-                  <button
-                    onClick={() => setEditingFunding({ funding: null, index: -1 })}
-                    className="btn-primary flex items-center gap-2 self-start"
-                    style={{ fontSize: 12, padding: '6px 12px' }}
-                  >
-                    <Plus size={14} />
-                    Ajouter un financement
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingFunding({ funding: null, index: -1 })}
+                      className="btn-primary flex items-center gap-2"
+                      style={{ fontSize: 12, padding: '6px 12px' }}
+                    >
+                      <Plus size={14} />
+                      Ajouter un financement
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="btn-secondary flex items-center gap-1.5"
+                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                    >
+                      <Upload size={13} />
+                      Importer
+                    </button>
+                  </div>
                   {(contentModalSub.fundings || []).map((f, fi) => (
                     <div key={f.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1065,14 +1095,24 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'opportunities' && (
                 <div className="flex flex-col gap-3">
-                  <button
-                    onClick={() => setEditingOpportunity({ opportunity: null, index: -1 })}
-                    className="btn-primary flex items-center gap-2 self-start"
-                    style={{ fontSize: 12, padding: '6px 12px' }}
-                  >
-                    <Plus size={14} />
-                    Ajouter une opportunité
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingOpportunity({ opportunity: null, index: -1 })}
+                      className="btn-primary flex items-center gap-2"
+                      style={{ fontSize: 12, padding: '6px 12px' }}
+                    >
+                      <Plus size={14} />
+                      Ajouter une opportunité
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="btn-secondary flex items-center gap-1.5"
+                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                    >
+                      <Upload size={13} />
+                      Importer
+                    </button>
+                  </div>
                   {(contentModalSub.opportunities || []).map((o, oi) => (
                     <div key={o.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1091,14 +1131,24 @@ export default function ChallengeEditorPage() {
               )}
               {contentTab === 'challengeEvents' && (
                 <div className="flex flex-col gap-3">
-                  <button
-                    onClick={() => setEditingChallengeEvent({ challengeEvent: null, index: -1 })}
-                    className="btn-primary flex items-center gap-2 self-start"
-                    style={{ fontSize: 12, padding: '6px 12px' }}
-                  >
-                    <Plus size={14} />
-                    Ajouter un défi
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingChallengeEvent({ challengeEvent: null, index: -1 })}
+                      className="btn-primary flex items-center gap-2"
+                      style={{ fontSize: 12, padding: '6px 12px' }}
+                    >
+                      <Plus size={14} />
+                      Ajouter un défi
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="btn-secondary flex items-center gap-1.5"
+                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                    >
+                      <Upload size={13} />
+                      Importer
+                    </button>
+                  </div>
                   {(contentModalSub.challengeEvents || []).map((c, ci) => (
                     <div key={c.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1133,6 +1183,7 @@ export default function ChallengeEditorPage() {
           programName={data.name}
           levelTitle={data.levels[contentModal.levelIdx]?.title}
           subLevelTitle={data.levels[contentModal.levelIdx]?.subLevels[contentModal.subIdx]?.title}
+          importFilter={contentTab}
           onImport={handleImportContent}
           onClose={() => setShowImportModal(false)}
         />
