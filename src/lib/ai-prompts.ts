@@ -446,10 +446,21 @@ REGLES D'EXTRACTION:
 - Ne rajoute PAS de contenu inventé si le texte n'en contient pas
 - category pour les quiz: "business-model", "financement", "marketing", "legal", "management", "tech", "pitch", "strategie"`,
     buildUserPrompt: (input, ctx) => {
+      const filterMap: Record<string, string> = {
+        quizzes: 'quiz (questions avec réponses)',
+        duels: 'duels (questions avec réponses pondérées 30/20/10 points)',
+        fundings: 'fundings/financements (événements de financement avec tokens positifs)',
+        opportunities: 'opportunities/opportunités (événements positifs avec tokens)',
+        challengeEvents: 'challengeEvents/défis (obstacles avec tokens négatifs)',
+      };
       const parts: string[] = [];
       if (ctx?.subLevelTitle) parts.push(`Contexte - Sous-niveau: ${ctx.subLevelTitle}`);
       if (ctx?.levelTitle) parts.push(`Niveau: ${ctx.levelTitle}`);
       if (ctx?.programName) parts.push(`Programme: ${ctx.programName}`);
+      const filter = ctx?.importFilter as string;
+      if (filter && filterMap[filter]) {
+        parts.push(`\nIMPORTANT: Génère UNIQUEMENT du contenu de type "${filterMap[filter]}". N'inclus AUCUN autre type dans ta réponse JSON. Concentre-toi exclusivement sur l'extraction/génération de ${filterMap[filter]} à partir du texte fourni. Si le texte ne contient pas explicitement ce type de contenu, transforme/adapte le texte pour créer du contenu pertinent de ce type.`);
+      }
       parts.push(`\n=== TEXTE A ANALYSER ===\n${input}`);
       return parts.join('\n');
     },

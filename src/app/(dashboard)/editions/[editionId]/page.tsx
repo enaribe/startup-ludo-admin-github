@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   ArrowLeft, Save, Plus, Trash2,
-  HelpCircle, Swords, Coins, Star, Zap, Sparkles, FolderKanban,
+  HelpCircle, Swords, Coins, Star, Zap, Sparkles, FolderKanban, Upload,
 } from 'lucide-react';
 import { getEdition, saveEdition } from '@/lib/firestore-service';
 import type { EditionData, Quiz, Duel, DuelOption, Funding, Opportunity, ChallengeEvent, DefaultProject } from '@/types';
@@ -16,6 +16,7 @@ import UnsavedChangesDialog from '@/components/ui/UnsavedChangesDialog';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'quiz' | 'duels' | 'fundings' | 'opportunities' | 'challenges' | 'projects';
@@ -68,6 +69,8 @@ export default function EditionEditorPage() {
   const [showSectorSelection, setShowSectorSelection] = useState(false);
   const [autoPrompt, setAutoPrompt] = useState<string | undefined>(undefined);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFilter, setImportFilter] = useState<keyof ImportedContent | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
 
   // AI generation context
@@ -405,6 +408,35 @@ Pour les projets par défaut, chaque projet doit avoir :
     setDeleteSection(null);
   };
 
+  const handleImportContent = (imported: ImportedContent, mode: 'replace' | 'append') => {
+    const merge = <T,>(existing: T[], incoming: T[]) =>
+      mode === 'replace' ? incoming : [...existing, ...incoming];
+
+    let count = 0;
+    if (imported.quizzes.length > 0) {
+      updateField('quizzes', merge(data.quizzes, imported.quizzes as Quiz[]));
+      count += imported.quizzes.length;
+    }
+    if (imported.duels.length > 0) {
+      updateField('duels', merge(data.duels, imported.duels as Duel[]));
+      count += imported.duels.length;
+    }
+    if (imported.fundings.length > 0) {
+      updateField('fundings', merge(data.fundings, imported.fundings as Funding[]));
+      count += imported.fundings.length;
+    }
+    if (imported.opportunities.length > 0) {
+      updateField('opportunities', merge(data.opportunities, imported.opportunities as Opportunity[]));
+      count += imported.opportunities.length;
+    }
+    if (imported.challengeEvents.length > 0) {
+      updateField('challenges', merge(data.challenges, imported.challengeEvents as ChallengeEvent[]));
+      count += imported.challengeEvents.length;
+    }
+    setShowImportModal(false);
+    toast.success(`${count} élément${count > 1 ? 's' : ''} importé${count > 1 ? 's' : ''} (${mode === 'append' ? 'ajouté' : 'remplacé'})`);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -605,6 +637,14 @@ Pour les projets par défaut, chaque projet doit avoir :
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => { setImportFilter('quizzes'); setShowImportModal(true); }}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                >
+                  <Upload size={13} />
+                  Importer
+                </button>
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
                   onClick={() => setAiModalType('edition_quiz')}
                   style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.3)', color: '#FFBC40' }}
                 >
@@ -773,6 +813,14 @@ Pour les projets par défaut, chaque projet doit avoir :
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => { setImportFilter('duels'); setShowImportModal(true); }}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                >
+                  <Upload size={13} />
+                  Importer
+                </button>
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
                   onClick={() => setAiModalType('edition_duels')}
                   style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.3)', color: '#FFBC40' }}
                 >
@@ -867,6 +915,14 @@ Pour les projets par défaut, chaque projet doit avoir :
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => { setImportFilter('fundings'); setShowImportModal(true); }}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                >
+                  <Upload size={13} />
+                  Importer
+                </button>
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
                   onClick={() => setAiModalType('edition_fundings')}
                   style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.3)', color: '#FFBC40' }}
                 >
@@ -922,6 +978,14 @@ Pour les projets par défaut, chaque projet doit avoir :
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => { setImportFilter('opportunities'); setShowImportModal(true); }}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                >
+                  <Upload size={13} />
+                  Importer
+                </button>
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
                   onClick={() => setAiModalType('edition_opportunities')}
                   style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.3)', color: '#FFBC40' }}
                 >
@@ -969,6 +1033,14 @@ Pour les projets par défaut, chaque projet doit avoir :
                 {data.challenges.length} challenge{data.challenges.length !== 1 ? 's' : ''} en jeu
               </p>
               <div className="flex gap-2">
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => { setImportFilter('challengeEvents'); setShowImportModal(true); }}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                >
+                  <Upload size={13} />
+                  Importer
+                </button>
                 <button
                   className="btn-secondary flex items-center gap-1.5"
                   onClick={() => setAiModalType('edition_challenges')}
@@ -1078,6 +1150,16 @@ Pour les projets par défaut, chaque projet doit avoir :
           </div>
         )}
       </div>
+
+      {/* Import Content Modal */}
+      {showImportModal && (
+        <ImportContentModal
+          subLevelTitle={data.name || editionId}
+          importFilter={importFilter ?? undefined}
+          onImport={handleImportContent}
+          onClose={() => { setShowImportModal(false); setImportFilter(null); }}
+        />
+      )}
 
       {/* Sector Selection Modal */}
       <SectorSelectionModal

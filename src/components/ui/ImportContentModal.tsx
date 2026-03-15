@@ -17,6 +17,8 @@ interface ImportContentModalProps {
   subLevelTitle?: string;
   levelTitle?: string;
   programName?: string;
+  /** If set, only import this specific content type */
+  importFilter?: keyof ImportedContent;
   onImport: (content: ImportedContent, mode: 'replace' | 'append') => void;
   onClose: () => void;
 }
@@ -42,10 +44,59 @@ const TYPE_CONFIG = [
   { key: 'challengeEvents' as const, label: 'Défis', color: '#F44336', dot: '🟥' },
 ];
 
+const FILTER_LABELS: Record<keyof ImportedContent, string> = {
+  quizzes: 'Quiz',
+  duels: 'Duels',
+  fundings: 'Financements',
+  opportunities: 'Opportunités',
+  challengeEvents: 'Défis',
+};
+
+const FILTER_PLACEHOLDERS: Record<keyof ImportedContent, string> = {
+  quizzes: `Exemple :
+
+Quiz 1 : Qu'est-ce qu'un business model ?
+A) Un modèle de financement (bonne réponse)
+B) Un plan marketing
+C) Une fiche produit
+
+Quiz 2 : Quel est le rôle d'un pitch deck ?
+A) Présenter le projet aux investisseurs (bonne réponse)
+B) Gérer la comptabilité
+C) Recruter des employés`,
+  duels: `Exemple :
+
+Question 1 : Comment valider une idée de startup ?
+- Faire une étude de marché approfondie (meilleure réponse)
+- Demander à ses amis (réponse acceptable)
+- Lancer directement sans tester (mauvaise approche)
+
+Question 2 : Quelle stratégie de pricing adopter ?
+- Analyser la concurrence et le marché (meilleure)
+- Copier le prix du concurrent (acceptable)
+- Mettre le prix le plus bas possible (risqué)`,
+  fundings: `Exemple :
+
+Subvention BPI France - Aide à l'innovation pour les startups tech. Montant : 50 000€
+Prêt d'honneur Réseau Entreprendre - Prêt sans intérêt ni garantie. 30 000€
+Crowdfunding Ulule - Campagne de financement participatif réussie. 15 000€`,
+  opportunities: `Exemple :
+
+Partenariat avec une grande entreprise - Un grand groupe propose un partenariat stratégique. +3 jetons
+Couverture médiatique - Un article dans un média national parle de ta startup. +2 jetons
+Nouveau marché - Tu découvres un marché inexploité pour ton produit. +4 jetons`,
+  challengeEvents: `Exemple :
+
+Retard de livraison fournisseur - Ton fournisseur principal a un retard de 3 semaines. -2 jetons
+Bug critique en production - Un bug majeur affecte tes utilisateurs. -3 jetons
+Départ d'un associé - Un cofondateur quitte le projet. -4 jetons`,
+};
+
 export default function ImportContentModal({
   subLevelTitle,
   levelTitle,
   programName,
+  importFilter,
   onImport,
   onClose,
 }: ImportContentModalProps) {
@@ -54,10 +105,18 @@ export default function ImportContentModal({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportedContent | null>(null);
   const [selectedTypes, setSelectedTypes] = useState<Set<keyof ImportedContent>>(
-    new Set(['quizzes', 'duels', 'fundings', 'opportunities', 'challengeEvents'])
+    importFilter
+      ? new Set([importFilter])
+      : new Set(['quizzes', 'duels', 'fundings', 'opportunities', 'challengeEvents'])
   );
   const [importMode, setImportMode] = useState<ImportMode>('append');
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+
+  const visibleTypes = importFilter
+    ? TYPE_CONFIG.filter(t => t.key === importFilter)
+    : TYPE_CONFIG;
+
+  const filterLabel = importFilter ? FILTER_LABELS[importFilter] : null;
 
   const toggleSection = (key: string) => {
     setExpandedSections(prev => {
@@ -92,6 +151,7 @@ export default function ImportContentModal({
             subLevelTitle: subLevelTitle || '',
             levelTitle: levelTitle || '',
             programName: programName || '',
+            importFilter: importFilter || '',
           },
         }),
       });
@@ -105,7 +165,7 @@ export default function ImportContentModal({
 
       // Auto-expand sections with content
       const toExpand = new Set<string>();
-      TYPE_CONFIG.forEach(({ key }) => {
+      visibleTypes.forEach(({ key }) => {
         if ((withIds[key] || []).length > 0) toExpand.add(key);
       });
       setExpandedSections(toExpand);
@@ -129,8 +189,24 @@ export default function ImportContentModal({
   };
 
   const totalSelected = preview
-    ? TYPE_CONFIG.filter(t => selectedTypes.has(t.key)).reduce((sum, t) => sum + (preview[t.key]?.length || 0), 0)
+    ? visibleTypes.filter(t => selectedTypes.has(t.key)).reduce((sum, t) => sum + (preview[t.key]?.length || 0), 0)
     : 0;
+
+  const placeholderText = importFilter
+    ? FILTER_PLACEHOLDERS[importFilter]
+    : `Exemple :
+
+Quiz 1 : Qu'est-ce qu'un business model ?
+A) Un modèle de financement (bonne réponse)
+B) Un plan marketing
+C) Une fiche produit
+
+Opportunité : Tu décroches un contrat inattendu. +3 jetons
+Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
+
+  const descriptionText = importFilter
+    ? `Colle ton texte contenant des ${FILTER_LABELS[importFilter].toLowerCase()}. L'IA va l'analyser et extraire uniquement les ${FILTER_LABELS[importFilter].toLowerCase()}.`
+    : 'Colle ton texte (questions, cours, notes...). L\'IA va l\'analyser et extraire le contenu structuré.';
 
   return (
     <div
@@ -157,7 +233,9 @@ export default function ImportContentModal({
               <Upload size={16} color="#FFBC40" />
             </div>
             <div>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Importer via l&apos;IA</h2>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+                Importer {filterLabel ? `des ${filterLabel.toLowerCase()}` : 'via l\'IA'}
+              </h2>
               {subLevelTitle && (
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
                   {programName && `${programName} › `}{levelTitle && `${levelTitle} › `}{subLevelTitle}
@@ -177,20 +255,12 @@ export default function ImportContentModal({
           {/* Step 1 — Paste text */}
           <div className="px-5 pt-4 pb-3">
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>
-              Colle ton texte (questions, cours, notes...). L&apos;IA va l&apos;analyser et extraire le contenu structuré.
+              {descriptionText}
             </p>
             <textarea
               value={rawText}
               onChange={e => setRawText(e.target.value)}
-              placeholder={`Exemple :
-
-Quiz 1 : Qu'est-ce qu'un business model ?
-A) Un modèle de financement (bonne réponse)
-B) Un plan marketing
-C) Une fiche produit
-
-Opportunité : Tu décroches un contrat inattendu. +3 jetons
-Défi : Retard de livraison fournisseur. Perds 2 jetons...`}
+              placeholder={placeholderText}
               rows={10}
               style={{
                 width: '100%',
@@ -233,7 +303,7 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`}
               className="mx-5 mb-4 flex items-start gap-2 rounded-xl p-3"
               style={{ background: 'rgba(244,67,54,0.1)', border: '1px solid rgba(244,67,54,0.2)' }}
             >
-              <AlertCircle size={14} color="#F44336" style={{ marginTop: 1, shrink: 0 }} />
+              <AlertCircle size={14} color="#F44336" style={{ marginTop: 1, flexShrink: 0 }} />
               <p style={{ fontSize: 12, color: '#F44336' }}>{error}</p>
             </div>
           )}
@@ -242,10 +312,12 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`}
           {preview && (
             <div className="px-5 pb-4 border-t border-white/10 pt-4">
               <p style={{ fontSize: 12, fontWeight: 600, color: '#FFBC40', marginBottom: 12 }}>
-                Résultat de l&apos;analyse — sélectionne ce que tu veux importer
+                {importFilter
+                  ? `Résultat — ${FILTER_LABELS[importFilter]} extraits`
+                  : 'Résultat de l\'analyse — sélectionne ce que tu veux importer'}
               </p>
 
-              {TYPE_CONFIG.map(({ key, label, color }) => {
+              {visibleTypes.map(({ key, label, color }) => {
                 const items = preview[key] || [];
                 if (items.length === 0) return null;
                 const isSelected = selectedTypes.has(key);
@@ -262,17 +334,19 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`}
                   >
                     <div
                       className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
-                      onClick={() => toggleType(key)}
+                      onClick={() => !importFilter && toggleType(key)}
                     >
-                      <div
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
-                        style={{
-                          background: isSelected ? color : 'rgba(255,255,255,0.1)',
-                          border: `1px solid ${isSelected ? color : 'rgba(255,255,255,0.2)'}`,
-                        }}
-                      >
-                        {isSelected && <Check size={11} color="#fff" />}
-                      </div>
+                      {!importFilter && (
+                        <div
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                          style={{
+                            background: isSelected ? color : 'rgba(255,255,255,0.1)',
+                            border: `1px solid ${isSelected ? color : 'rgba(255,255,255,0.2)'}`,
+                          }}
+                        >
+                          {isSelected && <Check size={11} color="#fff" />}
+                        </div>
+                      )}
                       <span style={{ fontSize: 13, fontWeight: 600, color: isSelected ? color : 'rgba(255,255,255,0.5)' }}>
                         {label}
                       </span>
@@ -335,7 +409,7 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`}
                 );
               })}
 
-              {TYPE_CONFIG.every(t => (preview[t.key] || []).length === 0) && (
+              {visibleTypes.every(t => (preview[t.key] || []).length === 0) && (
                 <div className="rounded-xl p-4 text-center" style={{ background: 'rgba(255,152,0,0.08)', border: '1px solid rgba(255,152,0,0.2)' }}>
                   <p style={{ fontSize: 12, color: '#FF9800' }}>
                     Aucun contenu structuré détecté. Essaie de coller un texte plus explicite (questions avec réponses, fiches...).
