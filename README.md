@@ -12,3 +12,4 @@
 
 3. **Build**  
    Après avoir configuré `FIREBASE_SERVICE_ACCOUNT_KEY`, relancez un déploiement. Le build ne lit plus le fichier JSON au moment du build, uniquement à l’exécution des routes API.
+# startup-ludo-admin-github
