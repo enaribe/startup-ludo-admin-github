@@ -399,6 +399,7 @@ REGLES:
       if (ctx?.levelDescription) parts.push(`Description du niveau: ${ctx.levelDescription}`);
       if (ctx?.subLevelTitle) parts.push(`Sous-niveau: ${ctx.subLevelTitle}`);
       if (ctx?.subLevelDescription) parts.push(`Description du sous-niveau: ${ctx.subLevelDescription}`);
+      if (ctx?.sectorName) parts.push(`\n=== SECTEUR CIBLE ===\nSecteur: ${ctx.sectorName}${ctx.sectorDescription ? `\nDescription du secteur: ${ctx.sectorDescription}` : ''}\nIMPORTANT: Tout le contenu genere doit etre SPECIFIQUE a ce secteur. Les questions, scenarios et exemples doivent etre contextualises pour le secteur "${ctx.sectorName}".`);
       if (ctx?.cardCategories) parts.push(`\nTypes de contenu a generer: ${(ctx.cardCategories as string[]).join(', ')}`);
       if (input.trim()) parts.push(`\nInstructions supplementaires: ${input}`);
       return parts.join('\n');

@@ -22,6 +22,7 @@ export interface Quiz {
   rewardTokens?: number;
   penaltyTokens?: number;
   timeLimit?: number;
+  sectorId?: string;
 }
 
 // DuelOption — option de reponse pour un duel (toutes "correctes" mais points differents)
@@ -38,6 +39,7 @@ export interface Duel {
   question: string;
   options: DuelOption[];
   category: string;
+  sectorId?: string;
 }
 
 // Funding — matches mobile Funding interface
@@ -47,6 +49,7 @@ export interface Funding {
   description: string;
   tokens: number;
   source?: string;
+  sectorId?: string;
 }
 
 // Opportunity — matches mobile Opportunity interface
@@ -55,6 +58,7 @@ export interface Opportunity {
   title: string;
   description: string;
   tokens: number;
+  sectorId?: string;
 }
 
 // Challenge Event — matches mobile Challenge interface (in-game event, NOT program)
@@ -63,6 +67,7 @@ export interface ChallengeEvent {
   title: string;
   description: string;
   tokens: number;
+  sectorId?: string;
 }
 
 // StartupIdea — matches mobile StartupIdea interface

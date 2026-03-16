@@ -9,14 +9,16 @@ interface OpportunityEditorProps {
   opportunity?: Opportunity | null;
   onSave: (opportunity: Opportunity) => void;
   onClose: () => void;
+  sectors?: { id: string; name: string }[];
 }
 
-export default function OpportunityEditor({ opportunity, onSave, onClose }: OpportunityEditorProps) {
+export default function OpportunityEditor({ opportunity, onSave, onClose, sectors }: OpportunityEditorProps) {
   const [formData, setFormData] = useState<Opportunity>({
     id: opportunity?.id || `opp_${generateId()}`,
     title: opportunity?.title || '',
     description: opportunity?.description || '',
     tokens: opportunity?.tokens || 30,
+    sectorId: opportunity?.sectorId || '',
   });
 
   const isValid = formData.title.trim() && formData.description.trim() && formData.tokens > 0;
@@ -80,6 +82,23 @@ export default function OpportunityEditor({ opportunity, onSave, onClose }: Oppo
               />
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
                 Nombre de tokens positifs ajoutés au joueur
+              </p>
+            </div>
+            {/* Sector */}
+            <div>
+              <label className="label">Secteur (optionnel)</label>
+              <select
+                className="input-field"
+                value={formData.sectorId || ''}
+                onChange={(e) => setFormData({ ...formData, sectorId: e.target.value || undefined })}
+              >
+                <option value="">Tous les secteurs (général)</option>
+                {(sectors || []).map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+                Si un secteur est sélectionné, ce contenu ne sera affiché qu&apos;aux joueurs ayant choisi ce secteur
               </p>
             </div>
           </div>

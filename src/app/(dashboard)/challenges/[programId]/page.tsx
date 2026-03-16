@@ -76,12 +76,15 @@ export default function ChallengeEditorPage() {
   const [editingChallengeEvent, setEditingChallengeEvent] = useState<{ challengeEvent: ChallengeEvent | null; index: number | null }>({ challengeEvent: null, index: null });
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFilterOverride, setImportFilterOverride] = useState<ContentTab | undefined>(undefined);
+  // Sector filter for content generation & display
+  const [activeSectorId, setActiveSectorId] = useState<string>('');
 
   const aiContext = (() => {
     if (aiModalType === 'challenge_full') return { ...briefing };
     if (aiModalType === 'sublevel_content' && contentTarget) {
       const level = data.levels[contentTarget.levelIdx];
       const sub = level?.subLevels[contentTarget.subIdx];
+      const sector = activeSectorId ? data.sectors.find(s => s.id === activeSectorId) : null;
       return {
         programName: data.name || programId,
         programDescription: data.description,
@@ -90,6 +93,7 @@ export default function ChallengeEditorPage() {
         subLevelTitle: sub?.title || '',
         subLevelDescription: sub?.description || '',
         cardCategories: sub?.cardCategories || ['quiz'],
+        ...(sector ? { sectorName: sector.name, sectorDescription: sector.description } : {}),
       };
     }
     return { programName: data.name || programId };
@@ -149,6 +153,7 @@ export default function ChallengeEditorPage() {
     if (aiModalType === 'sublevel_content' && contentTarget) {
       const gen = generated as Record<string, unknown>;
       const { levelIdx, subIdx } = contentTarget;
+      const tagSector = activeSectorId || undefined;
       setData((prev) => {
         const levels = [...prev.levels];
         const level = { ...levels[levelIdx] };
@@ -156,19 +161,19 @@ export default function ChallengeEditorPage() {
         const sub = { ...subs[subIdx] };
 
         if (Array.isArray(gen.quizzes)) {
-          sub.quizzes = [...(sub.quizzes || []), ...(gen.quizzes as Quiz[]).map((q) => ({ ...q, id: q.id || `quiz_${generateId()}` }))];
+          sub.quizzes = [...(sub.quizzes || []), ...(gen.quizzes as Quiz[]).map((q) => ({ ...q, id: q.id || `quiz_${generateId()}`, sectorId: tagSector }))];
         }
         if (Array.isArray(gen.duels)) {
-          sub.duels = [...(sub.duels || []), ...(gen.duels as Duel[]).map((d) => ({ ...d, id: d.id || `duel_${generateId()}` }))];
+          sub.duels = [...(sub.duels || []), ...(gen.duels as Duel[]).map((d) => ({ ...d, id: d.id || `duel_${generateId()}`, sectorId: tagSector }))];
         }
         if (Array.isArray(gen.fundings)) {
-          sub.fundings = [...(sub.fundings || []), ...(gen.fundings as Funding[]).map((f) => ({ ...f, id: f.id || `fund_${generateId()}` }))];
+          sub.fundings = [...(sub.fundings || []), ...(gen.fundings as Funding[]).map((f) => ({ ...f, id: f.id || `fund_${generateId()}`, sectorId: tagSector }))];
         }
         if (Array.isArray(gen.opportunities)) {
-          sub.opportunities = [...(sub.opportunities || []), ...(gen.opportunities as Opportunity[]).map((o) => ({ ...o, id: o.id || `opp_${generateId()}` }))];
+          sub.opportunities = [...(sub.opportunities || []), ...(gen.opportunities as Opportunity[]).map((o) => ({ ...o, id: o.id || `opp_${generateId()}`, sectorId: tagSector }))];
         }
         if (Array.isArray(gen.challengeEvents)) {
-          sub.challengeEvents = [...(sub.challengeEvents || []), ...(gen.challengeEvents as ChallengeEvent[]).map((c) => ({ ...c, id: c.id || `chal_${generateId()}` }))];
+          sub.challengeEvents = [...(sub.challengeEvents || []), ...(gen.challengeEvents as ChallengeEvent[]).map((c) => ({ ...c, id: c.id || `chal_${generateId()}`, sectorId: tagSector }))];
         }
 
         subs[subIdx] = sub;
@@ -176,11 +181,12 @@ export default function ChallengeEditorPage() {
         levels[levelIdx] = level;
         return { ...prev, levels };
       });
+      const sectorLabel = tagSector ? data.sectors.find(s => s.id === tagSector)?.name : 'general';
       const counts = Object.entries(gen as Record<string, unknown>)
         .filter(([, v]) => Array.isArray(v))
         .map(([k, v]) => `${(v as unknown[]).length} ${k}`)
         .join(', ');
-      toast.success(`Contenu genere : ${counts}`);
+      toast.success(`Contenu genere (${sectorLabel}) : ${counts}`);
       setContentTarget(null);
       return;
     }
@@ -511,15 +517,23 @@ export default function ChallengeEditorPage() {
     const sub = data.levels[levelIdx]?.subLevels[subIdx];
     if (!sub) return;
 
+    // Auto-tag imported content with active sector
+    const tagSector = activeSectorId || undefined;
+    const tagQuizzes = (items: Quiz[]) => tagSector ? items.map(item => ({ ...item, sectorId: tagSector })) : items;
+    const tagDuels = (items: Duel[]) => tagSector ? items.map(item => ({ ...item, sectorId: tagSector })) : items;
+    const tagFundings = (items: Funding[]) => tagSector ? items.map(item => ({ ...item, sectorId: tagSector })) : items;
+    const tagOpportunities = (items: Opportunity[]) => tagSector ? items.map(item => ({ ...item, sectorId: tagSector })) : items;
+    const tagChallengeEvents = (items: ChallengeEvent[]) => tagSector ? items.map(item => ({ ...item, sectorId: tagSector })) : items;
+
     const merge = <T,>(existing: T[], incoming: T[]) =>
       mode === 'replace' ? incoming : [...existing, ...incoming];
 
     const updates: Partial<typeof sub> = {};
-    if (imported.quizzes.length > 0) updates.quizzes = merge(sub.quizzes || [], imported.quizzes);
-    if (imported.duels.length > 0) updates.duels = merge(sub.duels || [], imported.duels);
-    if (imported.fundings.length > 0) updates.fundings = merge(sub.fundings || [], imported.fundings);
-    if (imported.opportunities.length > 0) updates.opportunities = merge(sub.opportunities || [], imported.opportunities);
-    if (imported.challengeEvents.length > 0) updates.challengeEvents = merge(sub.challengeEvents || [], imported.challengeEvents);
+    if (imported.quizzes.length > 0) updates.quizzes = merge(sub.quizzes || [], tagQuizzes(imported.quizzes));
+    if (imported.duels.length > 0) updates.duels = merge(sub.duels || [], tagDuels(imported.duels));
+    if (imported.fundings.length > 0) updates.fundings = merge(sub.fundings || [], tagFundings(imported.fundings));
+    if (imported.opportunities.length > 0) updates.opportunities = merge(sub.opportunities || [], tagOpportunities(imported.opportunities));
+    if (imported.challengeEvents.length > 0) updates.challengeEvents = merge(sub.challengeEvents || [], tagChallengeEvents(imported.challengeEvents));
 
     const updatedLevels = data.levels.map((lvl, li) =>
       li !== levelIdx ? lvl : {
@@ -1007,6 +1021,46 @@ export default function ChallengeEditorPage() {
               </div>
             </div>
 
+            {/* Sector selector bar */}
+            {data.sectors.length > 0 && (
+              <div className="flex items-center gap-2 px-5 py-2 shrink-0" style={{ background: 'rgba(155,89,182,0.05)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <Target size={13} style={{ color: '#9B59B6', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>Secteur :</span>
+                <div className="flex gap-1 flex-wrap">
+                  <button
+                    onClick={() => setActiveSectorId('')}
+                    className="rounded-md px-2.5 py-1 transition-all"
+                    style={{
+                      fontSize: 10, fontWeight: 600, cursor: 'pointer', border: 'none',
+                      background: !activeSectorId ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                      color: !activeSectorId ? '#fff' : 'rgba(255,255,255,0.4)',
+                    }}
+                  >
+                    Tous
+                  </button>
+                  {data.sectors.map((sec) => (
+                    <button
+                      key={sec.id}
+                      onClick={() => setActiveSectorId(sec.id)}
+                      className="rounded-md px-2.5 py-1 transition-all"
+                      style={{
+                        fontSize: 10, fontWeight: 600, cursor: 'pointer', border: 'none',
+                        background: activeSectorId === sec.id ? 'rgba(155,89,182,0.25)' : 'rgba(255,255,255,0.04)',
+                        color: activeSectorId === sec.id ? '#9B59B6' : 'rgba(255,255,255,0.4)',
+                      }}
+                    >
+                      {sec.name}
+                    </button>
+                  ))}
+                </div>
+                {activeSectorId && (
+                  <span style={{ fontSize: 9, color: '#9B59B6', marginLeft: 'auto', flexShrink: 0 }}>
+                    Generer / Importer = auto-tague &quot;{data.sectors.find(s => s.id === activeSectorId)?.name}&quot;
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Action bar */}
             <div className="flex items-center gap-2 px-5 py-2.5 shrink-0" style={{ background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button
@@ -1025,16 +1079,42 @@ export default function ChallengeEditorPage() {
                 <Upload size={11} />
                 Importer des {activeTabConfig.label.toLowerCase()}
               </button>
+              <button
+                onClick={() => {
+                  setContentTarget({ levelIdx: contentModal.levelIdx, subIdx: contentModal.subIdx });
+                  setAiAutoPrompt(
+                    activeSectorId
+                      ? `Genere le contenu educatif pour ce sous-niveau, specifique au secteur "${data.sectors.find(s => s.id === activeSectorId)?.name}". Tout le contenu doit etre contextualise pour ce secteur.`
+                      : 'Genere le contenu educatif pour ce sous-niveau'
+                  );
+                  setAiModalType('sublevel_content');
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                style={{ background: 'rgba(255,188,64,0.12)', border: '1px solid rgba(255,188,64,0.25)', color: '#FFBC40', cursor: 'pointer', marginLeft: 'auto' }}
+              >
+                <Sparkles size={11} />
+                {activeSectorId ? `Generer IA (${data.sectors.find(s => s.id === activeSectorId)?.name})` : 'Generer IA'}
+              </button>
             </div>
 
             {/* Content list */}
             <div className="flex-1 overflow-auto px-5 py-4">
-              {contentTab === 'quizzes' && (
+              {contentTab === 'quizzes' && (() => {
+                const filtered = (contentModalSub.quizzes || []).map((q, qi) => ({ item: q, origIndex: qi }))
+                  .filter(({ item }) => !activeSectorId || !item.sectorId || item.sectorId === activeSectorId);
+                return (
                 <div className="flex flex-col gap-2">
-                  {(contentModalSub.quizzes || []).map((q, qi) => (
+                  {filtered.map(({ item: q, origIndex: qi }) => (
                     <div key={q.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ fontSize: 10, color: '#2196F3', fontWeight: 600 }}>Quiz #{qi + 1} — {q.category} ({q.difficulty})</span>
+                        <span style={{ fontSize: 10, color: '#2196F3', fontWeight: 600 }}>
+                          Quiz #{qi + 1} — {q.category} ({q.difficulty})
+                          {q.sectorId && (
+                            <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>
+                              {data.sectors.find(s => s.id === q.sectorId)?.name || q.sectorId}
+                            </span>
+                          )}
+                        </span>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingQuiz({ quiz: q, index: qi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
                           <button onClick={() => removeContentItem('quizzes', qi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
@@ -1051,15 +1131,26 @@ export default function ChallengeEditorPage() {
                       {q.explanation && <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 4, fontStyle: 'italic' }}>{q.explanation}</p>}
                     </div>
                   ))}
-                  {!(contentModalSub.quizzes?.length) && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun quiz</p>}
+                  {filtered.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun quiz{activeSectorId ? ` pour "${data.sectors.find(s => s.id === activeSectorId)?.name}"` : ''}</p>}
                 </div>
-              )}
-              {contentTab === 'duels' && (
+                );
+              })()}
+              {contentTab === 'duels' && (() => {
+                const filtered = (contentModalSub.duels || []).map((d, di) => ({ item: d, origIndex: di }))
+                  .filter(({ item }) => !activeSectorId || !item.sectorId || item.sectorId === activeSectorId);
+                return (
                 <div className="flex flex-col gap-2">
-                  {(contentModalSub.duels || []).map((d, di) => (
+                  {filtered.map(({ item: d, origIndex: di }) => (
                     <div key={d.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ fontSize: 10, color: '#9C27B0', fontWeight: 600 }}>Duel #{di + 1} — {d.category}</span>
+                        <span style={{ fontSize: 10, color: '#9C27B0', fontWeight: 600 }}>
+                          Duel #{di + 1} — {d.category}
+                          {d.sectorId && (
+                            <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>
+                              {data.sectors.find(s => s.id === d.sectorId)?.name || d.sectorId}
+                            </span>
+                          )}
+                        </span>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingDuel({ duel: d, index: di })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
                           <button onClick={() => removeContentItem('duels', di)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
@@ -1075,15 +1166,26 @@ export default function ChallengeEditorPage() {
                       </div>
                     </div>
                   ))}
-                  {!(contentModalSub.duels?.length) && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun duel</p>}
+                  {filtered.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun duel{activeSectorId ? ` pour "${data.sectors.find(s => s.id === activeSectorId)?.name}"` : ''}</p>}
                 </div>
-              )}
-              {contentTab === 'fundings' && (
+                );
+              })()}
+              {contentTab === 'fundings' && (() => {
+                const filtered = (contentModalSub.fundings || []).map((f, fi) => ({ item: f, origIndex: fi }))
+                  .filter(({ item }) => !activeSectorId || !item.sectorId || item.sectorId === activeSectorId);
+                return (
                 <div className="flex flex-col gap-2">
-                  {(contentModalSub.fundings || []).map((f, fi) => (
+                  {filtered.map(({ item: f, origIndex: fi }) => (
                     <div key={f.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ fontSize: 10, color: '#FF9800', fontWeight: 600 }}>Financement #{fi + 1}</span>
+                        <span style={{ fontSize: 10, color: '#FF9800', fontWeight: 600 }}>
+                          Financement #{fi + 1}
+                          {f.sectorId && (
+                            <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>
+                              {data.sectors.find(s => s.id === f.sectorId)?.name || f.sectorId}
+                            </span>
+                          )}
+                        </span>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingFunding({ funding: f, index: fi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
                           <button onClick={() => removeContentItem('fundings', fi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
@@ -1093,15 +1195,26 @@ export default function ChallengeEditorPage() {
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{f.description}</p>
                     </div>
                   ))}
-                  {!(contentModalSub.fundings?.length) && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun financement</p>}
+                  {filtered.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun financement{activeSectorId ? ` pour "${data.sectors.find(s => s.id === activeSectorId)?.name}"` : ''}</p>}
                 </div>
-              )}
-              {contentTab === 'opportunities' && (
+                );
+              })()}
+              {contentTab === 'opportunities' && (() => {
+                const filtered = (contentModalSub.opportunities || []).map((o, oi) => ({ item: o, origIndex: oi }))
+                  .filter(({ item }) => !activeSectorId || !item.sectorId || item.sectorId === activeSectorId);
+                return (
                 <div className="flex flex-col gap-2">
-                  {(contentModalSub.opportunities || []).map((o, oi) => (
+                  {filtered.map(({ item: o, origIndex: oi }) => (
                     <div key={o.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ fontSize: 10, color: '#4CAF50', fontWeight: 600 }}>Opportunite #{oi + 1}</span>
+                        <span style={{ fontSize: 10, color: '#4CAF50', fontWeight: 600 }}>
+                          Opportunite #{oi + 1}
+                          {o.sectorId && (
+                            <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>
+                              {data.sectors.find(s => s.id === o.sectorId)?.name || o.sectorId}
+                            </span>
+                          )}
+                        </span>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingOpportunity({ opportunity: o, index: oi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
                           <button onClick={() => removeContentItem('opportunities', oi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
@@ -1111,15 +1224,26 @@ export default function ChallengeEditorPage() {
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{o.description}</p>
                     </div>
                   ))}
-                  {!(contentModalSub.opportunities?.length) && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucune opportunite</p>}
+                  {filtered.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucune opportunite{activeSectorId ? ` pour "${data.sectors.find(s => s.id === activeSectorId)?.name}"` : ''}</p>}
                 </div>
-              )}
-              {contentTab === 'challengeEvents' && (
+                );
+              })()}
+              {contentTab === 'challengeEvents' && (() => {
+                const filtered = (contentModalSub.challengeEvents || []).map((c, ci) => ({ item: c, origIndex: ci }))
+                  .filter(({ item }) => !activeSectorId || !item.sectorId || item.sectorId === activeSectorId);
+                return (
                 <div className="flex flex-col gap-2">
-                  {(contentModalSub.challengeEvents || []).map((c, ci) => (
+                  {filtered.map(({ item: c, origIndex: ci }) => (
                     <div key={c.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ fontSize: 10, color: '#F44336', fontWeight: 600 }}>Defi #{ci + 1}</span>
+                        <span style={{ fontSize: 10, color: '#F44336', fontWeight: 600 }}>
+                          Defi #{ci + 1}
+                          {c.sectorId && (
+                            <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>
+                              {data.sectors.find(s => s.id === c.sectorId)?.name || c.sectorId}
+                            </span>
+                          )}
+                        </span>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingChallengeEvent({ challengeEvent: c, index: ci })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
                           <button onClick={() => removeContentItem('challengeEvents', ci)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
@@ -1129,9 +1253,10 @@ export default function ChallengeEditorPage() {
                       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{c.description}</p>
                     </div>
                   ))}
-                  {!(contentModalSub.challengeEvents?.length) && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun defi</p>}
+                  {filtered.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 20 }}>Aucun defi{activeSectorId ? ` pour "${data.sectors.find(s => s.id === activeSectorId)?.name}"` : ''}</p>}
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Footer */}
@@ -1173,6 +1298,7 @@ export default function ChallengeEditorPage() {
           quiz={editingQuiz.quiz}
           onSave={handleSaveQuiz}
           onClose={() => setEditingQuiz({ quiz: null, index: null })}
+          sectors={data.sectors}
         />
       )}
 
@@ -1181,6 +1307,7 @@ export default function ChallengeEditorPage() {
           duel={editingDuel.duel}
           onSave={handleSaveDuel}
           onClose={() => setEditingDuel({ duel: null, index: null })}
+          sectors={data.sectors}
         />
       )}
 
@@ -1189,6 +1316,7 @@ export default function ChallengeEditorPage() {
           funding={editingFunding.funding}
           onSave={handleSaveFunding}
           onClose={() => setEditingFunding({ funding: null, index: null })}
+          sectors={data.sectors}
         />
       )}
 
@@ -1197,6 +1325,7 @@ export default function ChallengeEditorPage() {
           opportunity={editingOpportunity.opportunity}
           onSave={handleSaveOpportunity}
           onClose={() => setEditingOpportunity({ opportunity: null, index: null })}
+          sectors={data.sectors}
         />
       )}
 
@@ -1205,6 +1334,7 @@ export default function ChallengeEditorPage() {
           challengeEvent={editingChallengeEvent.challengeEvent}
           onSave={handleSaveChallengeEvent}
           onClose={() => setEditingChallengeEvent({ challengeEvent: null, index: null })}
+          sectors={data.sectors}
         />
       )}
 

@@ -9,6 +9,7 @@ interface DuelEditorProps {
   duel?: Duel | null;
   onSave: (duel: Duel) => void;
   onClose: () => void;
+  sectors?: { id: string; name: string }[];
 }
 
 const CATEGORIES = [
@@ -16,7 +17,7 @@ const CATEGORIES = [
   'legal', 'ressources-humaines', 'strategie', 'innovation'
 ];
 
-export default function DuelEditor({ duel, onSave, onClose }: DuelEditorProps) {
+export default function DuelEditor({ duel, onSave, onClose, sectors }: DuelEditorProps) {
   const [formData, setFormData] = useState<Duel>({
     id: duel?.id || `duel_${generateId()}`,
     question: duel?.question || '',
@@ -26,6 +27,7 @@ export default function DuelEditor({ duel, onSave, onClose }: DuelEditorProps) {
       { text: '', points: 10 },
     ],
     category: duel?.category || 'business-model',
+    sectorId: duel?.sectorId || '',
   });
 
   const isValid = formData.question.trim() &&
@@ -71,6 +73,24 @@ export default function DuelEditor({ duel, onSave, onClose }: DuelEditorProps) {
                 rows={3}
                 style={{ resize: 'vertical' }}
               />
+            </div>
+
+            {/* Sector */}
+            <div>
+              <label className="label">Secteur (optionnel)</label>
+              <select
+                className="input-field"
+                value={formData.sectorId || ''}
+                onChange={(e) => setFormData({ ...formData, sectorId: e.target.value || undefined })}
+              >
+                <option value="">Tous les secteurs (général)</option>
+                {(sectors || []).map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+                Si un secteur est sélectionné, ce contenu ne sera affiché qu&apos;aux joueurs ayant choisi ce secteur
+              </p>
             </div>
 
             {/* Category */}
