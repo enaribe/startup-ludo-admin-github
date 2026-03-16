@@ -188,7 +188,7 @@ Genere un objet JSON complet pour une edition du jeu. Format:
   "enabled": true
 }
 
-Genere au minimum: 5 quiz, 4 duels, 4 fundings, 10 opportunites, 6 challenges, 4 defaultProjects. Plus si demande.
+Genere au minimum: 15 quiz, 10 duels, 8 fundings, 15 opportunites, 10 challenges, 4 defaultProjects. Plus si demande. IMPORTANT: genere le MAXIMUM de contenu possible, ne te limite pas aux minimums.
 
 Pour les defaultProjects:
 - Chaque projet doit avoir un id unique (slug, ex: "agritech-smart-irrigation")
@@ -444,6 +444,7 @@ REGLES D'EXTRACTION:
 - Inclus UNIQUEMENT les types pour lesquels tu trouves du contenu dans le texte
 - Si le texte est incomplet ou ambigu, complète intelligemment en restant fidèle au sujet
 - Ne rajoute PAS de contenu inventé si le texte n'en contient pas
+- TRES IMPORTANT: Extrais TOUT le contenu du texte sans exception. Si le texte contient 40 quiz, retourne les 40 quiz. Si le texte contient 15 opportunités, retourne les 15 opportunités. Ne limite JAMAIS le nombre d'éléments extraits. Retourne CHAQUE élément trouvé dans le texte, même si la réponse est très longue
 - category pour les quiz: "business-model", "financement", "marketing", "legal", "management", "tech", "pitch", "strategie"`,
     buildUserPrompt: (input, ctx) => {
       const filterMap: Record<string, string> = {

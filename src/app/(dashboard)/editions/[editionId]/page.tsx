@@ -467,6 +467,14 @@ Pour les projets par défaut, chaque projet doit avoir :
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            className="btn-secondary flex items-center gap-1.5"
+            onClick={() => { setImportFilter(null); setShowImportModal(true); }}
+            style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+          >
+            <Upload size={13} />
+            Importer tout
+          </button>
           {isNew && (
             <button
               className="btn-secondary flex items-center gap-2"

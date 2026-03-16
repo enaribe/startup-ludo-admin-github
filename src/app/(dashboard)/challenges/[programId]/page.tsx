@@ -75,6 +75,7 @@ export default function ChallengeEditorPage() {
   const [editingOpportunity, setEditingOpportunity] = useState<{ opportunity: Opportunity | null; index: number | null }>({ opportunity: null, index: null });
   const [editingChallengeEvent, setEditingChallengeEvent] = useState<{ challengeEvent: ChallengeEvent | null; index: number | null }>({ challengeEvent: null, index: null });
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importFilterOverride, setImportFilterOverride] = useState<ContentTab | undefined>(undefined);
 
   const aiContext = (() => {
     if (aiModalType === 'challenge_full') return { ...briefing };
@@ -776,79 +777,92 @@ export default function ChallengeEditorPage() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-2">
                         {level.subLevels.map((sub, si) => {
                           const contentCount = getContentCount(sub);
+                          const contentParts: { key: string; count: number; color: string; label: string }[] = [
+                            { key: 'quizzes', count: sub.quizzes?.length || 0, color: '#2196F3', label: 'Q' },
+                            { key: 'duels', count: sub.duels?.length || 0, color: '#9C27B0', label: 'D' },
+                            { key: 'fundings', count: sub.fundings?.length || 0, color: '#FF9800', label: 'F' },
+                            { key: 'opportunities', count: sub.opportunities?.length || 0, color: '#4CAF50', label: 'O' },
+                            { key: 'challengeEvents', count: sub.challengeEvents?.length || 0, color: '#F44336', label: 'E' },
+                          ];
                           return (
-                          <div key={sub.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <div className="flex items-start justify-between mb-2">
-                              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.4)' }}>Sous-niveau {si + 1}</span>
-                              <button onClick={() => removeSubLevel(li, si)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}>
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                            <div className="flex gap-3 mb-2">
-                              <div className="flex-1">
-                                <input className="input-field" value={sub.title} onChange={(e) => updateSubLevel(li, si, 'title', e.target.value)} placeholder="Titre" style={{ fontSize: 12 }} />
+                          <div key={sub.id} className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.12)' }}>
+                            {/* Compact header row */}
+                            <div className="flex items-center gap-2 px-3 py-2">
+                              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', minWidth: 16 }}>{si + 1}</span>
+                              <input
+                                className="input-field"
+                                value={sub.title}
+                                onChange={(e) => updateSubLevel(li, si, 'title', e.target.value)}
+                                placeholder="Titre du sous-niveau"
+                                style={{ fontSize: 12, padding: '4px 8px', flex: 1, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}
+                              />
+                              <input
+                                type="number"
+                                className="input-field"
+                                value={sub.xpReward}
+                                onChange={(e) => updateSubLevel(li, si, 'xpReward', Number(e.target.value))}
+                                placeholder="XP"
+                                style={{ fontSize: 11, padding: '4px 6px', width: 60, textAlign: 'center', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}
+                                title="XP Reward"
+                              />
+                              {/* Content dots */}
+                              <div className="flex items-center gap-1">
+                                {contentParts.filter(p => p.count > 0).map(p => (
+                                  <span
+                                    key={p.key}
+                                    title={`${p.count} ${p.key}`}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      width: 18, height: 18, borderRadius: '50%', fontSize: 8, fontWeight: 700,
+                                      background: `${p.color}20`, color: p.color,
+                                    }}
+                                  >
+                                    {p.count}
+                                  </span>
+                                ))}
+                                {contentCount === 0 && (
+                                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>vide</span>
+                                )}
                               </div>
-                              <div style={{ width: 80 }}>
-                                <input type="number" className="input-field" value={sub.xpReward} onChange={(e) => updateSubLevel(li, si, 'xpReward', Number(e.target.value))} placeholder="XP" style={{ fontSize: 12 }} />
-                              </div>
-                            </div>
-                            <textarea className="input-field" value={sub.description} onChange={(e) => updateSubLevel(li, si, 'description', e.target.value)} placeholder="Description" rows={1} style={{ fontSize: 12, resize: 'vertical' }} />
-
-                            {/* Card Categories */}
-                            <div className="mt-2 mb-2">
-                              <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Types de cartes</label>
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {ALL_CARD_CATEGORIES.map((cat) => {
-                                  const active = (sub.cardCategories || []).includes(cat.id);
-                                  return (
-                                    <button
-                                      key={cat.id}
-                                      onClick={() => toggleCardCategory(li, si, cat.id)}
-                                      style={{
-                                        padding: '2px 8px',
-                                        borderRadius: 10,
-                                        fontSize: 10,
-                                        fontWeight: active ? 600 : 400,
-                                        background: active ? `${cat.color}20` : 'rgba(255,255,255,0.05)',
-                                        color: active ? cat.color : 'rgba(255,255,255,0.3)',
-                                        border: `1px solid ${active ? `${cat.color}40` : 'rgba(255,255,255,0.08)'}`,
-                                        cursor: 'pointer',
-                                      }}
-                                    >
-                                      {cat.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            {/* Content badge + actions */}
-                            <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                              {/* Actions */}
                               <button
                                 onClick={() => { setContentModal({ levelIdx: li, subIdx: si }); setContentTab('quizzes'); }}
-                                style={{
-                                  background: 'none', border: 'none', cursor: 'pointer',
-                                  fontSize: 11, color: contentCount > 0 ? '#4CAF50' : 'rgba(255,255,255,0.3)',
-                                }}
+                                title="Voir / editer le contenu"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: 2 }}
                               >
-                                <BookOpen size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
-                                {getContentLabel(sub)}
+                                <BookOpen size={13} />
                               </button>
                               <button
                                 onClick={() => generateSubLevelContent(li, si)}
-                                className="flex items-center gap-1"
-                                style={{
-                                  background: 'rgba(255,188,64,0.1)', border: '1px solid rgba(255,188,64,0.2)',
-                                  borderRadius: 6, padding: '2px 8px', cursor: 'pointer', color: '#FFBC40', fontSize: 10,
-                                }}
+                                title="Generer du contenu IA"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40', padding: 2 }}
                               >
-                                <Sparkles size={10} />
-                                Generer
+                                <Sparkles size={13} />
+                              </button>
+                              <button
+                                onClick={() => removeSubLevel(li, si)}
+                                title="Supprimer"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(244,67,54,0.5)', padding: 2 }}
+                              >
+                                <Trash2 size={12} />
                               </button>
                             </div>
+                            {/* Description row (collapsible feel, always visible but compact) */}
+                            {(sub.description || true) && (
+                              <div className="px-3 pb-2" style={{ paddingLeft: 34 }}>
+                                <textarea
+                                  className="input-field"
+                                  value={sub.description}
+                                  onChange={(e) => updateSubLevel(li, si, 'description', e.target.value)}
+                                  placeholder="Description..."
+                                  rows={1}
+                                  style={{ fontSize: 11, padding: '3px 8px', resize: 'vertical', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)' }}
+                                />
+                              </div>
+                            )}
                           </div>
                           );
                         })}
@@ -910,88 +924,113 @@ export default function ChallengeEditorPage() {
       </div>
 
       {/* Content Detail Modal */}
-      {contentModal && contentModalSub && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>
+      {contentModal && contentModalSub && (() => {
+        const CONTENT_TABS: { key: ContentTab; label: string; color: string; count: number }[] = [
+          { key: 'quizzes', label: 'Quiz', color: '#2196F3', count: contentModalSub.quizzes?.length || 0 },
+          { key: 'duels', label: 'Duels', color: '#9C27B0', count: contentModalSub.duels?.length || 0 },
+          { key: 'fundings', label: 'Financements', color: '#FF9800', count: contentModalSub.fundings?.length || 0 },
+          { key: 'opportunities', label: 'Opportunites', color: '#4CAF50', count: contentModalSub.opportunities?.length || 0 },
+          { key: 'challengeEvents', label: 'Defis', color: '#F44336', count: contentModalSub.challengeEvents?.length || 0 },
+        ];
+        const activeTabConfig = CONTENT_TABS.find(t => t.key === contentTab)!;
+        const totalContent = CONTENT_TABS.reduce((s, t) => s + t.count, 0);
+
+        const addActions: Record<ContentTab, () => void> = {
+          quizzes: () => setEditingQuiz({ quiz: null, index: -1 }),
+          duels: () => setEditingDuel({ duel: null, index: -1 }),
+          fundings: () => setEditingFunding({ funding: null, index: -1 }),
+          opportunities: () => setEditingOpportunity({ opportunity: null, index: -1 }),
+          challengeEvents: () => setEditingChallengeEvent({ challengeEvent: null, index: -1 }),
+        };
+        const addLabels: Record<ContentTab, string> = {
+          quizzes: 'Ajouter un quiz', duels: 'Ajouter un duel', fundings: 'Ajouter un financement',
+          opportunities: 'Ajouter une opportunite', challengeEvents: 'Ajouter un defi',
+        };
+
+        return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)' }}>
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
-                  Contenu: {contentModalSub.title || 'Sous-niveau'}
-                </h3>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>{getContentLabel(contentModalSub)}</p>
+            <div className="px-5 py-4 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
+                    {contentModalSub.title || 'Sous-niveau'}
+                  </h3>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>
+                    {totalContent} element{totalContent !== 1 ? 's' : ''} au total
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setImportFilterOverride(undefined); setShowImportModal(true); }}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                    style={{ background: 'rgba(255,188,64,0.12)', border: '1px solid rgba(255,188,64,0.25)', color: '#FFBC40', cursor: 'pointer' }}
+                    title="Importer tout type de contenu via IA"
+                  >
+                    <Upload size={13} />
+                    Importer tout
+                  </button>
+                  <button onClick={() => setContentModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowImportModal(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-                  style={{
-                    background: 'rgba(255,188,64,0.12)',
-                    border: '1px solid rgba(255,188,64,0.25)',
-                    color: '#FFBC40',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Upload size={13} />
-                  Importer via l&apos;IA
-                </button>
-                <button onClick={() => setContentModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
-                  <X size={18} />
-                </button>
+
+              {/* Tabs */}
+              <div className="flex gap-0.5">
+                {CONTENT_TABS.map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setContentTab(t.key)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all"
+                    style={{
+                      fontSize: 11,
+                      fontWeight: contentTab === t.key ? 600 : 400,
+                      color: contentTab === t.key ? t.color : 'rgba(255,255,255,0.35)',
+                      background: contentTab === t.key ? `${t.color}15` : 'transparent',
+                      border: contentTab === t.key ? `1px solid ${t.color}30` : '1px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {t.label}
+                    {t.count > 0 && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8,
+                        background: `${t.color}20`, color: t.color,
+                      }}>
+                        {t.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Content tabs */}
-            <div className="flex gap-1 px-5 pt-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              {([
-                { key: 'quizzes' as ContentTab, label: 'Quiz', count: contentModalSub.quizzes?.length || 0 },
-                { key: 'duels' as ContentTab, label: 'Duels', count: contentModalSub.duels?.length || 0 },
-                { key: 'fundings' as ContentTab, label: 'Fundings', count: contentModalSub.fundings?.length || 0 },
-                { key: 'opportunities' as ContentTab, label: 'Opportunites', count: contentModalSub.opportunities?.length || 0 },
-                { key: 'challengeEvents' as ContentTab, label: 'Defis', count: contentModalSub.challengeEvents?.length || 0 },
-              ]).map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setContentTab(t.key)}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: 12,
-                    fontWeight: contentTab === t.key ? 600 : 400,
-                    color: contentTab === t.key ? '#FFBC40' : 'rgba(255,255,255,0.4)',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: contentTab === t.key ? '2px solid #FFBC40' : '2px solid transparent',
-                    cursor: 'pointer',
-                    marginBottom: -1,
-                  }}
-                >
-                  {t.label} ({t.count})
-                </button>
-              ))}
+            {/* Action bar */}
+            <div className="flex items-center gap-2 px-5 py-2.5 shrink-0" style={{ background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <button
+                onClick={addActions[contentTab]}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                style={{ background: `${activeTabConfig.color}15`, border: `1px solid ${activeTabConfig.color}30`, color: activeTabConfig.color, cursor: 'pointer' }}
+              >
+                <Plus size={12} />
+                {addLabels[contentTab]}
+              </button>
+              <button
+                onClick={() => { setImportFilterOverride(contentTab); setShowImportModal(true); }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}
+              >
+                <Upload size={11} />
+                Importer des {activeTabConfig.label.toLowerCase()}
+              </button>
             </div>
 
             {/* Content list */}
             <div className="flex-1 overflow-auto px-5 py-4">
               {contentTab === 'quizzes' && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingQuiz({ quiz: null, index: -1 })}
-                      className="btn-primary flex items-center gap-2"
-                      style={{ fontSize: 12, padding: '6px 12px' }}
-                    >
-                      <Plus size={14} />
-                      Ajouter un quiz
-                    </button>
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      className="btn-secondary flex items-center gap-1.5"
-                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
-                    >
-                      <Upload size={13} />
-                      Importer
-                    </button>
-                  </div>
+                <div className="flex flex-col gap-2">
                   {(contentModalSub.quizzes || []).map((q, qi) => (
                     <div key={q.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1002,7 +1041,7 @@ export default function ChallengeEditorPage() {
                         </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff', marginBottom: 4 }}>{q.question}</p>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-0.5">
                         {q.options.map((opt, oi) => (
                           <span key={oi} style={{ fontSize: 11, color: q.correctAnswer === oi ? '#4CAF50' : 'rgba(255,255,255,0.4)' }}>
                             {q.correctAnswer === oi ? '✓' : '·'} {opt}
@@ -1016,25 +1055,7 @@ export default function ChallengeEditorPage() {
                 </div>
               )}
               {contentTab === 'duels' && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingDuel({ duel: null, index: -1 })}
-                      className="btn-primary flex items-center gap-2"
-                      style={{ fontSize: 12, padding: '6px 12px' }}
-                    >
-                      <Plus size={14} />
-                      Ajouter un duel
-                    </button>
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      className="btn-secondary flex items-center gap-1.5"
-                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
-                    >
-                      <Upload size={13} />
-                      Importer
-                    </button>
-                  </div>
+                <div className="flex flex-col gap-2">
                   {(contentModalSub.duels || []).map((d, di) => (
                     <div key={d.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1045,7 +1066,7 @@ export default function ChallengeEditorPage() {
                         </div>
                       </div>
                       <p style={{ fontSize: 12, color: '#fff', marginBottom: 4 }}>{d.question}</p>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-0.5">
                         {d.options.map((opt, oi) => (
                           <span key={oi} style={{ fontSize: 11, color: opt.points === 30 ? '#4CAF50' : opt.points === 20 ? '#FFBC40' : 'rgba(255,255,255,0.4)' }}>
                             {opt.points}pts — {opt.text}
@@ -1058,29 +1079,11 @@ export default function ChallengeEditorPage() {
                 </div>
               )}
               {contentTab === 'fundings' && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingFunding({ funding: null, index: -1 })}
-                      className="btn-primary flex items-center gap-2"
-                      style={{ fontSize: 12, padding: '6px 12px' }}
-                    >
-                      <Plus size={14} />
-                      Ajouter un financement
-                    </button>
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      className="btn-secondary flex items-center gap-1.5"
-                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
-                    >
-                      <Upload size={13} />
-                      Importer
-                    </button>
-                  </div>
+                <div className="flex flex-col gap-2">
                   {(contentModalSub.fundings || []).map((f, fi) => (
                     <div key={f.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ fontSize: 10, color: '#FF9800', fontWeight: 600 }}>Funding #{fi + 1}</span>
+                        <span style={{ fontSize: 10, color: '#FF9800', fontWeight: 600 }}>Financement #{fi + 1}</span>
                         <div className="flex gap-2">
                           <button onClick={() => setEditingFunding({ funding: f, index: fi })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40' }}><Edit size={11} /></button>
                           <button onClick={() => removeContentItem('fundings', fi)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}><Trash2 size={11} /></button>
@@ -1094,25 +1097,7 @@ export default function ChallengeEditorPage() {
                 </div>
               )}
               {contentTab === 'opportunities' && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingOpportunity({ opportunity: null, index: -1 })}
-                      className="btn-primary flex items-center gap-2"
-                      style={{ fontSize: 12, padding: '6px 12px' }}
-                    >
-                      <Plus size={14} />
-                      Ajouter une opportunité
-                    </button>
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      className="btn-secondary flex items-center gap-1.5"
-                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
-                    >
-                      <Upload size={13} />
-                      Importer
-                    </button>
-                  </div>
+                <div className="flex flex-col gap-2">
                   {(contentModalSub.opportunities || []).map((o, oi) => (
                     <div key={o.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1130,25 +1115,7 @@ export default function ChallengeEditorPage() {
                 </div>
               )}
               {contentTab === 'challengeEvents' && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingChallengeEvent({ challengeEvent: null, index: -1 })}
-                      className="btn-primary flex items-center gap-2"
-                      style={{ fontSize: 12, padding: '6px 12px' }}
-                    >
-                      <Plus size={14} />
-                      Ajouter un défi
-                    </button>
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      className="btn-secondary flex items-center gap-1.5"
-                      style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
-                    >
-                      <Upload size={13} />
-                      Importer
-                    </button>
-                  </div>
+                <div className="flex flex-col gap-2">
                   {(contentModalSub.challengeEvents || []).map((c, ci) => (
                     <div key={c.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div className="flex justify-between mb-1">
@@ -1168,14 +1135,15 @@ export default function ChallengeEditorPage() {
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 flex justify-end" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="px-5 py-3 flex justify-end shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <button onClick={() => setContentModal(null)} className="btn-secondary" style={{ fontSize: 13 }}>
                 Fermer
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Import Content Modal */}
       {showImportModal && contentModal && (
@@ -1183,7 +1151,7 @@ export default function ChallengeEditorPage() {
           programName={data.name}
           levelTitle={data.levels[contentModal.levelIdx]?.title}
           subLevelTitle={data.levels[contentModal.levelIdx]?.subLevels[contentModal.subIdx]?.title}
-          importFilter={contentTab}
+          importFilter={importFilterOverride}
           onImport={handleImportContent}
           onClose={() => setShowImportModal(false)}
         />

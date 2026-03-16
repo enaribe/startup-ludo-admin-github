@@ -79,7 +79,7 @@ async function callOpenAI(apiKey: string, system: string, user: string): Promise
         { role: 'user', content: user },
       ],
       temperature: 0.8,
-      max_tokens: 4096,
+      max_tokens: 16384,
     }),
   });
 
@@ -106,7 +106,7 @@ async function callAnthropic(apiKey: string, system: string, user: string): Prom
       model: 'claude-3-5-haiku-20241022',
       system,
       messages: [{ role: 'user', content: user }],
-      max_tokens: 4096,
+      max_tokens: 16384,
       temperature: 0.8,
     }),
   });
