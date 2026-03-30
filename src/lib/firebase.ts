@@ -7,6 +7,7 @@ import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getDatabase, type Database } from 'firebase/database';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyB3TEuMAMfV0crfAMc0u63EFy-9rXwFRYc',
@@ -23,6 +24,7 @@ let app: FirebaseApp;
 let auth: Auth;
 let firestore: Firestore;
 let database: Database;
+let storage: FirebaseStorage;
 
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
@@ -33,8 +35,9 @@ if (getApps().length === 0) {
 auth = getAuth(app);
 firestore = getFirestore(app);
 database = getDatabase(app);
+storage = getStorage(app);
 
-export { app, auth, firestore, database };
+export { app, auth, firestore, database, storage };
 
 // ===== Collection paths (mirrored from mobile) =====
 export const COLLECTIONS = {

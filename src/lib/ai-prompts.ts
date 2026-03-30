@@ -19,7 +19,8 @@ export type GenerationType =
   | 'sublevel_content'
   | 'sublevel_content_import'
   | 'achievements'
-  | 'default_projects';
+  | 'default_projects'
+  | 'edition_projects_import';
 
 interface PromptConfig {
   systemPrompt: string;
@@ -510,5 +511,47 @@ Genere un tableau JSON de projets de startup fictifs. Format:
 Les noms doivent sonner africains et modernes. Les descriptions doivent etre realistes.`,
     buildUserPrompt: (input, ctx) =>
       `Edition: ${ctx?.edition || 'classic'}. Secteurs possibles: ${ctx?.sectors || 'variés'}.\n\nDemande: ${input}`,
+  },
+
+  edition_projects_import: {
+    label: 'Import projets edition',
+    placeholder: 'Colle une liste de startups, fiches projet, notes...',
+    description: 'Extrait des projets par defaut (DefaultProject) depuis un texte brut',
+    systemPrompt: `${BASE_SYSTEM}
+
+Tu recois un texte brut (liste, notes, export) decrivant des startups/projets fictifs pour une edition du jeu.
+
+Analyse le texte et extrais TOUS les projets trouves. Retourne UN objet JSON valide avec cette forme EXACTE:
+
+{
+  "defaultProjects": [
+    {
+      "id": "slug-unique-en-minuscules",
+      "name": "Nom de la startup",
+      "description": "Pitch court (1-3 phrases)",
+      "sector": "nom du secteur (aligne avec les secteurs de l'edition si fournis)",
+      "target": "cible client / utilisateurs",
+      "mission": "mission ou vision en une phrase",
+      "initialBudget": 100000,
+      "icon": "business-outline"
+    }
+  ]
+}
+
+REGLES:
+- "id": slug ASCII (ex: agri-smart-dakar), unique; si absent dans le texte, deduis-le du nom
+- "sector": si le texte ne precise pas, choisis le secteur le plus coherent parmi ceux listes dans le contexte, sinon un libelle court coherent
+- "initialBudget": nombre entier positif (ex: 50000-200000) si mentionne ou raisonnable; sinon omets la cle ou mets une valeur plausible
+- "icon": optionnel, nom d'icone ionicons-style (ex: leaf-outline); omets si inconnu
+- Extrais CHAQUE projet distinct du texte; ne limite pas artificiellement le nombre
+- Ne invente pas de projets si le texte n'en contient pas; dans ce cas retourne { "defaultProjects": [] }
+- Ne rajoute pas de champs hors de ce schema`,
+    buildUserPrompt: (input, ctx) => {
+      const parts: string[] = [];
+      if (ctx?.editionName) parts.push(`Edition: ${ctx.editionName}`);
+      if (ctx?.sectors) parts.push(`Secteurs de l'edition (pour aligner les secteurs des projets): ${ctx.sectors}`);
+      parts.push(`\n=== TEXTE A ANALYSER ===\n${input}`);
+      return parts.join('\n');
+    },
   },
 };

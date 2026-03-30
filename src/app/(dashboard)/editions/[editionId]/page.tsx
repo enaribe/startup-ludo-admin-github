@@ -17,6 +17,7 @@ import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
+import ImportEditionProjectsModal from '@/components/ui/ImportEditionProjectsModal';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'quiz' | 'duels' | 'fundings' | 'opportunities' | 'challenges' | 'projects';
@@ -29,11 +30,6 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'opportunities', label: 'Opportunites', icon: <Star size={14} /> },
   { key: 'challenges', label: 'Challenges', icon: <Zap size={14} /> },
   { key: 'projects', label: 'Projets', icon: <FolderKanban size={14} /> },
-];
-
-const QUIZ_CATEGORIES = [
-  'business-model', 'financement', 'marketing', 'legal',
-  'management', 'tech', 'pitch', 'strategie', 'aspects-techniques',
 ];
 
 const EMPTY_EDITION: Omit<EditionData, 'id'> = {
@@ -70,6 +66,7 @@ export default function EditionEditorPage() {
   const [autoPrompt, setAutoPrompt] = useState<string | undefined>(undefined);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showImportProjectsModal, setShowImportProjectsModal] = useState(false);
   const [importFilter, setImportFilter] = useState<keyof ImportedContent | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
 
@@ -437,6 +434,18 @@ Pour les projets par défaut, chaque projet doit avoir :
     toast.success(`${count} élément${count > 1 ? 's' : ''} importé${count > 1 ? 's' : ''} (${mode === 'append' ? 'ajouté' : 'remplacé'})`);
   };
 
+  const handleImportProjects = (imported: DefaultProject[], mode: 'replace' | 'append') => {
+    const next =
+      mode === 'replace'
+        ? imported
+        : [...(data.defaultProjects || []), ...imported];
+    updateField('defaultProjects', next);
+    setShowImportProjectsModal(false);
+    toast.success(
+      `${imported.length} projet${imported.length > 1 ? 's' : ''} importé${imported.length > 1 ? 's' : ''} (${mode === 'append' ? 'ajouté' : 'remplacé'})`
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -727,33 +736,6 @@ Pour les projets par défaut, chaque projet doit avoir :
                       <Plus size={12} />
                       Ajouter une option
                     </button>
-                  </div>
-                  {/* Category & Difficulty */}
-                  <div className="flex gap-4 mb-3">
-                    <div className="flex-1">
-                      <label className="label">Categorie</label>
-                      <select
-                        className="input-field"
-                        value={q.category || 'business-model'}
-                        onChange={(e) => updateQuiz(i, 'category', e.target.value)}
-                      >
-                        {QUIZ_CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ width: 140 }}>
-                      <label className="label">Difficulte</label>
-                      <select
-                        className="input-field"
-                        value={q.difficulty || 'facile'}
-                        onChange={(e) => updateQuiz(i, 'difficulty', e.target.value)}
-                      >
-                        <option value="facile">Facile</option>
-                        <option value="moyen">Moyen</option>
-                        <option value="difficile">Difficile</option>
-                      </select>
-                    </div>
                   </div>
                   {/* Explanation */}
                   <div className="mb-3">
@@ -1102,10 +1084,20 @@ Pour les projets par défaut, chaque projet doit avoir :
                   Ces projets sont proposés aux joueurs qui n&apos;ont pas de startup personnelle
                 </p>
               </div>
-              <button className="btn-primary flex items-center gap-2" onClick={addDefaultProject} style={{ fontSize: 13, padding: '8px 16px' }}>
-                <Plus size={14} />
-                Ajouter
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => setShowImportProjectsModal(true)}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
+                >
+                  <Upload size={13} />
+                  Importer
+                </button>
+                <button className="btn-primary flex items-center gap-2" onClick={addDefaultProject} style={{ fontSize: 13, padding: '8px 16px' }}>
+                  <Plus size={14} />
+                  Ajouter
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(data.defaultProjects || []).map((p, i) => (
@@ -1152,7 +1144,7 @@ Pour les projets par défaut, chaque projet doit avoir :
               <div className="text-center py-12" style={{ color: 'rgba(255,255,255,0.3)' }}>
                 <FolderKanban size={40} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
                 <p style={{ fontSize: 14 }}>Aucun projet par défaut</p>
-                <p style={{ fontSize: 12, marginTop: 4 }}>Générez une édition avec l&apos;IA ou ajoutez manuellement</p>
+                <p style={{ fontSize: 12, marginTop: 4 }}>Générez une édition avec l&apos;IA, importez un texte ou ajoutez manuellement</p>
               </div>
             )}
           </div>
@@ -1166,6 +1158,15 @@ Pour les projets par défaut, chaque projet doit avoir :
           importFilter={importFilter ?? undefined}
           onImport={handleImportContent}
           onClose={() => { setShowImportModal(false); setImportFilter(null); }}
+        />
+      )}
+
+      {showImportProjectsModal && (
+        <ImportEditionProjectsModal
+          editionName={data.name || editionId}
+          sectors={data.sectors || []}
+          onImport={handleImportProjects}
+          onClose={() => setShowImportProjectsModal(false)}
         />
       )}
 

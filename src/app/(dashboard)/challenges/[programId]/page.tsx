@@ -6,6 +6,7 @@ import { ArrowLeft, Save, Plus, Trash2, ChevronDown, ChevronRight, Layers, Targe
 import { getChallengeProgram, saveChallengeProgram } from '@/lib/firestore-service';
 import type { ChallengeProgram, ChallengeLevel, ChallengeSubLevel, ChallengeSector, CardCategory, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import ImageUploadField from '@/components/ui/ImageUploadField';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
 import UnsavedChangesDialog from '@/components/ui/UnsavedChangesDialog';
 import QuizEditor from '@/components/events/QuizEditor';
@@ -44,7 +45,7 @@ export default function ChallengeEditorPage() {
   const isNew = programId === 'new';
 
   const [data, setData] = useState<Omit<ChallengeProgram, 'id'>>({
-    name: '', description: '', levels: [], sectors: [], enabled: true,
+    name: '', description: '', logoUrl: '', bannerUrl: '', levels: [], sectors: [], enabled: true,
   });
   const [originalData, setOriginalData] = useState<Omit<ChallengeProgram, 'id'> | null>(null);
   const [newId, setNewId] = useState('');
@@ -608,6 +609,20 @@ export default function ChallengeEditorPage() {
               <label className="label">Description</label>
               <textarea className="input-field" value={data.description} onChange={(e) => setData((p) => ({ ...p, description: e.target.value }))} rows={3} style={{ resize: 'vertical' }} />
             </div>
+            <ImageUploadField
+              label="Bannière (image en haut de la carte)"
+              value={data.bannerUrl || ''}
+              onChange={(url) => setData((p) => ({ ...p, bannerUrl: url }))}
+              storagePath={`challenges/${isNew ? newId || 'new' : programId}/banner`}
+              aspectRatio="banner"
+            />
+            <ImageUploadField
+              label="Logo"
+              value={data.logoUrl || ''}
+              onChange={(url) => setData((p) => ({ ...p, logoUrl: url }))}
+              storagePath={`challenges/${isNew ? newId || 'new' : programId}/logo`}
+              aspectRatio="square"
+            />
             <div className="flex items-center gap-3">
               <label className="label" style={{ marginBottom: 0 }}>Actif</label>
               <button

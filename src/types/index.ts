@@ -147,6 +147,8 @@ export interface ChallengeProgram {
   id: string;
   name: string;
   description: string;
+  logoUrl?: string;
+  bannerUrl?: string;
   levels: ChallengeLevel[];
   sectors: ChallengeSector[];
   finalQuiz?: Quiz[];
