@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, ChevronDown, ChevronRight, Layers, Target, Sparkles, BookOpen, X, Edit, Upload } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Layers, Target, Sparkles, BookOpen, X, Edit, Upload } from 'lucide-react';
 import { getChallengeProgram, saveChallengeProgram } from '@/lib/firestore-service';
 import type { ChallengeProgram, ChallengeLevel, ChallengeSubLevel, ChallengeSector, CardCategory, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ImageUploadField from '@/components/ui/ImageUploadField';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
-import UnsavedChangesDialog from '@/components/ui/UnsavedChangesDialog';
+import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
 import QuizEditor from '@/components/events/QuizEditor';
 import DuelEditor from '@/components/events/DuelEditor';
 import FundingEditor from '@/components/events/FundingEditor';
@@ -17,7 +17,7 @@ import ChallengeEventEditor from '@/components/events/ChallengeEventEditor';
 import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
-import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import { useAutoSave } from '@/hooks/useAutoSave';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'levels' | 'sectors';
@@ -47,14 +47,11 @@ export default function ChallengeEditorPage() {
   const [data, setData] = useState<Omit<ChallengeProgram, 'id'>>({
     name: '', description: '', logoUrl: '', bannerUrl: '', levels: [], sectors: [], enabled: true,
   });
-  const [originalData, setOriginalData] = useState<Omit<ChallengeProgram, 'id'> | null>(null);
   const [newId, setNewId] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [loading, setLoading] = useState(!isNew);
-  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [expandedLevels, setExpandedLevels] = useState<Set<number>>(new Set());
-  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
-  const pendingNavigationRef = useRef<string | null>(null);
   const [aiModalType, setAiModalType] = useState<GenerationType | null>(null);
   const [aiAutoPrompt, setAiAutoPrompt] = useState<string | undefined>(undefined);
   const [showBriefingForm, setShowBriefingForm] = useState(false);
@@ -228,11 +225,15 @@ export default function ChallengeEditorPage() {
     }
   };
 
-  // Check for unsaved changes
-  const hasUnsavedChanges = originalData !== null && JSON.stringify(data) !== JSON.stringify(originalData);
-
-  const { allowNavigation } = useUnsavedChanges({
-    hasUnsavedChanges,
+  // Sauvegarde automatique : active uniquement sur un programme existant.
+  const persist = useCallback(
+    (d: Omit<ChallengeProgram, 'id'>) => saveChallengeProgram(programId, d),
+    [programId]
+  );
+  const { status: saveStatus, flush } = useAutoSave({
+    data,
+    save: persist,
+    enabled: !isNew && !loading,
   });
 
   useEffect(() => {
@@ -243,7 +244,6 @@ export default function ChallengeEditorPage() {
         if (prog) {
           const { id, ...rest } = prog;
           setData(rest);
-          setOriginalData(rest);
         }
         else { toast.error('Programme non trouve'); router.push('/challenges'); }
       } catch { toast.error('Erreur de chargement'); }
@@ -251,44 +251,25 @@ export default function ChallengeEditorPage() {
     })();
   }, [programId, isNew, router]);
 
-  const handleSave = async () => {
-    const id = isNew ? newId.trim().toLowerCase().replace(/\s+/g, '-') : programId;
+  // Creation initiale d'un nouveau programme, puis bascule vers l'autosave.
+  const handleCreate = async () => {
+    const id = newId.trim().toLowerCase().replace(/\s+/g, '-');
     if (!id || !data.name.trim()) { toast.error('ID et nom requis'); return; }
-    setSaving(true);
+    setCreating(true);
     try {
       await saveChallengeProgram(id, data);
-      setOriginalData(data); // Update original data after successful save
-      toast.success(isNew ? 'Programme cree !' : 'Sauvegarde !');
-      if (isNew) router.push(`/challenges/${id}`);
-    } catch { toast.error('Erreur de sauvegarde'); }
-    finally { setSaving(false); }
+      toast.success('Programme cree !');
+      router.push(`/challenges/${id}`);
+    } catch {
+      toast.error('Erreur lors de la creation');
+      setCreating(false);
+    }
   };
 
+  // Persiste tout edit en attente avant de quitter la page.
   const handleNavigate = (path: string) => {
-    if (hasUnsavedChanges) {
-      pendingNavigationRef.current = path;
-      setShowUnsavedDialog(true);
-    } else {
-      router.push(path);
-    }
-  };
-
-  const handleSaveAndNavigate = async () => {
-    await handleSave();
-    if (pendingNavigationRef.current) {
-      allowNavigation();
-      router.push(pendingNavigationRef.current);
-      pendingNavigationRef.current = null;
-    }
-  };
-
-  const handleDiscardAndNavigate = () => {
-    if (pendingNavigationRef.current) {
-      allowNavigation();
-      router.push(pendingNavigationRef.current);
-      pendingNavigationRef.current = null;
-    }
-    setShowUnsavedDialog(false);
+    if (!isNew) flush();
+    router.push(path);
   };
 
   const toggleLevel = (i: number) => {
@@ -565,10 +546,14 @@ export default function ChallengeEditorPage() {
             </h2>
           </div>
         </div>
-        <button className="btn-primary flex items-center gap-2" onClick={handleSave} disabled={saving}>
-          <Save size={16} />
-          {saving ? 'Sauvegarde...' : 'Sauvegarder'}
-        </button>
+        {isNew ? (
+          <button className="btn-primary flex items-center gap-2" onClick={handleCreate} disabled={creating}>
+            <Plus size={16} />
+            {creating ? 'Creation...' : 'Creer le programme'}
+          </button>
+        ) : (
+          <SaveStatusIndicator status={saveStatus} />
+        )}
       </div>
 
       {/* Tabs */}
@@ -1352,18 +1337,6 @@ export default function ChallengeEditorPage() {
           sectors={data.sectors}
         />
       )}
-
-      {/* Unsaved Changes Dialog */}
-      <UnsavedChangesDialog
-        open={showUnsavedDialog}
-        onSave={handleSaveAndNavigate}
-        onDiscard={handleDiscardAndNavigate}
-        onCancel={() => {
-          setShowUnsavedDialog(false);
-          pendingNavigationRef.current = null;
-        }}
-        saving={saving}
-      />
     </div>
   );
 }

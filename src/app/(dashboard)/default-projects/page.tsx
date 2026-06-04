@@ -36,7 +36,7 @@ export default function DefaultProjectsPage() {
   const [activeEdition, setActiveEdition] = useState<EditionId>('classic');
   const [aiModalOpen, setAiModalOpen] = useState(false);
 
-  const handleAIGenerated = (generated: unknown) => {
+  const handleAIGenerated = async (generated: unknown) => {
     const items = Array.isArray(generated) ? generated : [];
     const newProjects: DefaultProject[] = items.map((item: Record<string, unknown>) => ({
       id: (item.id as string) || `proj_${generateId()}`,
@@ -48,7 +48,23 @@ export default function DefaultProjectsPage() {
       edition: activeEdition,
     }));
     setProjects((prev) => [...prev, ...newProjects]);
-    toast.success(`${newProjects.length} projets generes ! N'oubliez pas de sauvegarder chacun.`);
+    // Persistance immediate de chaque projet genere.
+    try {
+      await Promise.all(
+        newProjects.map((p) =>
+          saveDefaultProject(p.id, {
+            name: p.name,
+            description: p.description,
+            sector: p.sector,
+            target: p.target,
+            mission: p.mission,
+          })
+        )
+      );
+      toast.success(`${newProjects.length} projets generes et enregistres !`);
+    } catch {
+      toast.error('Erreur lors de l’enregistrement des projets generes');
+    }
   };
 
   const loadProjects = useCallback(async () => {

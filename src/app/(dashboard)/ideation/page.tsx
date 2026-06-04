@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Lightbulb, Plus, Trash2, Save, Target, Rocket, Map, Sparkles } from 'lucide-react';
-import { getIdeationDecks, saveIdeationDeck, deleteIdeationDeck } from '@/lib/firestore-service';
+import { Lightbulb, Plus, Trash2, Target, Rocket, Map, Sparkles } from 'lucide-react';
+import { getIdeationDecks, saveIdeationDeck } from '@/lib/firestore-service';
 import type { IdeationDeck, IdeationCard } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
+import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
+import { useAutoSave } from '@/hooks/useAutoSave';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -21,7 +23,6 @@ const CARD_TYPE_CONFIG: Record<string, { label: string; color: string; icon: Rea
 export default function IdeationPage() {
   const [decks, setDecks] = useState<IdeationDeck[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [activeType, setActiveType] = useState<'target' | 'mission' | 'sector'>('target');
   const [deleteTarget, setDeleteTarget] = useState<{ deckId: string; cardIndex: number } | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -71,6 +72,17 @@ export default function IdeationPage() {
   const cards = deck?.cards ?? [];
   const filteredCards = cards.filter((c) => c.type === activeType);
 
+  // Sauvegarde automatique du deck a chaque modification.
+  const persistDeck = useCallback(
+    (d: IdeationDeck) => saveIdeationDeck(d.id, { name: d.name, cards: d.cards }),
+    []
+  );
+  const { status: saveStatus } = useAutoSave({
+    data: deck,
+    save: persistDeck,
+    enabled: !loading && !!deck,
+  });
+
   const addCard = () => {
     if (!deck) return;
     const updated: IdeationDeck = {
@@ -99,19 +111,6 @@ export default function IdeationPage() {
     setDeleteTarget(null);
   };
 
-  const handleSave = async () => {
-    if (!deck) return;
-    setSaving(true);
-    try {
-      await saveIdeationDeck(deck.id, { name: deck.name, cards: deck.cards });
-      toast.success('Cartes sauvegardees !');
-    } catch {
-      toast.error('Erreur de sauvegarde');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
 
   return (
@@ -123,10 +122,7 @@ export default function IdeationPage() {
             ({cards.filter((c) => c.type === 'target').length} cibles, {cards.filter((c) => c.type === 'mission').length} missions, {cards.filter((c) => c.type === 'sector').length} secteurs)
           </p>
         </div>
-        <button className="btn-primary flex items-center gap-2" onClick={handleSave} disabled={saving}>
-          <Save size={16} />
-          {saving ? 'Sauvegarde...' : 'Sauvegarder'}
-        </button>
+        <SaveStatusIndicator status={saveStatus} />
       </div>
 
       {/* Type tabs */}

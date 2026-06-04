@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
-  ArrowLeft, Save, Plus, Trash2,
+  ArrowLeft, Plus, Trash2,
   HelpCircle, Swords, Coins, Star, Zap, Sparkles, FolderKanban, Upload,
 } from 'lucide-react';
 import { getEdition, saveEdition } from '@/lib/firestore-service';
@@ -12,10 +12,10 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
 import SectorSelectionModal from '@/components/ui/SectorSelectionModal';
-import UnsavedChangesDialog from '@/components/ui/UnsavedChangesDialog';
+import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
-import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import { useAutoSave } from '@/hooks/useAutoSave';
 import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
 import ImportEditionProjectsModal from '@/components/ui/ImportEditionProjectsModal';
 import toast from 'react-hot-toast';
@@ -54,21 +54,30 @@ export default function EditionEditorPage() {
   const isNew = editionId === 'new';
 
   const [data, setData] = useState<Omit<EditionData, 'id'>>(EMPTY_EDITION);
-  const [originalData, setOriginalData] = useState<Omit<EditionData, 'id'> | null>(null);
   const [newId, setNewId] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [loading, setLoading] = useState(!isNew);
-  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [deleteItemIndex, setDeleteItemIndex] = useState<number | null>(null);
   const [deleteSection, setDeleteSection] = useState<Tab | null>(null);
   const [aiModalType, setAiModalType] = useState<GenerationType | null>(null);
   const [showSectorSelection, setShowSectorSelection] = useState(false);
   const [autoPrompt, setAutoPrompt] = useState<string | undefined>(undefined);
-  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showImportProjectsModal, setShowImportProjectsModal] = useState(false);
   const [importFilter, setImportFilter] = useState<keyof ImportedContent | null>(null);
-  const pendingNavigationRef = useRef<string | null>(null);
+
+  // Sauvegarde automatique : active uniquement sur une edition existante.
+  // Pour une nouvelle edition, on garde l'etape de creation initiale (ID + nom).
+  const persist = useCallback(
+    (d: Omit<EditionData, 'id'>) => saveEdition(editionId, d),
+    [editionId]
+  );
+  const { status: saveStatus, flush } = useAutoSave({
+    data,
+    save: persist,
+    enabled: !isNew && !loading,
+  });
 
   // AI generation context
   const aiContext = { editionName: data.name || editionId, sectors: data.sectors.join(', ') || 'multi-secteurs' };
@@ -167,13 +176,6 @@ Pour les projets par défaut, chaque projet doit avoir :
     }
   };
 
-  // Check for unsaved changes
-  const hasUnsavedChanges = originalData !== null && JSON.stringify(data) !== JSON.stringify(originalData);
-
-  const { allowNavigation } = useUnsavedChanges({
-    hasUnsavedChanges,
-  });
-
   // Load existing edition
   useEffect(() => {
     if (isNew) return;
@@ -183,7 +185,6 @@ Pour les projets par défaut, chaque projet doit avoir :
         if (edition) {
           const { id, ...rest } = edition;
           setData(rest);
-          setOriginalData(rest);
         } else {
           toast.error('Edition non trouvee');
           router.push('/editions');
@@ -197,8 +198,10 @@ Pour les projets par défaut, chaque projet doit avoir :
     })();
   }, [editionId, isNew, router]);
 
-  const handleSave = async () => {
-    const id = isNew ? newId.trim().toLowerCase().replace(/\s+/g, '-') : editionId;
+  // Creation initiale d'une nouvelle edition : on persiste une 1ere fois puis
+  // on bascule vers l'URL avec l'ID, ou l'autosave prend le relais.
+  const handleCreate = async () => {
+    const id = newId.trim().toLowerCase().replace(/\s+/g, '-');
     if (!id) {
       toast.error('Veuillez entrer un identifiant');
       return;
@@ -208,19 +211,15 @@ Pour les projets par défaut, chaque projet doit avoir :
       return;
     }
 
-    setSaving(true);
+    setCreating(true);
     try {
       await saveEdition(id, data);
-      setOriginalData(data); // Update original data after successful save
-      toast.success(isNew ? 'Edition creee !' : 'Edition sauvegardee !');
-      if (isNew) {
-        router.push(`/editions/${id}`);
-      }
+      toast.success('Edition creee !');
+      router.push(`/editions/${id}`);
     } catch (error) {
-      console.error('Save error:', error);
-      toast.error('Erreur lors de la sauvegarde');
-    } finally {
-      setSaving(false);
+      console.error('Create error:', error);
+      toast.error('Erreur lors de la creation');
+      setCreating(false);
     }
   };
 
@@ -228,31 +227,10 @@ Pour les projets par défaut, chaque projet doit avoir :
     setData((prev) => ({ ...prev, [key]: value }));
   };
 
+  // Persiste tout edit en attente avant de quitter la page.
   const handleNavigate = (path: string) => {
-    if (hasUnsavedChanges) {
-      pendingNavigationRef.current = path;
-      setShowUnsavedDialog(true);
-    } else {
-      router.push(path);
-    }
-  };
-
-  const handleSaveAndNavigate = async () => {
-    await handleSave();
-    if (pendingNavigationRef.current) {
-      allowNavigation();
-      router.push(pendingNavigationRef.current);
-      pendingNavigationRef.current = null;
-    }
-  };
-
-  const handleDiscardAndNavigate = () => {
-    if (pendingNavigationRef.current) {
-      allowNavigation();
-      router.push(pendingNavigationRef.current);
-      pendingNavigationRef.current = null;
-    }
-    setShowUnsavedDialog(false);
+    if (!isNew) flush();
+    router.push(path);
   };
 
   // ===== Quiz helpers =====
@@ -494,14 +472,18 @@ Pour les projets par défaut, chaque projet doit avoir :
               Generer avec l&apos;IA
             </button>
           )}
-          <button
-            className="btn-primary flex items-center gap-2"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            <Save size={16} />
-            {saving ? 'Sauvegarde...' : 'Sauvegarder'}
-          </button>
+          {isNew ? (
+            <button
+              className="btn-primary flex items-center gap-2"
+              onClick={handleCreate}
+              disabled={creating}
+            >
+              <Plus size={16} />
+              {creating ? 'Creation...' : 'Creer l’edition'}
+            </button>
+          ) : (
+            <SaveStatusIndicator status={saveStatus} />
+          )}
         </div>
       </div>
 
@@ -1207,18 +1189,6 @@ Pour les projets par défaut, chaque projet doit avoir :
         message="Etes-vous sur de vouloir supprimer cet element ? Cette action est irreversible."
         confirmLabel="Supprimer"
         danger
-      />
-
-      {/* Unsaved Changes Dialog */}
-      <UnsavedChangesDialog
-        open={showUnsavedDialog}
-        onSave={handleSaveAndNavigate}
-        onDiscard={handleDiscardAndNavigate}
-        onCancel={() => {
-          setShowUnsavedDialog(false);
-          pendingNavigationRef.current = null;
-        }}
-        saving={saving}
       />
     </div>
   );

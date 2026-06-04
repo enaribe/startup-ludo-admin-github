@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Award, Plus, Save, Trash2, Pencil, Sparkles } from 'lucide-react';
+import { Award, Plus, Trash2, Pencil, Sparkles } from 'lucide-react';
 import { getAchievements, saveAchievement, deleteAchievement } from '@/lib/firestore-service';
 import type { Achievement } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -49,7 +49,7 @@ export default function AchievementsPage() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [aiModalOpen, setAiModalOpen] = useState(false);
 
-  const handleAIGenerated = (generated: unknown) => {
+  const handleAIGenerated = async (generated: unknown) => {
     const items = Array.isArray(generated) ? generated : [];
     const newAchievements: Achievement[] = items.map((item: Record<string, unknown>) => ({
       id: (item.id as string) || `ach_${generateId()}`,
@@ -63,7 +63,13 @@ export default function AchievementsPage() {
       enabled: true,
     }));
     setAchievements((prev) => [...prev, ...newAchievements]);
-    toast.success(`${newAchievements.length} achievements generes ! N'oubliez pas de sauvegarder chacun.`);
+    // Persistance immediate de chaque achievement genere.
+    try {
+      await Promise.all(newAchievements.map(({ id, ...rest }) => saveAchievement(id, rest)));
+      toast.success(`${newAchievements.length} achievements generes et enregistres !`);
+    } catch {
+      toast.error('Erreur lors de l’enregistrement des achievements generes');
+    }
   };
 
   const load = useCallback(async () => {

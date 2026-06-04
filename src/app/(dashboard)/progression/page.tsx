@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { TrendingUp, Save, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { getProgressionConfig, saveProgressionConfig } from '@/lib/firestore-service';
 import type { ProgressionConfig, RankConfig, XPRewardConfig } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
+import { useAutoSave } from '@/hooks/useAutoSave';
 import { generateId } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
@@ -17,8 +19,13 @@ export default function ProgressionPage() {
     challengeXPRewards: [],
   });
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('ranks');
+
+  const { status: saveStatus } = useAutoSave({
+    data: config,
+    save: saveProgressionConfig,
+    enabled: !loading,
+  });
 
   const load = useCallback(async () => {
     try {
@@ -29,15 +36,6 @@ export default function ProgressionPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await saveProgressionConfig(config);
-      toast.success('Configuration sauvegardee !');
-    } catch { toast.error('Erreur'); }
-    finally { setSaving(false); }
-  };
 
   // Rank CRUD
   const addRank = () => {
@@ -90,10 +88,7 @@ export default function ProgressionPage() {
         <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
           {config.ranks.length} rangs, {config.xpRewards.length} recompenses XP
         </p>
-        <button className="btn-primary flex items-center gap-2" onClick={handleSave} disabled={saving}>
-          <Save size={16} />
-          {saving ? 'Sauvegarde...' : 'Sauvegarder'}
-        </button>
+        <SaveStatusIndicator status={saveStatus} />
       </div>
 
       {/* Tabs */}
