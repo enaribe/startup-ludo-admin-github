@@ -44,7 +44,7 @@ function emptyPack(programId: string): ProgramContentPack {
 
 function makeEmpty(programId: string): Omit<PartnerProgram, 'id'> {
   return {
-    slug: '', partnerId: '', name: '', subtitle: '', description: '',
+    slug: '', partnerId: '', coPartnerIds: [], name: '', subtitle: '', description: '',
     heroImageUrl: '', bannerUrl: '', logoUrl: '',
     playerCount: 0, sessionCount: 0,
     audience: { ageRange: '', locations: [], sector: '', profile: '' },
@@ -232,11 +232,49 @@ export default function ProgramEditorPage() {
             </Field>
           )}
 
-          <Field label="Partenaire">
-            <select className="input-field" value={data.partnerId} onChange={(e) => update('partnerId', e.target.value)}>
+          <Field label="Partenaire principal (porteur du programme)">
+            <select
+              className="input-field"
+              value={data.partnerId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setData((prev) => ({
+                  ...prev,
+                  partnerId: id,
+                  // le partenaire principal ne peut pas être aussi co-partenaire
+                  coPartnerIds: (prev.coPartnerIds ?? []).filter((cid) => cid !== id),
+                }));
+              }}
+            >
               <option value="">— Choisir un partenaire —</option>
               {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
+          </Field>
+
+          <Field label="Co-partenaires (« En partenariat avec »)">
+            {partners.filter((p) => p.id !== data.partnerId).length === 0 ? (
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Aucun autre partenaire disponible.</p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {partners.filter((p) => p.id !== data.partnerId).map((p) => {
+                  const checked = (data.coPartnerIds ?? []).includes(p.id);
+                  return (
+                    <label key={p.id} className="flex items-center gap-2" style={{ cursor: 'pointer', fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const ids = new Set(data.coPartnerIds ?? []);
+                          if (e.target.checked) ids.add(p.id); else ids.delete(p.id);
+                          update('coPartnerIds', Array.from(ids));
+                        }}
+                      />
+                      {p.name}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
@@ -296,10 +334,10 @@ export default function ProgramEditorPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <ImageUploadField label="Image principale (hero)" value={data.heroImageUrl || ''} onChange={(url) => update('heroImageUrl', url)} storagePath={`programs/${storageId}/hero`} aspectRatio="banner" />
-            <ImageUploadField label="Bannière" value={data.bannerUrl || ''} onChange={(url) => update('bannerUrl', url)} storagePath={`programs/${storageId}/banner`} aspectRatio="banner" />
+            <ImageUploadField label="Image de fond (carte programme)" value={data.heroImageUrl || ''} onChange={(url) => update('heroImageUrl', url)} storagePath={`programs/${storageId}/hero`} aspectRatio="banner" />
+            <ImageUploadField label="Bannière (header de l'écran programme)" value={data.bannerUrl || ''} onChange={(url) => update('bannerUrl', url)} storagePath={`programs/${storageId}/banner`} aspectRatio="banner" />
           </div>
-          <ImageUploadField label="Logo programme" value={data.logoUrl || ''} onChange={(url) => update('logoUrl', url)} storagePath={`programs/${storageId}/logo`} aspectRatio="square" />
+          <ImageUploadField label="Logo du programme" value={data.logoUrl || ''} onChange={(url) => update('logoUrl', url)} storagePath={`programs/${storageId}/logo`} aspectRatio="square" />
 
           <label className="flex items-center gap-3 mt-4" style={{ cursor: 'pointer' }}>
             <input type="checkbox" checked={data.isActive} onChange={(e) => update('isActive', e.target.checked)} />

@@ -11,6 +11,8 @@ interface ImageUploadFieldProps {
   onChange: (url: string) => void;
   storagePath: string; // e.g. "challenges/yeah/banner"
   aspectRatio?: 'banner' | 'square';
+  disabled?: boolean;
+  disabledHint?: string;
 }
 
 export default function ImageUploadField({
@@ -19,6 +21,8 @@ export default function ImageUploadField({
   onChange,
   storagePath,
   aspectRatio = 'banner',
+  disabled = false,
+  disabledHint,
 }: ImageUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -29,6 +33,7 @@ export default function ImageUploadField({
   const previewWidth = aspectRatio === 'banner' ? '100%' : 80;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -72,14 +77,15 @@ export default function ImageUploadField({
 
       {/* Preview zone / drop target */}
       <div
-        onClick={() => !uploading && inputRef.current?.click()}
+        onClick={() => !uploading && !disabled && inputRef.current?.click()}
         style={{
           width: previewWidth,
           height: previewHeight,
           borderRadius: 10,
           border: '2px dashed rgba(255,255,255,0.2)',
           background: value ? 'transparent' : 'rgba(255,255,255,0.04)',
-          cursor: uploading ? 'default' : 'pointer',
+          cursor: uploading || disabled ? 'default' : 'pointer',
+          opacity: disabled ? 0.5 : 1,
           overflow: 'hidden',
           position: 'relative',
           display: 'flex',
@@ -146,21 +152,21 @@ export default function ImageUploadField({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={uploading}
+          disabled={uploading || disabled}
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '6px 12px', borderRadius: 6, fontSize: 12,
             background: 'rgba(255,188,64,0.12)',
             border: '1px solid rgba(255,188,64,0.3)',
-            color: '#FFBC40', cursor: uploading ? 'default' : 'pointer',
-            opacity: uploading ? 0.5 : 1,
+            color: '#FFBC40', cursor: uploading || disabled ? 'default' : 'pointer',
+            opacity: uploading || disabled ? 0.5 : 1,
           }}
         >
           <Upload size={13} />
           {uploading ? `Upload... ${progress}%` : 'Choisir une image'}
         </button>
 
-        {value && !uploading && (
+        {value && !uploading && !disabled && (
           <button
             type="button"
             onClick={() => onChange('')}
@@ -180,6 +186,10 @@ export default function ImageUploadField({
 
       {error && (
         <p style={{ fontSize: 12, color: '#f44336', margin: 0 }}>{error}</p>
+      )}
+
+      {disabled && disabledHint && !error && (
+        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', margin: 0 }}>{disabledHint}</p>
       )}
 
       <input

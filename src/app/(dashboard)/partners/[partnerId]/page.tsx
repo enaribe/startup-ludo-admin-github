@@ -89,7 +89,9 @@ export default function PartnerEditorPage() {
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
 
-  const storageId = isNew ? (newId || 'new') : partnerId;
+  // Doit correspondre à l'ID final du document (cf. handleCreate) pour que le chemin Storage soit cohérent.
+  const normalizedNewId = newId.trim().toLowerCase().replace(/\s+/g, '-');
+  const storageId = isNew ? normalizedNewId : partnerId;
 
   return (
     <div>
@@ -145,6 +147,8 @@ export default function PartnerEditorPage() {
             onChange={(url) => update('logoUrl', url)}
             storagePath={`partners/${storageId}/logo`}
             aspectRatio="square"
+            disabled={isNew && !newId.trim()}
+            disabledHint="Renseignez d'abord l'ID du partenaire."
           />
           <ImageUploadField
             label="Bannière"
@@ -152,6 +156,8 @@ export default function PartnerEditorPage() {
             onChange={(url) => update('bannerUrl', url)}
             storagePath={`partners/${storageId}/banner`}
             aspectRatio="banner"
+            disabled={isNew && !newId.trim()}
+            disabledHint="Renseignez d'abord l'ID du partenaire."
           />
         </div>
 

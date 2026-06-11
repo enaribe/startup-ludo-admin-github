@@ -197,12 +197,18 @@ export interface ProgramContentPack {
 export interface PartnerProgram {
   id: string;
   slug: string;
+  /** Partenaire principal (porteur du programme). */
   partnerId: string;
+  /** Co-partenaires affichés en « En partenariat avec » (ex: YEAH x Mastercard Foundation). */
+  coPartnerIds?: string[];
   name: string;
   subtitle?: string;
   description: string;
+  /** Image de fond de la carte programme (photo plein cadre derrière le titre). */
   heroImageUrl?: string | null;
+  /** Bannière du header de l'écran programme. */
   bannerUrl?: string | null;
+  /** Logo du programme (ex: logo YEAH). */
   logoUrl?: string | null;
   playerCount: number;
   sessionCount: number;

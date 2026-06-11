@@ -116,7 +116,14 @@ export default function ProgramsPage() {
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <p style={{ fontSize: 11, color: prog.primaryColor || '#FFB347', marginBottom: 2, fontWeight: 600 }}>{partnerName(prog.partnerId)}</p>
+                    <p style={{ fontSize: 11, color: prog.primaryColor || '#FFB347', marginBottom: 2, fontWeight: 600 }}>
+                      {partnerName(prog.partnerId)}
+                      {(prog.coPartnerIds?.length ?? 0) > 0 && (
+                        <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>
+                          {' '}· en partenariat avec {prog.coPartnerIds!.map(partnerName).join(', ')}
+                        </span>
+                      )}
+                    </p>
                     <h3 style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', marginBottom: 2 }}>{prog.name}</h3>
                     <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{prog.id}</p>
                   </div>

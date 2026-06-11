@@ -33,8 +33,9 @@ export default function PartnersPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // compte les programmes où le partenaire est principal OU co-partenaire
   const programCount = (partnerId: string) =>
-    programs.filter((prog) => prog.partnerId === partnerId).length;
+    programs.filter((prog) => prog.partnerId === partnerId || prog.coPartnerIds?.includes(partnerId)).length;
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
