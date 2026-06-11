@@ -18,6 +18,7 @@ const EMPTY: Omit<ProgramPartner, 'id'> = {
   description: '',
   logoUrl: '',
   bannerUrl: '',
+  heroImageUrl: '',
   primaryColor: '#FFB347',
   secondaryColor: '#0C243E',
   isActive: true,
@@ -155,6 +156,18 @@ export default function PartnerEditorPage() {
             value={data.bannerUrl || ''}
             onChange={(url) => update('bannerUrl', url)}
             storagePath={`partners/${storageId}/banner`}
+            aspectRatio="banner"
+            disabled={isNew && !newId.trim()}
+            disabledHint="Renseignez d'abord l'ID du partenaire."
+          />
+        </div>
+
+        <div className="mt-4">
+          <ImageUploadField
+            label="Image du header (écran partenaire)"
+            value={data.heroImageUrl || ''}
+            onChange={(url) => update('heroImageUrl', url)}
+            storagePath={`partners/${storageId}/hero`}
             aspectRatio="banner"
             disabled={isNew && !newId.trim()}
             disabledHint="Renseignez d'abord l'ID du partenaire."
