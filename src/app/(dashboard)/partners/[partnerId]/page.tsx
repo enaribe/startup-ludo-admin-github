@@ -164,11 +164,11 @@ export default function PartnerEditorPage() {
 
         <div className="mt-4">
           <ImageUploadField
-            label="Image du header (écran partenaire)"
+            label="Visuel détouré du header (PNG transparent, à droite)"
             value={data.heroImageUrl || ''}
             onChange={(url) => update('heroImageUrl', url)}
             storagePath={`partners/${storageId}/hero`}
-            aspectRatio="banner"
+            aspectRatio="square"
             disabled={isNew && !newId.trim()}
             disabledHint="Renseignez d'abord l'ID du partenaire."
           />

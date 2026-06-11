@@ -168,7 +168,7 @@ export interface ProgramPartner {
   logoUrl?: string | null;
   /** Image de fond de la carte partenaire sur l'accueil (visuel vertical avec bouton PARTICIPER). */
   bannerUrl?: string | null;
-  /** Image de fond du header de l'écran partenaire (visuel horizontal). Distincte de bannerUrl. */
+  /** PNG détouré (fond transparent) affiché à droite du header de l'écran partenaire, par-dessus le dégradé. */
   heroImageUrl?: string | null;
   primaryColor: string;
   secondaryColor: string;
