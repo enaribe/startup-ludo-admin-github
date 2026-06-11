@@ -51,6 +51,11 @@ export const COLLECTIONS = {
   reports: 'reports',
   challenges: 'challenges',
   challengeEnrollments: 'challengeEnrollments',
+  // Programmes partenaires (nouveau modèle)
+  partners: 'partners',
+  programs: 'programs',
+  programEnrollments: 'programEnrollments',
+  programSessions: 'programSessions',
   // New admin-managed collections
   gameData: 'gameData',
   ideationCards: 'ideationCards',

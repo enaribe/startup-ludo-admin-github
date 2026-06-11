@@ -156,6 +156,66 @@ export interface ChallengeProgram {
   updatedAt?: number;
 }
 
+// ===== Partner Programs (nouveau modèle "Programmes partenaires") =====
+// ALIGNED with mobile app src/types/program.ts (the mobile types are the source of truth).
+
+export interface ProgramPartner {
+  id: string;
+  slug: string;
+  name: string;
+  shortName: string;
+  description: string;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  isActive: boolean;
+  updatedAt?: number;
+}
+
+export interface ProgramAudience {
+  ageRange?: string;
+  locations: string[];
+  sector: string;
+  profile: string;
+}
+
+// Le contenu d'un pack a EXACTEMENT la même forme que celui d'un sous-niveau challenge,
+// ce qui permet de réutiliser les éditeurs d'événements et ImportContentModal tels quels.
+export interface ProgramContentPack {
+  id: string;
+  programId: string;
+  name: string;
+  description?: string;
+  quizzes: Quiz[];
+  duels: Duel[];
+  fundings: Funding[];
+  opportunities: Opportunity[];
+  challengeEvents: ChallengeEvent[];
+}
+
+export interface PartnerProgram {
+  id: string;
+  slug: string;
+  partnerId: string;
+  name: string;
+  subtitle?: string;
+  description: string;
+  heroImageUrl?: string | null;
+  bannerUrl?: string | null;
+  logoUrl?: string | null;
+  playerCount: number;
+  sessionCount: number;
+  audience: ProgramAudience;
+  tags: string[];
+  primaryColor: string;
+  secondaryColor: string;
+  contentPacks: ProgramContentPack[];
+  isActive: boolean;
+  sortOrder: number;
+  updatedAt?: number;
+}
+
 // ===== Ideation Cards =====
 
 export interface IdeationCard {

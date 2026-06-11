@@ -12,6 +12,7 @@ import {
   updateDoc,
   deleteDoc,
   query,
+  where,
   orderBy,
   limit,
   getCountFromServer,
@@ -23,6 +24,8 @@ import type {
   EditionData,
   EditionId,
   ChallengeProgram,
+  ProgramPartner,
+  PartnerProgram,
   IdeationDeck,
   DefaultProject,
   Achievement,
@@ -77,6 +80,61 @@ export async function saveChallengeProgram(programId: string, data: Omit<Challen
 
 export async function deleteChallengeProgram(programId: string): Promise<void> {
   await deleteDoc(doc(firestore, COLLECTIONS.challenges, programId));
+}
+
+// ===== PARTNERS (programmes partenaires) =====
+
+export async function getPartners(): Promise<ProgramPartner[]> {
+  const snap = await getDocs(collection(firestore, COLLECTIONS.partners));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ProgramPartner));
+}
+
+export async function getPartner(partnerId: string): Promise<ProgramPartner | null> {
+  const snap = await getDoc(doc(firestore, COLLECTIONS.partners, partnerId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as ProgramPartner;
+}
+
+export async function savePartner(partnerId: string, data: Omit<ProgramPartner, 'id'>): Promise<void> {
+  await setDoc(doc(firestore, COLLECTIONS.partners, partnerId), {
+    ...data,
+    updatedAt: Date.now(),
+  });
+}
+
+export async function deletePartner(partnerId: string): Promise<void> {
+  await deleteDoc(doc(firestore, COLLECTIONS.partners, partnerId));
+}
+
+// ===== PROGRAMS (programmes partenaires) =====
+
+export async function getPrograms(): Promise<PartnerProgram[]> {
+  const snap = await getDocs(collection(firestore, COLLECTIONS.programs));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
+}
+
+export async function getProgramsByPartner(partnerId: string): Promise<PartnerProgram[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.programs), where('partnerId', '==', partnerId))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
+}
+
+export async function getProgram(programId: string): Promise<PartnerProgram | null> {
+  const snap = await getDoc(doc(firestore, COLLECTIONS.programs, programId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as PartnerProgram;
+}
+
+export async function saveProgram(programId: string, data: Omit<PartnerProgram, 'id'>): Promise<void> {
+  await setDoc(doc(firestore, COLLECTIONS.programs, programId), {
+    ...data,
+    updatedAt: Date.now(),
+  });
+}
+
+export async function deleteProgram(programId: string): Promise<void> {
+  await deleteDoc(doc(firestore, COLLECTIONS.programs, programId));
 }
 
 // ===== IDEATION CARDS =====

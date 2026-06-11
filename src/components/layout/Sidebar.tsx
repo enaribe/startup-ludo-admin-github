@@ -15,6 +15,8 @@ import {
   Settings,
   LogOut,
   Gamepad2,
+  Building2,
+  Rocket,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -43,7 +45,14 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
-    title: 'Challenges',
+    title: 'Programmes partenaires',
+    items: [
+      { label: 'Partenaires', href: '/partners', icon: <Building2 size={18} /> },
+      { label: 'Programmes', href: '/programs', icon: <Rocket size={18} /> },
+    ],
+  },
+  {
+    title: 'Challenges (legacy)',
     items: [
       { label: 'Programmes', href: '/challenges', icon: <Trophy size={18} /> },
     ],
