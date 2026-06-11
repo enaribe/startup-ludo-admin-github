@@ -328,9 +328,9 @@ export default function ProgramEditorPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <ImageUploadField label="Image de fond (carte programme)" value={data.heroImageUrl || ''} onChange={(url) => update('heroImageUrl', url)} storagePath={`programs/${storageId}/hero`} aspectRatio="banner" />
-            <ImageUploadField label="Bannière (header de l'écran programme)" value={data.bannerUrl || ''} onChange={(url) => update('bannerUrl', url)} storagePath={`programs/${storageId}/banner`} aspectRatio="banner" />
+            <ImageUploadField label="Logo du programme (milieu-gauche)" value={data.logoUrl || ''} onChange={(url) => update('logoUrl', url)} storagePath={`programs/${storageId}/logo`} aspectRatio="square" />
           </div>
-          <ImageUploadField label="Logo du programme" value={data.logoUrl || ''} onChange={(url) => update('logoUrl', url)} storagePath={`programs/${storageId}/logo`} aspectRatio="square" />
+          <ImageUploadField label="Logo co-partenaire (« En partenariat avec », haut-droite — optionnel)" value={data.bannerUrl || ''} onChange={(url) => update('bannerUrl', url)} storagePath={`programs/${storageId}/copartner`} aspectRatio="square" />
 
           <label className="flex items-center gap-3 mt-4" style={{ cursor: 'pointer' }}>
             <input type="checkbox" checked={data.isActive} onChange={(e) => update('isActive', e.target.checked)} />

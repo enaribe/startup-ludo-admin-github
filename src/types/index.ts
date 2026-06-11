@@ -209,9 +209,9 @@ export interface PartnerProgram {
   description: string;
   /** Image de fond de la carte programme (photo plein cadre derrière le titre). */
   heroImageUrl?: string | null;
-  /** Bannière du header de l'écran programme. */
+  /** Logo d'un co-partenaire affiché en haut-droite de la carte (« En partenariat avec »), uploadé directement sur le programme. */
   bannerUrl?: string | null;
-  /** Logo du programme (ex: logo YEAH). */
+  /** Logo du programme (ex: logo YEAH), affiché au milieu-gauche de la carte. */
   logoUrl?: string | null;
   playerCount: number;
   sessionCount: number;
