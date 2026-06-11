@@ -142,7 +142,7 @@ export default function PartnerEditorPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <ImageUploadField
-            label="Logo"
+            label="Logo (En partenariat avec)"
             value={data.logoUrl || ''}
             onChange={(url) => update('logoUrl', url)}
             storagePath={`partners/${storageId}/logo`}
@@ -151,7 +151,7 @@ export default function PartnerEditorPage() {
             disabledHint="Renseignez d'abord l'ID du partenaire."
           />
           <ImageUploadField
-            label="Bannière"
+            label="Image de fond (carte d'accueil)"
             value={data.bannerUrl || ''}
             onChange={(url) => update('bannerUrl', url)}
             storagePath={`partners/${storageId}/banner`}
