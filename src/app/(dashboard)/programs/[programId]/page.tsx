@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Plus, Trash2, X, Edit, Upload, Package } from 'lucide-react';
 import { getProgram, saveProgram, getPartners } from '@/lib/firestore-service';
@@ -10,7 +10,6 @@ import type {
 } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ImageUploadField from '@/components/ui/ImageUploadField';
-import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
 import QuizEditor from '@/components/events/QuizEditor';
 import DuelEditor from '@/components/events/DuelEditor';
 import FundingEditor from '@/components/events/FundingEditor';
@@ -18,7 +17,6 @@ import OpportunityEditor from '@/components/events/OpportunityEditor';
 import ChallengeEventEditor from '@/components/events/ChallengeEventEditor';
 import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
 import { generateId } from '@/lib/utils';
-import { useAutoSave } from '@/hooks/useAutoSave';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'content';
@@ -66,6 +64,7 @@ export default function ProgramEditorPage() {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [loading, setLoading] = useState(!isNew);
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // pack en cours d'édition de contenu
   const [contentPackIdx, setContentPackIdx] = useState<number | null>(null);
@@ -80,15 +79,6 @@ export default function ProgramEditorPage() {
   const [editingOpportunity, setEditingOpportunity] = useState<{ opportunity: Opportunity | null; index: number | null } | null>(null);
   const [editingChallengeEvent, setEditingChallengeEvent] = useState<{ challengeEvent: ChallengeEvent | null; index: number | null } | null>(null);
 
-  const persist = useCallback(
-    (d: Omit<PartnerProgram, 'id'>) => saveProgram(programId, d),
-    [programId]
-  );
-  const { status: saveStatus, flush } = useAutoSave({
-    data,
-    save: persist,
-    enabled: !isNew && !loading,
-  });
 
   useEffect(() => {
     getPartners().then(setPartners).catch(() => toast.error('Erreur de chargement des partenaires'));
@@ -190,9 +180,17 @@ export default function ProgramEditorPage() {
     }
   };
 
-  const handleNavigate = (path: string) => {
-    if (!isNew) flush();
-    router.push(path);
+  const handleSave = async () => {
+    if (!data.name.trim() || !data.partnerId) { toast.error('Nom et partenaire requis'); return; }
+    setSaving(true);
+    try {
+      await saveProgram(programId, data);
+      toast.success('Modifications enregistrées');
+    } catch {
+      toast.error('Erreur lors de l’enregistrement');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
@@ -203,11 +201,15 @@ export default function ProgramEditorPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <button onClick={() => handleNavigate('/programs')} className="flex items-center gap-2" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13 }}>
+        <button onClick={() => router.push('/programs')} className="flex items-center gap-2" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13 }}>
           <ArrowLeft size={16} />
           Programmes
         </button>
-        {!isNew && <SaveStatusIndicator status={saveStatus} />}
+        {!isNew && (
+          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Enregistrement...' : 'Valider'}
+          </button>
+        )}
       </div>
 
       {/* Onglets */}
@@ -321,15 +323,6 @@ export default function ProgramEditorPage() {
             </Field>
             <Field label="Ordre d'affichage">
               <input type="number" className="input-field" value={data.sortOrder} onChange={(e) => update('sortOrder', Number(e.target.value) || 0)} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Couleur primaire">
-              <ColorInput value={data.primaryColor} onChange={(v) => update('primaryColor', v)} />
-            </Field>
-            <Field label="Couleur secondaire">
-              <ColorInput value={data.secondaryColor} onChange={(v) => update('secondaryColor', v)} />
             </Field>
           </div>
 
@@ -516,15 +509,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>{label}</label>
       {children}
-    </div>
-  );
-}
-
-function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} style={{ width: 40, height: 38, padding: 2, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', cursor: 'pointer' }} />
-      <input className="input-field" value={value} onChange={(e) => onChange(e.target.value)} placeholder="#FFB347" style={{ flex: 1 }} />
     </div>
   );
 }

@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { getPartner, savePartner } from '@/lib/firestore-service';
 import type { ProgramPartner } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ImageUploadField from '@/components/ui/ImageUploadField';
-import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
-import { useAutoSave } from '@/hooks/useAutoSave';
 import toast from 'react-hot-toast';
 
 const EMPTY: Omit<ProgramPartner, 'id'> = {
@@ -34,16 +32,7 @@ export default function PartnerEditorPage() {
   const [newId, setNewId] = useState('');
   const [loading, setLoading] = useState(!isNew);
   const [creating, setCreating] = useState(false);
-
-  const persist = useCallback(
-    (d: Omit<ProgramPartner, 'id'>) => savePartner(partnerId, d),
-    [partnerId]
-  );
-  const { status: saveStatus, flush } = useAutoSave({
-    data,
-    save: persist,
-    enabled: !isNew && !loading,
-  });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (isNew) return;
@@ -83,9 +72,17 @@ export default function PartnerEditorPage() {
     }
   };
 
-  const handleNavigate = (path: string) => {
-    if (!isNew) flush();
-    router.push(path);
+  const handleSave = async () => {
+    if (!data.name.trim()) { toast.error('Le nom est requis'); return; }
+    setSaving(true);
+    try {
+      await savePartner(partnerId, data);
+      toast.success('Modifications enregistrées');
+    } catch {
+      toast.error('Erreur lors de l’enregistrement');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
@@ -97,11 +94,10 @@ export default function PartnerEditorPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <button onClick={() => handleNavigate('/partners')} className="flex items-center gap-2" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13 }}>
+        <button onClick={() => router.push('/partners')} className="flex items-center gap-2" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13 }}>
           <ArrowLeft size={16} />
           Partenaires
         </button>
-        {!isNew && <SaveStatusIndicator status={saveStatus} />}
       </div>
 
       <div className="glass-card p-6" style={{ maxWidth: 720 }}>
@@ -179,9 +175,13 @@ export default function PartnerEditorPage() {
           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Partenaire actif</span>
         </label>
 
-        {isNew && (
+        {isNew ? (
           <button className="btn-primary mt-6" onClick={handleCreate} disabled={creating}>
             {creating ? 'Création...' : 'Créer le partenaire'}
+          </button>
+        ) : (
+          <button className="btn-primary mt-6" onClick={handleSave} disabled={saving}>
+            {saving ? 'Enregistrement...' : 'Valider'}
           </button>
         )}
       </div>
