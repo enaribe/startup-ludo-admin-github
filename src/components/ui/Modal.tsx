@@ -36,16 +36,16 @@ export default function Modal({ open, onClose, title, children, maxWidth = '560p
           maxHeight: '85vh',
           display: 'flex',
           flexDirection: 'column',
-          background: '#0f2d4a',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: '#FFFFFF',
+          border: '1px solid var(--color-card-border)',
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
           <h3 style={{
             fontFamily: "'Luckiest Guy', cursive",
             fontSize: 18,
-            color: '#FFFFFF',
+            color: 'var(--color-text-primary)',
             letterSpacing: 0.5,
           }}>
             {title}
@@ -53,7 +53,7 @@ export default function Modal({ open, onClose, title, children, maxWidth = '560p
           <button
             onClick={onClose}
             className="p-1 rounded-md transition-colors"
-            style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', border: 'none', cursor: 'pointer' }}
+            style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)', border: 'none', cursor: 'pointer' }}
           >
             <X size={18} />
           </button>

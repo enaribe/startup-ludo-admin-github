@@ -115,12 +115,15 @@ export default function ImportEditionProjectsModal({
         style={{
           maxWidth: 680,
           maxHeight: '90vh',
-          background: '#0f2a45',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: '#FFFFFF',
+          border: '1px solid var(--color-card-border)',
           boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
         }}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+        <div
+          className="flex items-center justify-between px-5 py-4 shrink-0"
+          style={{ borderBottom: '1px solid var(--color-card-border)' }}
+        >
           <div className="flex items-center gap-2">
             <div
               className="flex h-8 w-8 items-center justify-center rounded-lg"
@@ -129,11 +132,11 @@ export default function ImportEditionProjectsModal({
               <Upload size={16} color="#FFBC40" />
             </div>
             <div>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                 Importer des projets par défaut
               </h2>
               {editionName && (
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                   {editionName}
                 </p>
               )}
@@ -141,7 +144,7 @@ export default function ImportEditionProjectsModal({
           </div>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
           >
             <X size={18} />
           </button>
@@ -149,7 +152,7 @@ export default function ImportEditionProjectsModal({
 
         <div className="flex-1 overflow-y-auto">
           <div className="px-5 pt-4 pb-3">
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
               Colle une liste de startups, fiches projet ou notes. L&apos;IA extrait les projets pour les joueurs sans startup personnelle.
             </p>
             <textarea
@@ -167,10 +170,10 @@ Projet 2 — EcoPay (FinTech)
               rows={10}
               style={{
                 width: '100%',
-                background: 'rgba(0,0,0,0.3)',
-                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-card-border)',
                 borderRadius: 10,
-                color: '#fff',
+                color: 'var(--color-text-primary)',
                 fontSize: 12,
                 padding: '10px 12px',
                 resize: 'vertical',
@@ -187,8 +190,8 @@ Projet 2 — EcoPay (FinTech)
               disabled={loading || !rawText.trim()}
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition"
               style={{
-                background: loading || !rawText.trim() ? 'rgba(255,255,255,0.08)' : '#FFBC40',
-                color: loading || !rawText.trim() ? 'rgba(255,255,255,0.3)' : '#0C243E',
+                background: loading || !rawText.trim() ? 'var(--color-surface)' : '#FFBC40',
+                color: loading || !rawText.trim() ? 'var(--color-text-muted)' : '#FFFFFF',
                 border: 'none',
                 cursor: loading || !rawText.trim() ? 'not-allowed' : 'pointer',
                 fontSize: 13,
@@ -211,7 +214,10 @@ Projet 2 — EcoPay (FinTech)
           )}
 
           {preview && preview.length > 0 && (
-            <div className="px-5 pb-4 border-t border-white/10 pt-4">
+            <div
+              className="px-5 pb-4 pt-4"
+              style={{ borderTop: '1px solid var(--color-card-border)' }}
+            >
               <p style={{ fontSize: 12, fontWeight: 600, color: '#FFBC40', marginBottom: 12 }}>
                 Résultat — {preview.length} projet{preview.length > 1 ? 's' : ''}
               </p>
@@ -220,11 +226,11 @@ Projet 2 — EcoPay (FinTech)
                   <div
                     key={`${p.id}-${i}`}
                     className="rounded-lg p-2.5"
-                    style={{ background: 'rgba(0,0,0,0.2)' }}
+                    style={{ background: 'var(--color-surface)' }}
                   >
-                    <p style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>{p.name || '(sans nom)'}</p>
-                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>{p.id}</p>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{p.description}</p>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 600 }}>{p.name || '(sans nom)'}</p>
+                    <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>{p.id}</p>
+                    <p style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{p.description}</p>
                   </div>
                 ))}
               </div>
@@ -243,9 +249,12 @@ Projet 2 — EcoPay (FinTech)
         </div>
 
         {preview && preview.length > 0 && (
-          <div className="px-5 py-4 border-t border-white/10 shrink-0">
+          <div
+            className="px-5 py-4 shrink-0"
+            style={{ borderTop: '1px solid var(--color-card-border)' }}
+          >
             <div className="flex items-center gap-3 mb-3">
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>Mode :</p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Mode :</p>
               <div className="flex gap-2">
                 {(['append', 'replace'] as ImportMode[]).map((mode) => (
                   <button
@@ -253,9 +262,9 @@ Projet 2 — EcoPay (FinTech)
                     onClick={() => setImportMode(mode)}
                     className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
                     style={{
-                      background: importMode === mode ? 'rgba(255,188,64,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${importMode === mode ? 'rgba(255,188,64,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                      color: importMode === mode ? '#FFBC40' : 'rgba(255,255,255,0.4)',
+                      background: importMode === mode ? 'rgba(255,188,64,0.15)' : 'var(--color-surface)',
+                      border: `1px solid ${importMode === mode ? 'rgba(255,188,64,0.4)' : 'var(--color-card-border)'}`,
+                      color: importMode === mode ? '#FFBC40' : 'var(--color-text-muted)',
                       cursor: 'pointer',
                     }}
                   >
@@ -269,14 +278,14 @@ Projet 2 — EcoPay (FinTech)
               <button
                 onClick={onClose}
                 className="rounded-xl px-4 py-2 text-sm"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}
+                style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
               >
                 Annuler
               </button>
               <button
                 onClick={handleImport}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl py-2 font-semibold text-sm"
-                style={{ background: '#FFBC40', color: '#0C243E', border: 'none', cursor: 'pointer' }}
+                style={{ background: '#FFBC40', color: '#FFFFFF', border: 'none', cursor: 'pointer' }}
               >
                 <Check size={15} />
                 Importer {preview.length} projet{preview.length > 1 ? 's' : ''}

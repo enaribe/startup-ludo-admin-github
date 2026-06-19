@@ -51,7 +51,7 @@ export default function ChallengesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {programs.length} programme{programs.length !== 1 ? 's' : ''}
         </p>
         <button className="btn-primary flex items-center gap-2" onClick={() => router.push('/challenges/new')}>
@@ -80,24 +80,24 @@ export default function ChallengesPage() {
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', marginBottom: 2 }}>{prog.name}</h3>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{prog.id}</p>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>{prog.name}</h3>
+                    <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{prog.id}</p>
                   </div>
                   <span className={`badge ${prog.enabled !== false ? 'badge-success' : 'badge-error'}`}>
                     {prog.enabled !== false ? 'Actif' : 'Inactif'}
                   </span>
                 </div>
                 {prog.description && (
-                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 12, lineHeight: 1.4 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12, lineHeight: 1.4 }}>
                     {prog.description.slice(0, 100)}{prog.description.length > 100 ? '...' : ''}
                   </p>
                 )}
                 <div className="flex gap-4 mb-4">
-                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                     <Layers size={12} color="#9B59B6" />
                     {prog.levels?.length ?? 0} niveaux
                   </div>
-                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                     <Target size={12} color="#FFB347" />
                     {prog.sectors?.length ?? 0} secteurs
                   </div>

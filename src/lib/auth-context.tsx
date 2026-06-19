@@ -11,12 +11,21 @@ interface AuthContextValue {
   admin: AdminUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  /** True si l'admin connecté est super_admin (accès complet). */
+  isSuperAdmin: boolean;
+  /** True si l'admin connecté gère un seul programme. */
+  isProgramAdmin: boolean;
+  /** Programme géré (pour un admin de programme), sinon null. */
+  scopedProgramId: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   admin: null,
   loading: true,
   logout: async () => {},
+  isSuperAdmin: false,
+  isProgramAdmin: false,
+  scopedProgramId: null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -42,8 +51,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdmin(null);
   };
 
+  const isSuperAdmin = admin?.role === 'super_admin';
+  const isProgramAdmin = admin?.role === 'admin';
+  const scopedProgramId = isProgramAdmin ? admin?.programId ?? null : null;
+
   return (
-    <AuthContext.Provider value={{ admin, loading, logout }}>
+    <AuthContext.Provider
+      value={{ admin, loading, logout, isSuperAdmin, isProgramAdmin, scopedProgramId }}
+    >
       {children}
     </AuthContext.Provider>
   );

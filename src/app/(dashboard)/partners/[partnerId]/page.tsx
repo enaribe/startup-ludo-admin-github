@@ -94,14 +94,14 @@ export default function PartnerEditorPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <button onClick={() => router.push('/partners')} className="flex items-center gap-2" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13 }}>
+        <button onClick={() => router.push('/partners')} className="flex items-center gap-2" style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 13 }}>
           <ArrowLeft size={16} />
           Partenaires
         </button>
       </div>
 
       <div className="glass-card p-6" style={{ maxWidth: 720 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, color: '#FFFFFF', marginBottom: 20 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 20 }}>
           {isNew ? 'Nouveau partenaire' : data.name || partnerId}
         </h2>
 
@@ -172,7 +172,7 @@ export default function PartnerEditorPage() {
 
         <label className="flex items-center gap-3 mt-4" style={{ cursor: 'pointer' }}>
           <input type="checkbox" checked={data.isActive} onChange={(e) => update('isActive', e.target.checked)} />
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Partenaire actif</span>
+          <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>Partenaire actif</span>
         </label>
 
         {isNew ? (
@@ -192,7 +192,7 @@ export default function PartnerEditorPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}>{label}</label>
       {children}
     </div>
   );
@@ -201,7 +201,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center gap-2">
-      <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} style={{ width: 40, height: 38, padding: 2, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', cursor: 'pointer' }} />
+      <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} style={{ width: 40, height: 38, padding: 2, borderRadius: 8, border: '1px solid var(--color-card-border)', background: 'transparent', cursor: 'pointer' }} />
       <input className="input-field" value={value} onChange={(e) => onChange(e.target.value)} placeholder="#FFB347" style={{ flex: 1 }} />
     </div>
   );

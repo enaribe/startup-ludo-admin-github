@@ -125,7 +125,7 @@ export default function AIGenerateModal({ open, onClose, type, context, onGenera
         <div className="flex items-center gap-2">
           <Sparkles size={16} color="#FFBC40" />
           <span style={{ fontSize: 13, fontWeight: 600, color: '#FFBC40' }}>{config?.label}</span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>— {config?.description}</span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>— {config?.description}</span>
         </div>
 
         {/* Prompt input */}
@@ -149,7 +149,7 @@ export default function AIGenerateModal({ open, onClose, type, context, onGenera
             }}
           />
           {!autoPrompt && (
-            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>
+            <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 4 }}>
               Cmd+Enter pour generer
             </p>
           )}
@@ -176,19 +176,19 @@ export default function AIGenerateModal({ open, onClose, type, context, onGenera
                   Genere avec succes !
                 </span>
               </div>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                 {previewCount} element{previewCount !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="rounded-lg overflow-hidden" style={{
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.06)',
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-card-border)',
               maxHeight: 250,
               overflow: 'auto',
             }}>
               <pre style={{
                 fontSize: 11,
-                color: 'rgba(255,255,255,0.7)',
+                color: 'var(--color-text-secondary)',
                 padding: 12,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
@@ -199,14 +199,14 @@ export default function AIGenerateModal({ open, onClose, type, context, onGenera
                 {JSON.stringify(preview, null, 2)}
               </pre>
             </div>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 6 }}>
+            <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6 }}>
               Cliquez "Utiliser" pour injecter ces donnees. Vous pourrez les modifier ensuite.
             </p>
           </div>
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--color-card-border)' }}>
           <button className="btn-secondary" onClick={handleClose} style={{ fontSize: 13 }}>
             Annuler
           </button>

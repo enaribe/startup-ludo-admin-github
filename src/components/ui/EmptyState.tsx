@@ -12,19 +12,19 @@ interface EmptyStateProps {
 export default function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16">
-      <div className="mb-4" style={{ color: 'rgba(255,255,255,0.2)' }}>
+      <div className="mb-4" style={{ color: 'var(--color-text-muted)' }}>
         {icon || <Inbox size={48} />}
       </div>
       <h3 style={{
         fontFamily: "'Luckiest Guy', cursive",
         fontSize: 18,
-        color: 'rgba(255,255,255,0.5)',
+        color: 'var(--color-text-secondary)',
         marginBottom: 8,
       }}>
         {title}
       </h3>
       {description && (
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', maxWidth: 320, textAlign: 'center' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', maxWidth: 320, textAlign: 'center' }}>
           {description}
         </p>
       )}

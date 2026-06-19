@@ -7,32 +7,41 @@
   --color-primary-light: #FFD580;
   --color-primary-dark: #CC9633;
 
-  /* Background */
-  --color-bg: #0C243E;
+  /* ===== Thème CLAIR (zone de contenu) ===== */
+  /* Background : zone de contenu claire (la sidebar garde son propre fond sombre). */
+  --color-bg: #F4F6F9;
   --color-bg-light: #194F8A;
 
-  /* Surface */
-  --color-surface: rgba(255, 255, 255, 0.05);
-  --color-surface-variant: rgba(255, 255, 255, 0.1);
+  /* Surface : survols / fonds translucides clairs */
+  --color-surface: rgba(12, 36, 62, 0.04);
+  --color-surface-variant: rgba(12, 36, 62, 0.07);
 
-  /* Card */
-  --color-card: rgba(0, 0, 0, 0.3);
-  --color-card-border: rgba(255, 255, 255, 0.1);
+  /* Card : cartes blanches avec bordure grise légère */
+  --color-card: #FFFFFF;
+  --color-card-border: rgba(12, 36, 62, 0.10);
 
-  /* Text */
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: rgba(255, 255, 255, 0.7);
-  --color-text-muted: rgba(255, 255, 255, 0.5);
+  /* Text : texte foncé sur fond clair */
+  --color-text-primary: #0C243E;
+  --color-text-secondary: rgba(12, 36, 62, 0.65);
+  --color-text-muted: rgba(12, 36, 62, 0.45);
+
+  /* ===== Sidebar (reste sombre) ===== */
+  --color-sidebar-bg-top: #0a1e33;
+  --color-sidebar-bg-bottom: #0C243E;
+  --color-sidebar-text: rgba(255, 255, 255, 0.85);
+  --color-sidebar-text-muted: rgba(255, 255, 255, 0.45);
+  --color-sidebar-surface: rgba(255, 255, 255, 0.04);
+  --color-sidebar-border: rgba(255, 255, 255, 0.08);
 
   /* Status */
-  --color-success: #4CAF50;
-  --color-success-light: rgba(76, 175, 80, 0.2);
-  --color-error: #F44336;
-  --color-error-light: rgba(244, 67, 54, 0.2);
-  --color-warning: #FF9800;
-  --color-warning-light: rgba(255, 152, 0, 0.2);
-  --color-info: #2196F3;
-  --color-info-light: rgba(33, 150, 243, 0.2);
+  --color-success: #2E9E5B;
+  --color-success-light: rgba(46, 158, 91, 0.14);
+  --color-error: #E5484D;
+  --color-error-light: rgba(229, 72, 77, 0.12);
+  --color-warning: #F5A623;
+  --color-warning-light: rgba(245, 166, 35, 0.16);
+  --color-info: #3B82F6;
+  --color-info-light: rgba(59, 130, 246, 0.14);
 
   /* Event Colors */
   --color-event-quiz: #4A90E2;
@@ -48,9 +57,9 @@
   --color-player-green: #4CAF50;
   --color-player-red: #F35145;
 
-  /* Border */
-  --color-border: rgba(255, 255, 255, 0.2);
-  --color-border-light: rgba(255, 255, 255, 0.1);
+  /* Border (thème clair) */
+  --color-border: rgba(12, 36, 62, 0.16);
+  --color-border-light: rgba(12, 36, 62, 0.10);
 
   /* Fonts */
   --font-title: 'Luckiest Guy', cursive;
@@ -89,8 +98,8 @@ body {
 .glass-card {
   background: var(--color-card);
   border: 1px solid var(--color-card-border);
-  border-radius: 12px;
-  backdrop-filter: blur(8px);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(12, 36, 62, 0.04), 0 4px 16px rgba(12, 36, 62, 0.04);
 }
 
 .gradient-border {
@@ -132,20 +141,20 @@ body {
 }
 
 .btn-secondary {
-  background: var(--color-surface-variant);
+  background: #FFFFFF;
   color: var(--color-text-primary);
   font-family: var(--font-body);
   font-weight: 600;
   padding: 10px 24px;
   border-radius: 12px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--color-card-border);
   transition: all 0.2s;
   cursor: pointer;
 }
 
 .btn-secondary:hover {
-  background: var(--color-border);
-  border-color: var(--color-border);
+  background: var(--color-surface);
+  border-color: rgba(12, 36, 62, 0.18);
 }
 
 .btn-danger {
@@ -167,8 +176,8 @@ body {
 
 /* Input styles */
 .input-field {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
+  background: #FFFFFF;
+  border: 1px solid var(--color-card-border);
   border-radius: 8px;
   padding: 10px 14px;
   color: var(--color-text-primary);
@@ -243,8 +252,9 @@ body {
 .stat-card {
   background: var(--color-card);
   border: 1px solid var(--color-card-border);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 20px;
+  box-shadow: 0 1px 2px rgba(12, 36, 62, 0.04), 0 4px 16px rgba(12, 36, 62, 0.04);
 }
 
 .stat-value {

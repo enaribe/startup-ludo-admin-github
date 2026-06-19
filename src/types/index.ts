@@ -11,6 +11,10 @@ export type EditionId = 'classic' | 'agriculture' | 'education' | 'sante' | 'tou
 export type DifficultyLevel = 'facile' | 'moyen' | 'difficile';
 
 // Quiz — matches mobile Quiz interface
+export interface QuizTranslation { question: string; options: string[]; explanation?: string }
+export interface DuelTranslation { question: string; options: string[] }
+export interface TitleDescTranslation { title: string; description: string }
+
 export interface Quiz {
   id: string;
   question: string;
@@ -23,6 +27,7 @@ export interface Quiz {
   penaltyTokens?: number;
   timeLimit?: number;
   sectorId?: string;
+  translations?: Record<string, QuizTranslation>;
 }
 
 // DuelOption — option de reponse pour un duel (toutes "correctes" mais points differents)
@@ -40,6 +45,7 @@ export interface Duel {
   options: DuelOption[];
   category: string;
   sectorId?: string;
+  translations?: Record<string, DuelTranslation>;
 }
 
 // Funding — matches mobile Funding interface
@@ -50,6 +56,7 @@ export interface Funding {
   tokens: number;
   source?: string;
   sectorId?: string;
+  translations?: Record<string, TitleDescTranslation>;
 }
 
 // Opportunity — matches mobile Opportunity interface
@@ -59,6 +66,7 @@ export interface Opportunity {
   description: string;
   tokens: number;
   sectorId?: string;
+  translations?: Record<string, TitleDescTranslation>;
 }
 
 // Challenge Event — matches mobile Challenge interface (in-game event, NOT program)
@@ -68,6 +76,7 @@ export interface ChallengeEvent {
   description: string;
   tokens: number;
   sectorId?: string;
+  translations?: Record<string, TitleDescTranslation>;
 }
 
 // StartupIdea — matches mobile StartupIdea interface
@@ -185,16 +194,157 @@ export interface ProgramAudience {
 
 // Le contenu d'un pack a EXACTEMENT la même forme que celui d'un sous-niveau challenge,
 // ce qui permet de réutiliser les éditeurs d'événements et ImportContentModal tels quels.
+/** Niveau entrepreneurial couvert par une partie. */
+export type ProgramLevelTier = 'idea' | 'preparation' | 'launch' | 'development';
+
 export interface ProgramContentPack {
   id: string;
   programId: string;
   name: string;
   description?: string;
+  /** Titre affiché de la partie (ex: « Validation du problème »). */
+  title?: string;
+  /** Niveau entrepreneurial de la partie. */
+  levelTier?: ProgramLevelTier;
   quizzes: Quiz[];
   duels: Duel[];
   fundings: Funding[];
   opportunities: Opportunity[];
   challengeEvents: ChallengeEvent[];
+}
+
+export type ProgramGameMode = 'solo' | 'duel' | 'tournament';
+export type ProgramLanguage = 'fr' | 'en' | 'wo';
+
+export interface ProgramEligibility {
+  ageMin?: number;
+  ageMax?: number;
+  regions: string[];
+  sectors: string[];
+  audienceProfiles: string[];
+}
+
+export interface ProgramAdvancedSettings {
+  rule7030: boolean;
+  concreeValidationRequired: boolean;
+  frequencyCap: boolean;
+  publicPreview: boolean;
+}
+
+// ===== Formulaire de fin (form builder) =====
+
+export type FormFieldType =
+  | 'short_text'
+  | 'long_text'
+  | 'phone'
+  | 'email'
+  | 'select'
+  | 'multi_select'
+  | 'radio'
+  | 'checkbox'
+  | 'slider'
+  | 'date'
+  | 'file';
+
+export interface ProgramFormField {
+  id: string;
+  type: FormFieldType;
+  label: string;
+  placeholder?: string;
+  required: boolean;
+  options?: string[];
+  min?: number;
+  max?: number;
+  maxLength?: number;
+}
+
+export interface ProgramFormConsent {
+  id: string;
+  label: string;
+  required: boolean;
+  enabled: boolean;
+}
+
+export interface ProgramEndForm {
+  fields: ProgramFormField[];
+  consents: ProgramFormConsent[];
+}
+
+// ===== Leads / candidats (back-office) =====
+
+export type ProfileMatch = 'yes' | 'no' | 'partial';
+export type ProgramLeadStatus = 'new' | 'contacted' | 'converted' | 'rejected';
+export type EntrepreneurProfile = 'strategist' | 'goer' | 'cautious' | 'creative' | 'builder';
+
+export interface ProgramEnrollmentFormData {
+  fullName: string;
+  phone: string;
+  email: string;
+  city: string;
+  professionalStatus: string;
+  profileMatch: ProfileMatch | null;
+  applicationIntent: number;
+  consentDataProcessing: boolean;
+  consentContact: boolean;
+  newsletterOptIn: boolean;
+  customResponses?: Record<string, string | string[] | number | boolean>;
+  customConsents?: Record<string, boolean>;
+}
+
+export interface ProgramEnrollment {
+  id: string;
+  userId: string;
+  partnerId: string;
+  programId: string;
+  status: 'active' | 'completed' | 'paused';
+  formData: ProgramEnrollmentFormData | null;
+  totalSessions: number;
+  totalWins: number;
+  totalXp: number;
+  currentLevel: number;
+  completedLevels: number;
+  profileId?: string | null;
+  profileName?: string | null;
+  entrepreneurProfile?: EntrepreneurProfile | null;
+  leadStatus?: ProgramLeadStatus;
+  enrolledAt: number;
+  lastPlayedAt: number | null;
+  completedAt: number | null;
+}
+
+/** Session de jeu d'un programme (côté back-office, pour le funnel). */
+export interface ProgramSessionDoc {
+  id: string;
+  userId: string;
+  partnerId: string;
+  programId: string;
+  gameId: string;
+  isTrial: boolean;
+  levelIndex: number;
+  won: boolean | null;
+  xpGained: number;
+  tokensEarned: number;
+  startedAt: number;
+  completedAt: number | null;
+}
+
+/** Profil-personnage que le joueur incarne pendant le parcours (« VOTRE PROFIL »). */
+export interface ProgramProfile {
+  id: string;
+  name: string;
+  age: number;
+  description: string;
+  location: string;
+  sector: string;
+  avatarUrl?: string | null;
+  /** Statut entrepreneurial (Informel, Formalisé, En croissance, Idée...). */
+  status?: string;
+  /** Nombre de jetons de départ. */
+  tokens?: number;
+  /** Persona activé (jouable). Défaut: true. */
+  enabled?: boolean;
+  /** Brouillon non publié. */
+  isDraft?: boolean;
 }
 
 export interface PartnerProgram {
@@ -220,6 +370,22 @@ export interface PartnerProgram {
   primaryColor: string;
   secondaryColor: string;
   contentPacks: ProgramContentPack[];
+  /** Profils que le joueur peut incarner pendant le parcours. */
+  profiles?: ProgramProfile[];
+  /** Langue du parcours. */
+  language?: ProgramLanguage;
+  /** Modes de jeu autorisés (Solo toujours inclus). */
+  allowedModes?: ProgramGameMode[];
+  /** Mode recommandé côté joueur. */
+  recommendedMode?: ProgramGameMode;
+  /** Critères d'éligibilité étendus. */
+  eligibility?: ProgramEligibility;
+  /** Réglages avancés (règle 70/30, validation, frequency cap, preview). */
+  advancedSettings?: ProgramAdvancedSettings;
+  /** Formulaire de fin de parcours configurable (form builder). */
+  endForm?: ProgramEndForm;
+  /** uid de l'admin propriétaire de ce programme (multi-tenant). Vide = géré par le super admin seul. */
+  ownerId?: string | null;
   isActive: boolean;
   sortOrder: number;
   updatedAt?: number;

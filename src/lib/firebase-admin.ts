@@ -9,6 +9,7 @@
 
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getAuth, type Auth } from 'firebase-admin/auth';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -49,6 +50,10 @@ function getAdminApp(): App {
 
 export function getAdminFirestore(): Firestore {
   return getFirestore(getAdminApp());
+}
+
+export function getAdminAuth(): Auth {
+  return getAuth(getAdminApp());
 }
 
 // Lazy ref for backward compatibility: only resolves when first used at runtime (not at build).

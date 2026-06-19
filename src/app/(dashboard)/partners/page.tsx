@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Building2, Plus, Pencil, Trash2, Rocket } from 'lucide-react';
 import { getPartners, getPrograms, deletePartner } from '@/lib/firestore-service';
 import type { ProgramPartner, PartnerProgram } from '@/types';
+import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -12,11 +13,17 @@ import toast from 'react-hot-toast';
 
 export default function PartnersPage() {
   const router = useRouter();
+  const { isSuperAdmin, loading: authLoading } = useAuth();
   const [partners, setPartners] = useState<ProgramPartner[]>([]);
   const [programs, setPrograms] = useState<PartnerProgram[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<ProgramPartner | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Réservé au super admin : un admin de programme est redirigé.
+  useEffect(() => {
+    if (!authLoading && !isSuperAdmin) router.replace('/programs');
+  }, [authLoading, isSuperAdmin, router]);
 
   const load = useCallback(async () => {
     try {
@@ -57,7 +64,7 @@ export default function PartnersPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {partners.length} partenaire{partners.length !== 1 ? 's' : ''}
         </p>
         <button className="btn-primary flex items-center gap-2" onClick={() => router.push('/partners/new')}>
@@ -90,13 +97,13 @@ export default function PartnersPage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={partner.logoUrl} alt={partner.name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} />
                     ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: 8, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Building2 size={18} color="rgba(255,255,255,0.4)" />
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--color-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Building2 size={18} color="var(--color-text-muted)" />
                       </div>
                     )}
                     <div>
-                      <h3 style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', marginBottom: 2 }}>{partner.name}</h3>
-                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{partner.id}</p>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>{partner.name}</h3>
+                      <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{partner.id}</p>
                     </div>
                   </div>
                   <span className={`badge ${partner.isActive !== false ? 'badge-success' : 'badge-error'}`}>
@@ -104,12 +111,12 @@ export default function PartnersPage() {
                   </span>
                 </div>
                 {partner.description && (
-                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 12, lineHeight: 1.4 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 12, lineHeight: 1.4 }}>
                     {partner.description.slice(0, 100)}{partner.description.length > 100 ? '...' : ''}
                   </p>
                 )}
                 <div className="flex gap-4 mb-4">
-                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                     <Rocket size={12} color={partner.primaryColor || '#FFB347'} />
                     {programCount(partner.id)} programme{programCount(partner.id) !== 1 ? 's' : ''}
                   </div>

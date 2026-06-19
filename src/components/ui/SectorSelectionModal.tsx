@@ -72,7 +72,7 @@ export default function SectorSelectionModal({ open, onClose, onConfirm }: Secto
   return (
     <Modal open={open} onClose={onClose} title="Sélectionner les secteurs" maxWidth="640px">
       <div className="flex flex-col gap-4">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
           Sélectionnez un ou plusieurs secteurs pour générer une édition thématique.
           L'IA créera automatiquement tous les quiz, duels, événements, etc. adaptés à ces secteurs.
         </p>
@@ -93,7 +93,7 @@ export default function SectorSelectionModal({ open, onClose, onConfirm }: Secto
           </div>
         ) : sectors.length === 0 ? (
           <div className="flex items-center justify-center py-12">
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
+            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
               Aucun secteur disponible
             </p>
           </div>
@@ -107,8 +107,8 @@ export default function SectorSelectionModal({ open, onClose, onConfirm }: Secto
                   onClick={() => toggleSector(sector.text)}
                   className="p-3 rounded-lg transition-all text-left"
                   style={{
-                    background: isSelected ? 'rgba(255,188,64,0.15)' : 'rgba(0,0,0,0.2)',
-                    border: `1px solid ${isSelected ? 'rgba(255,188,64,0.4)' : 'rgba(255,255,255,0.06)'}`,
+                    background: isSelected ? 'rgba(255,188,64,0.15)' : 'var(--color-surface)',
+                    border: `1px solid ${isSelected ? 'rgba(255,188,64,0.4)' : 'var(--color-card-border)'}`,
                     cursor: 'pointer',
                     position: 'relative',
                   }}
@@ -118,13 +118,13 @@ export default function SectorSelectionModal({ open, onClose, onConfirm }: Secto
                       className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
                       style={{ background: '#FFBC40' }}
                     >
-                      <Check size={12} color="#0A1929" strokeWidth={3} />
+                      <Check size={12} color="#FFFFFF" strokeWidth={3} />
                     </div>
                   )}
                   <p style={{
                     fontSize: 12,
                     fontWeight: 600,
-                    color: isSelected ? '#FFBC40' : '#FFFFFF',
+                    color: isSelected ? '#FFBC40' : 'var(--color-text-primary)',
                     paddingRight: isSelected ? 24 : 0,
                   }}>
                     {sector.text}
@@ -135,10 +135,10 @@ export default function SectorSelectionModal({ open, onClose, onConfirm }: Secto
                       style={{
                         background: sector.rarity === 'legendary' ? 'rgba(155,89,182,0.2)' :
                                    sector.rarity === 'rare' ? 'rgba(255,188,64,0.2)' :
-                                   'rgba(255,255,255,0.1)',
+                                   'var(--color-surface-variant)',
                         color: sector.rarity === 'legendary' ? '#9B59B6' :
                                sector.rarity === 'rare' ? '#FFBC40' :
-                               'rgba(255,255,255,0.5)',
+                               'var(--color-text-muted)',
                         fontSize: 9,
                       }}
                     >
@@ -151,8 +151,8 @@ export default function SectorSelectionModal({ open, onClose, onConfirm }: Secto
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+        <div className="flex items-center justify-between pt-4" style={{ borderTop: '1px solid var(--color-card-border)' }}>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
             {selectedSectors.length} secteur{selectedSectors.length !== 1 ? 's' : ''} sélectionné{selectedSectors.length !== 1 ? 's' : ''}
           </p>
           <div className="flex gap-2">

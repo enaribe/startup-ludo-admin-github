@@ -17,6 +17,8 @@ export interface AdminUser {
   email: string;
   displayName: string;
   role: 'admin' | 'super_admin';
+  /** Programme géré par cet admin (pour role === 'admin'). Absent pour un super_admin. */
+  programId?: string | null;
 }
 
 /**
@@ -47,6 +49,7 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
     email: user.email || email,
     displayName: userData.displayName || 'Admin',
     role: role as 'admin' | 'super_admin',
+    programId: (userData.programId as string | undefined) ?? null,
   };
 }
 
@@ -85,6 +88,7 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
       email: user.email || '',
       displayName: userData.displayName || 'Admin',
       role: role as 'admin' | 'super_admin',
+      programId: (userData.programId as string | undefined) ?? null,
     };
   } catch {
     return null;

@@ -95,7 +95,7 @@ export default function EditionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             {editions.length} edition{editions.length !== 1 ? 's' : ''} configuree{editions.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -141,7 +141,7 @@ export default function EditionsPage() {
                 key={edition.id}
                 className="glass-card overflow-hidden transition-all duration-200"
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${color}40`; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-card-border)'; }}
               >
                 {/* Color bar */}
                 <div style={{ height: 3, background: color }} />
@@ -150,10 +150,10 @@ export default function EditionsPage() {
                   {/* Title + Status */}
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <h3 style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF', marginBottom: 2 }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>
                         {edition.name}
                       </h3>
-                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+                      <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                         {edition.id}
                       </p>
                     </div>
@@ -164,30 +164,30 @@ export default function EditionsPage() {
 
                   {/* Description */}
                   {edition.description && (
-                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 12, lineHeight: 1.4 }}>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 12, lineHeight: 1.4 }}>
                       {edition.description.length > 80 ? edition.description.slice(0, 80) + '...' : edition.description}
                     </p>
                   )}
 
                   {/* Stats */}
                   <div className="flex flex-wrap gap-3 mb-4">
-                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                       <HelpCircle size={12} color="#4A90E2" />
                       {edition.quizzes?.length ?? 0} quiz
                     </div>
-                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                       <Swords size={12} color="#FF6B6B" />
                       {edition.duels?.length ?? 0} duels
                     </div>
-                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                       <Coins size={12} color="#50C878" />
                       {edition.fundings?.length ?? 0} fundings
                     </div>
-                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                       <Star size={12} color="#FFB347" />
                       {edition.opportunities?.length ?? 0} opportunites
                     </div>
-                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                       <Zap size={12} color="#9B59B6" />
                       {edition.challenges?.length ?? 0} challenges
                     </div>

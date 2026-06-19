@@ -44,3 +44,6 @@ next-env.d.ts
 
 # JetBrains IDE
 .idea/
+
+# Expo local cache
+.expo/

@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { X, Save } from 'lucide-react';
 import type { Opportunity } from '@/types';
 import { generateId } from '@/lib/utils';
+import LangTabs, { type ContentLang } from '@/components/events/LangTabs';
+import { titleDescLang } from '@/components/events/useTitleDescTranslation';
 
 interface OpportunityEditorProps {
   opportunity?: Opportunity | null;
@@ -19,9 +21,12 @@ export default function OpportunityEditor({ opportunity, onSave, onClose, sector
     description: opportunity?.description || '',
     tokens: opportunity?.tokens || 30,
     sectorId: opportunity?.sectorId || '',
+    translations: opportunity?.translations,
   });
+  const [lang, setLang] = useState<ContentLang>('fr');
+  const { title, description, setTitle, setDescription } = titleDescLang(formData, lang, setFormData);
 
-  const isValid = formData.title.trim() && formData.description.trim() && formData.tokens > 0;
+  const isValid = formData.title.trim() && formData.description.trim();
 
   const handleSave = () => {
     if (!isValid) return;
@@ -31,15 +36,18 @@ export default function OpportunityEditor({ opportunity, onSave, onClose, sector
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>
-      <div className="rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col" style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)' }}>
+      <div className="rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col" style={{ background: '#FFFFFF', border: '1px solid var(--color-card-border)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
             {opportunity ? 'Modifier l\'Opportunité' : 'Nouvelle Opportunité'}
           </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-3">
+            <LangTabs lang={lang} onChange={setLang} />
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -47,43 +55,29 @@ export default function OpportunityEditor({ opportunity, onSave, onClose, sector
           <div className="flex flex-col gap-4">
             {/* Title */}
             <div>
-              <label className="label">Titre *</label>
+              <label className="label">Titre {lang === 'fr' ? '*' : '(EN)'}</label>
               <input
                 className="input-field"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Partenariat stratégique"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={lang === 'fr' ? 'Partenariat stratégique' : 'English title…'}
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className="label">Description *</label>
+              <label className="label">Description {lang === 'fr' ? '*' : '(EN)'}</label>
               <textarea
                 className="input-field"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Vous avez signé un partenariat avec une grande entreprise..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={lang === 'fr' ? 'Vous avez signé un partenariat...' : 'English description…'}
                 rows={3}
                 style={{ resize: 'vertical' }}
               />
             </div>
 
-            {/* Tokens */}
-            <div>
-              <label className="label">Tokens (récompense) *</label>
-              <input
-                type="number"
-                className="input-field"
-                value={formData.tokens}
-                onChange={(e) => setFormData({ ...formData, tokens: Number(e.target.value) })}
-                min={1}
-                placeholder="30"
-              />
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
-                Nombre de tokens positifs ajoutés au joueur
-              </p>
-            </div>
+            {/* Tokens — Champ masqué : non consommé par le mobile (points fixes côté jeu). tokens conservé dans formData (valeur par défaut). */}
             {/* Sector */}
             <div>
               <label className="label">Secteur (optionnel)</label>
@@ -97,7 +91,7 @@ export default function OpportunityEditor({ opportunity, onSave, onClose, sector
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
                 Si un secteur est sélectionné, ce contenu ne sera affiché qu&apos;aux joueurs ayant choisi ce secteur
               </p>
             </div>
@@ -105,7 +99,7 @@ export default function OpportunityEditor({ opportunity, onSave, onClose, sector
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid var(--color-card-border)' }}>
           <button onClick={onClose} className="btn-secondary" style={{ fontSize: 13 }}>
             Annuler
           </button>

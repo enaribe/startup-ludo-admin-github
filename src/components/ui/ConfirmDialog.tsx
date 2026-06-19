@@ -25,7 +25,7 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth="400px">
-      <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, marginBottom: 24 }}>
+      <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 24 }}>
         {message}
       </p>
       <div className="flex items-center justify-end gap-3">

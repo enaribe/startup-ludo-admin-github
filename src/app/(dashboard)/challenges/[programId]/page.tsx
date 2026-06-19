@@ -537,11 +537,11 @@ export default function ChallengeEditorPage() {
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <button className="p-2 rounded-lg" onClick={() => handleNavigate('/challenges')} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
+          <button className="p-2 rounded-lg" onClick={() => handleNavigate('/challenges')} style={{ background: 'var(--color-surface)', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h2 style={{ fontFamily: "'Luckiest Guy', cursive", fontSize: 20, color: '#FFFFFF' }}>
+            <h2 style={{ fontFamily: "'Luckiest Guy', cursive", fontSize: 20, color: 'var(--color-text-primary)' }}>
               {isNew ? 'Nouveau Programme' : data.name || programId}
             </h2>
           </div>
@@ -557,7 +557,7 @@ export default function ChallengeEditorPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'var(--color-surface)' }}>
         {(['general', 'levels', 'sectors'] as Tab[]).map((tab) => (
           <button
             key={tab}
@@ -565,7 +565,7 @@ export default function ChallengeEditorPage() {
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg transition-all"
             style={{
               background: activeTab === tab ? 'rgba(155,89,182,0.15)' : 'transparent',
-              color: activeTab === tab ? '#9B59B6' : 'rgba(255,255,255,0.5)',
+              color: activeTab === tab ? '#9B59B6' : 'var(--color-text-secondary)',
               border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400,
             }}
           >
@@ -613,7 +613,7 @@ export default function ChallengeEditorPage() {
               <button
                 onClick={() => setData((p) => ({ ...p, enabled: !p.enabled }))}
                 className="relative w-10 h-5 rounded-full transition-colors"
-                style={{ background: data.enabled ? '#4CAF50' : 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer' }}
+                style={{ background: data.enabled ? '#4CAF50' : 'var(--color-surface-variant)', border: 'none', cursor: 'pointer' }}
               >
                 <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: data.enabled ? 22 : 2 }} />
               </button>
@@ -621,7 +621,7 @@ export default function ChallengeEditorPage() {
 
             {/* AI Briefing Form */}
             {isNew && (
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 20, marginTop: 8 }}>
+              <div style={{ borderTop: '1px solid var(--color-card-border)', paddingTop: 20, marginTop: 8 }}>
                 {!showBriefingForm ? (
                   <button
                     className="flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all"
@@ -642,7 +642,7 @@ export default function ChallengeEditorPage() {
                         <Sparkles size={15} />
                         Briefing IA — Generation complete
                       </h3>
-                      <button onClick={() => setShowBriefingForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                      <button onClick={() => setShowBriefingForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 12 }}>
                         Fermer
                       </button>
                     </div>
@@ -700,9 +700,9 @@ export default function ChallengeEditorPage() {
                       onClick={() => { setAiAutoPrompt(undefined); setAiModalType('challenge_full'); }}
                       style={{
                         background: briefing.programName.trim() && briefing.thematic.trim()
-                          ? 'linear-gradient(135deg, #FFBC40, #FF9800)' : 'rgba(255,255,255,0.08)',
+                          ? 'linear-gradient(135deg, #FFBC40, #FF9800)' : 'var(--color-surface)',
                         border: 'none', cursor: briefing.programName.trim() && briefing.thematic.trim() ? 'pointer' : 'not-allowed',
-                        color: briefing.programName.trim() && briefing.thematic.trim() ? '#000' : 'rgba(255,255,255,0.3)',
+                        color: briefing.programName.trim() && briefing.thematic.trim() ? '#000' : 'var(--color-text-muted)',
                         fontSize: 13, fontWeight: 700,
                       }}
                     >
@@ -720,7 +720,7 @@ export default function ChallengeEditorPage() {
         {activeTab === 'levels' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{data.levels.length} niveau(x)</p>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{data.levels.length} niveau(x)</p>
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
@@ -738,17 +738,17 @@ export default function ChallengeEditorPage() {
             </div>
             <div className="flex flex-col gap-4">
               {data.levels.map((level, li) => (
-                <div key={level.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div key={level.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-card-border)' }}>
                   {/* Level header */}
                   <div
                     className="flex items-center gap-3 px-4 py-3 cursor-pointer"
-                    style={{ background: 'rgba(0,0,0,0.2)' }}
+                    style={{ background: 'var(--color-surface)' }}
                     onClick={() => toggleLevel(li)}
                   >
-                    {expandedLevels.has(li) ? <ChevronDown size={16} color="rgba(255,255,255,0.4)" /> : <ChevronRight size={16} color="rgba(255,255,255,0.4)" />}
+                    {expandedLevels.has(li) ? <ChevronDown size={16} color="var(--color-text-muted)" /> : <ChevronRight size={16} color="var(--color-text-muted)" />}
                     <span className="badge" style={{ background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>Niveau {li + 1}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', flex: 1 }}>{level.title || '(sans titre)'}</span>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{level.subLevels.length} sous-niveaux</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', flex: 1 }}>{level.title || '(sans titre)'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{level.subLevels.length} sous-niveaux</span>
                     <button onClick={(e) => { e.stopPropagation(); removeLevel(li); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336', padding: 4 }}>
                       <Trash2 size={14} />
                     </button>
@@ -756,7 +756,7 @@ export default function ChallengeEditorPage() {
 
                   {/* Level content */}
                   {expandedLevels.has(li) && (
-                    <div className="px-4 py-4" style={{ background: 'rgba(0,0,0,0.1)' }}>
+                    <div className="px-4 py-4" style={{ background: 'var(--color-surface)' }}>
                       <div className="flex gap-4 mb-4">
                         <div className="flex-1">
                           <label className="label">Titre</label>
@@ -774,7 +774,7 @@ export default function ChallengeEditorPage() {
 
                       {/* Sub-levels header */}
                       <div className="flex items-center justify-between mb-3">
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Sous-niveaux</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Sous-niveaux</span>
                         <div className="flex gap-2">
                           <button
                             className="flex items-center gap-1"
@@ -802,16 +802,16 @@ export default function ChallengeEditorPage() {
                             { key: 'challengeEvents', count: sub.challengeEvents?.length || 0, color: '#F44336', label: 'E' },
                           ];
                           return (
-                          <div key={sub.id} className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.12)' }}>
+                          <div key={sub.id} className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-card-border)', background: 'var(--color-surface)' }}>
                             {/* Compact header row */}
                             <div className="flex items-center gap-2 px-3 py-2">
-                              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', minWidth: 16 }}>{si + 1}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-muted)', minWidth: 16 }}>{si + 1}</span>
                               <input
                                 className="input-field"
                                 value={sub.title}
                                 onChange={(e) => updateSubLevel(li, si, 'title', e.target.value)}
                                 placeholder="Titre du sous-niveau"
-                                style={{ fontSize: 12, padding: '4px 8px', flex: 1, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}
+                                style={{ fontSize: 12, padding: '4px 8px', flex: 1, background: '#FFFFFF', border: '1px solid var(--color-card-border)' }}
                               />
                               <input
                                 type="number"
@@ -819,7 +819,7 @@ export default function ChallengeEditorPage() {
                                 value={sub.xpReward}
                                 onChange={(e) => updateSubLevel(li, si, 'xpReward', Number(e.target.value))}
                                 placeholder="XP"
-                                style={{ fontSize: 11, padding: '4px 6px', width: 60, textAlign: 'center', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}
+                                style={{ fontSize: 11, padding: '4px 6px', width: 60, textAlign: 'center', background: '#FFFFFF', border: '1px solid var(--color-card-border)' }}
                                 title="XP Reward"
                               />
                               {/* Content dots */}
@@ -838,14 +838,14 @@ export default function ChallengeEditorPage() {
                                   </span>
                                 ))}
                                 {contentCount === 0 && (
-                                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>vide</span>
+                                  <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>vide</span>
                                 )}
                               </div>
                               {/* Actions */}
                               <button
                                 onClick={() => { setContentModal({ levelIdx: li, subIdx: si }); setContentTab('quizzes'); }}
                                 title="Voir / editer le contenu"
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: 2 }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 2 }}
                               >
                                 <BookOpen size={13} />
                               </button>
@@ -873,7 +873,7 @@ export default function ChallengeEditorPage() {
                                   onChange={(e) => updateSubLevel(li, si, 'description', e.target.value)}
                                   placeholder="Description..."
                                   rows={1}
-                                  style={{ fontSize: 11, padding: '3px 8px', resize: 'vertical', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)' }}
+                                  style={{ fontSize: 11, padding: '3px 8px', resize: 'vertical', background: '#FFFFFF', border: '1px solid var(--color-card-border)', color: 'var(--color-text-secondary)' }}
                                 />
                               </div>
                             )}
@@ -893,7 +893,7 @@ export default function ChallengeEditorPage() {
         {activeTab === 'sectors' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{data.sectors.length} secteur(s)</p>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{data.sectors.length} secteur(s)</p>
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
@@ -911,7 +911,7 @@ export default function ChallengeEditorPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {data.sectors.map((sec, i) => (
-                <div key={sec.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={sec.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge badge-primary">Secteur</span>
                     <button onClick={() => removeSector(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}>

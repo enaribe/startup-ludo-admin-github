@@ -117,7 +117,7 @@ export default function IdeationPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             {cards.length} carte{cards.length !== 1 ? 's' : ''} au total
             ({cards.filter((c) => c.type === 'target').length} cibles, {cards.filter((c) => c.type === 'mission').length} missions, {cards.filter((c) => c.type === 'sector').length} secteurs)
           </p>
@@ -126,7 +126,7 @@ export default function IdeationPage() {
       </div>
 
       {/* Type tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'var(--color-surface)' }}>
         {(Object.entries(CARD_TYPE_CONFIG) as [string, typeof CARD_TYPE_CONFIG[string]][]).map(([type, cfg]) => {
           const count = cards.filter((c) => c.type === type).length;
           return (
@@ -136,7 +136,7 @@ export default function IdeationPage() {
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg transition-all"
               style={{
                 background: activeType === type ? `${cfg.color}20` : 'transparent',
-                color: activeType === type ? cfg.color : 'rgba(255,255,255,0.5)',
+                color: activeType === type ? cfg.color : 'var(--color-text-muted)',
                 border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: activeType === type ? 600 : 400,
               }}
             >
@@ -150,7 +150,7 @@ export default function IdeationPage() {
       {/* Cards */}
       <div className="glass-card p-6">
         <div className="flex items-center justify-between mb-4">
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             {filteredCards.length} {CARD_TYPE_CONFIG[activeType]?.label.toLowerCase()}{filteredCards.length !== 1 ? 's' : ''}
           </p>
           <div className="flex gap-2">
@@ -179,7 +179,7 @@ export default function IdeationPage() {
             {filteredCards.map((card, i) => {
               const cfg = CARD_TYPE_CONFIG[card.type];
               return (
-                <div key={card.id} className="p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${cfg?.color}20` }}>
+                <div key={card.id} className="p-3 rounded-lg" style={{ background: 'var(--color-surface)', border: `1px solid ${cfg?.color}20` }}>
                   <div className="flex items-start justify-between mb-2">
                     <span style={{ fontSize: 10, fontWeight: 600, color: cfg?.color }}>#{i + 1}</span>
                     <button onClick={() => setDeleteTarget({ deckId: deck!.id, cardIndex: i })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}>

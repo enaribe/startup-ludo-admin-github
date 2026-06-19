@@ -18,7 +18,7 @@ export default function StatCard({ label, value, icon, color = '#FFBC40', trend 
         <p className="stat-label">{label}</p>
         <p className="stat-value" style={{ color, fontSize: 28 }}>{value}</p>
         {trend && (
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{trend}</p>
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{trend}</p>
         )}
       </div>
     </div>

@@ -6,9 +6,9 @@ import Header from './Header';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen" style={{ background: '#0C243E' }}>
+    <div className="min-h-screen" style={{ background: 'var(--color-bg)' }}>
       <Sidebar />
-      <div className="ml-64 flex flex-col min-h-screen">
+      <div className="ml-64 flex flex-col min-h-screen" style={{ background: 'var(--color-bg)' }}>
         <Header />
         <main className="flex-1 p-8">
           {children}

@@ -218,8 +218,8 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
         style={{
           maxWidth: 680,
           maxHeight: '90vh',
-          background: '#0f2a45',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: '#FFFFFF',
+          border: '1px solid var(--color-card-border)',
           boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
         }}
       >
@@ -233,11 +233,11 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
               <Upload size={16} color="#FFBC40" />
             </div>
             <div>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                 Importer {filterLabel ? `des ${filterLabel.toLowerCase()}` : 'via l\'IA'}
               </h2>
               {subLevelTitle && (
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                   {programName && `${programName} › `}{levelTitle && `${levelTitle} › `}{subLevelTitle}
                 </p>
               )}
@@ -245,7 +245,7 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
           </div>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
           >
             <X size={18} />
           </button>
@@ -254,7 +254,7 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
         <div className="flex-1 overflow-y-auto">
           {/* Step 1 — Paste text */}
           <div className="px-5 pt-4 pb-3">
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>
               {descriptionText}
             </p>
             <textarea
@@ -264,10 +264,10 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
               rows={10}
               style={{
                 width: '100%',
-                background: 'rgba(0,0,0,0.3)',
-                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-card-border)',
                 borderRadius: 10,
-                color: '#fff',
+                color: 'var(--color-text-primary)',
                 fontSize: 12,
                 padding: '10px 12px',
                 resize: 'vertical',
@@ -284,8 +284,8 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
               disabled={loading || !rawText.trim()}
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition"
               style={{
-                background: loading || !rawText.trim() ? 'rgba(255,255,255,0.08)' : '#FFBC40',
-                color: loading || !rawText.trim() ? 'rgba(255,255,255,0.3)' : '#0C243E',
+                background: loading || !rawText.trim() ? 'var(--color-surface)' : '#FFBC40',
+                color: loading || !rawText.trim() ? 'var(--color-text-muted)' : '#FFFFFF',
                 border: 'none',
                 cursor: loading || !rawText.trim() ? 'not-allowed' : 'pointer',
                 fontSize: 13,
@@ -328,8 +328,8 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                     key={key}
                     className="mb-2 rounded-xl overflow-hidden"
                     style={{
-                      border: `1px solid ${isSelected ? color + '40' : 'rgba(255,255,255,0.06)'}`,
-                      background: isSelected ? color + '08' : 'rgba(0,0,0,0.15)',
+                      border: `1px solid ${isSelected ? color + '40' : 'var(--color-card-border)'}`,
+                      background: isSelected ? color + '08' : 'var(--color-surface)',
                     }}
                   >
                     <div
@@ -340,14 +340,14 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                         <div
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
                           style={{
-                            background: isSelected ? color : 'rgba(255,255,255,0.1)',
-                            border: `1px solid ${isSelected ? color : 'rgba(255,255,255,0.2)'}`,
+                            background: isSelected ? color : 'var(--color-surface-variant)',
+                            border: `1px solid ${isSelected ? color : 'var(--color-card-border)'}`,
                           }}
                         >
                           {isSelected && <Check size={11} color="#fff" />}
                         </div>
                       )}
-                      <span style={{ fontSize: 13, fontWeight: 600, color: isSelected ? color : 'rgba(255,255,255,0.5)' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: isSelected ? color : 'var(--color-text-secondary)' }}>
                         {label}
                       </span>
                       <span
@@ -358,7 +358,7 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                       </span>
                       <button
                         onClick={e => { e.stopPropagation(); toggleSection(key); }}
-                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)' }}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
                       >
                         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
@@ -367,11 +367,11 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                     {isExpanded && (
                       <div className="border-t border-white/5 px-3 pb-3 pt-2 flex flex-col gap-2">
                         {key === 'quizzes' && (preview.quizzes).map((q, i) => (
-                          <div key={i} className="rounded-lg p-2.5" style={{ background: 'rgba(0,0,0,0.2)' }}>
-                            <p style={{ fontSize: 12, color: '#fff', marginBottom: 4 }}>{q.question}</p>
+                          <div key={i} className="rounded-lg p-2.5" style={{ background: 'var(--color-surface)' }}>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-primary)', marginBottom: 4 }}>{q.question}</p>
                             <div className="flex flex-col gap-0.5">
                               {q.options.map((opt, oi) => (
-                                <span key={oi} style={{ fontSize: 11, color: q.correctAnswer === oi ? '#4CAF50' : 'rgba(255,255,255,0.4)' }}>
+                                <span key={oi} style={{ fontSize: 11, color: q.correctAnswer === oi ? '#4CAF50' : 'var(--color-text-muted)' }}>
                                   {q.correctAnswer === oi ? '✓' : '·'} {opt}
                                 </span>
                               ))}
@@ -379,11 +379,11 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                           </div>
                         ))}
                         {key === 'duels' && (preview.duels).map((d, i) => (
-                          <div key={i} className="rounded-lg p-2.5" style={{ background: 'rgba(0,0,0,0.2)' }}>
-                            <p style={{ fontSize: 12, color: '#fff', marginBottom: 4 }}>{d.question}</p>
+                          <div key={i} className="rounded-lg p-2.5" style={{ background: 'var(--color-surface)' }}>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-primary)', marginBottom: 4 }}>{d.question}</p>
                             <div className="flex flex-col gap-0.5">
                               {d.options.map((opt, oi) => (
-                                <span key={oi} style={{ fontSize: 11, color: opt.points === 30 ? '#4CAF50' : opt.points === 20 ? '#FFBC40' : 'rgba(255,255,255,0.4)' }}>
+                                <span key={oi} style={{ fontSize: 11, color: opt.points === 30 ? '#4CAF50' : opt.points === 20 ? '#FFBC40' : 'var(--color-text-muted)' }}>
                                   {opt.points}pts — {opt.text}
                                 </span>
                               ))}
@@ -392,14 +392,14 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                         ))}
                         {(key === 'fundings' || key === 'opportunities' || key === 'challengeEvents') &&
                           (preview[key] as (Funding | Opportunity | ChallengeEvent)[]).map((item, i) => (
-                            <div key={i} className="rounded-lg p-2.5" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                            <div key={i} className="rounded-lg p-2.5" style={{ background: 'var(--color-surface)' }}>
                               <div className="flex justify-between">
-                                <p style={{ fontSize: 12, color: '#fff' }}>{item.title}</p>
+                                <p style={{ fontSize: 12, color: 'var(--color-text-primary)' }}>{item.title}</p>
                                 <span style={{ fontSize: 11, color: item.tokens > 0 ? '#4CAF50' : '#F44336', fontWeight: 600 }}>
                                   {item.tokens > 0 ? '+' : ''}{item.tokens} tokens
                                 </span>
                               </div>
-                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{item.description}</p>
+                              <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{item.description}</p>
                             </div>
                           ))
                         }
@@ -425,7 +425,7 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
           <div className="px-5 py-4 border-t border-white/10 shrink-0">
             {/* Mode */}
             <div className="flex items-center gap-3 mb-3">
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>Mode :</p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Mode :</p>
               <div className="flex gap-2">
                 {(['append', 'replace'] as ImportMode[]).map(mode => (
                   <button
@@ -433,9 +433,9 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
                     onClick={() => setImportMode(mode)}
                     className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
                     style={{
-                      background: importMode === mode ? 'rgba(255,188,64,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${importMode === mode ? 'rgba(255,188,64,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                      color: importMode === mode ? '#FFBC40' : 'rgba(255,255,255,0.4)',
+                      background: importMode === mode ? 'rgba(255,188,64,0.15)' : 'var(--color-surface)',
+                      border: `1px solid ${importMode === mode ? 'rgba(255,188,64,0.4)' : 'var(--color-card-border)'}`,
+                      color: importMode === mode ? '#FFBC40' : 'var(--color-text-muted)',
                       cursor: 'pointer',
                     }}
                   >
@@ -449,14 +449,14 @@ Défi : Retard de livraison fournisseur. Perds 2 jetons...`;
               <button
                 onClick={onClose}
                 className="rounded-xl px-4 py-2 text-sm"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}
+                style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
               >
                 Annuler
               </button>
               <button
                 onClick={handleImport}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl py-2 font-semibold text-sm"
-                style={{ background: '#FFBC40', color: '#0C243E', border: 'none', cursor: 'pointer' }}
+                style={{ background: '#FFBC40', color: '#FFFFFF', border: 'none', cursor: 'pointer' }}
               >
                 <Check size={15} />
                 Importer {totalSelected} élément{totalSelected > 1 ? 's' : ''}

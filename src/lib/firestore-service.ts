@@ -26,6 +26,9 @@ import type {
   ChallengeProgram,
   ProgramPartner,
   PartnerProgram,
+  ProgramEnrollment,
+  ProgramLeadStatus,
+  ProgramSessionDoc,
   IdeationDeck,
   DefaultProject,
   Achievement,
@@ -120,6 +123,14 @@ export async function getProgramsByPartner(partnerId: string): Promise<PartnerPr
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
 }
 
+/** Programmes gérés par un admin (multi-tenant). */
+export async function getProgramsByOwner(ownerId: string): Promise<PartnerProgram[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.programs), where('ownerId', '==', ownerId))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
+}
+
 export async function getProgram(programId: string): Promise<PartnerProgram | null> {
   const snap = await getDoc(doc(firestore, COLLECTIONS.programs, programId));
   if (!snap.exists()) return null;
@@ -135,6 +146,43 @@ export async function saveProgram(programId: string, data: Omit<PartnerProgram, 
 
 export async function deleteProgram(programId: string): Promise<void> {
   await deleteDoc(doc(firestore, COLLECTIONS.programs, programId));
+}
+
+// ===== LEADS / CANDIDATS (programEnrollments) =====
+
+/** Candidatures d'un programme ayant un formulaire rempli (= leads). */
+export async function getLeadsByProgram(programId: string): Promise<ProgramEnrollment[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.programEnrollments), where('programId', '==', programId))
+  );
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as ProgramEnrollment))
+    .filter((e) => e.formData != null);
+}
+
+/** Met à jour le statut CRM d'un lead. */
+export async function updateLeadStatus(enrollmentId: string, leadStatus: ProgramLeadStatus): Promise<void> {
+  await setDoc(
+    doc(firestore, COLLECTIONS.programEnrollments, enrollmentId),
+    { leadStatus, updatedAt: Date.now() },
+    { merge: true }
+  );
+}
+
+/** Toutes les inscriptions d'un programme (avec ou sans formulaire) — pour les stats. */
+export async function getEnrollmentsByProgram(programId: string): Promise<ProgramEnrollment[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.programEnrollments), where('programId', '==', programId))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ProgramEnrollment));
+}
+
+/** Sessions de jeu d'un programme — pour le funnel d'engagement. */
+export async function getSessionsByProgram(programId: string): Promise<ProgramSessionDoc[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.programSessions), where('programId', '==', programId))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ProgramSessionDoc));
 }
 
 // ===== IDEATION CARDS =====

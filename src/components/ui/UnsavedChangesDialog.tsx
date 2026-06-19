@@ -23,7 +23,7 @@ export default function UnsavedChangesDialog({
     <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.8)' }}>
       <div
         className="rounded-2xl w-full max-w-md p-6 flex flex-col gap-4"
-        style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)' }}
+        style={{ background: 'var(--color-card)', border: '1px solid var(--color-card-border)' }}
       >
         {/* Icon & Title */}
         <div className="flex items-center gap-3">
@@ -34,17 +34,17 @@ export default function UnsavedChangesDialog({
             <AlertTriangle size={24} color="#FFBC40" />
           </div>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: 0 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
               Modifications non sauvegardées
             </h3>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>
               Voulez-vous sauvegarder vos changements ?
             </p>
           </div>
         </div>
 
         {/* Message */}
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
           Vous avez des modifications non sauvegardées. Si vous quittez maintenant, toutes vos modifications seront perdues.
         </p>
 

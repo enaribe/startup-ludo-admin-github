@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Rocket, Plus, Pencil, Trash2, Package, Users } from 'lucide-react';
-import { getPrograms, getPartners, deleteProgram } from '@/lib/firestore-service';
+import { getPrograms, getProgramsByOwner, getPartners, deleteProgram } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramPartner } from '@/types';
+import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -12,6 +13,7 @@ import toast from 'react-hot-toast';
 
 export default function ProgramsPage() {
   const router = useRouter();
+  const { admin, isSuperAdmin } = useAuth();
   const [programs, setPrograms] = useState<PartnerProgram[]>([]);
   const [partners, setPartners] = useState<ProgramPartner[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +22,13 @@ export default function ProgramsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [prog, p] = await Promise.all([getPrograms(), getPartners()]);
+      // Super admin : tous les programmes. Admin de programme : uniquement les siens.
+      const progPromise = isSuperAdmin
+        ? getPrograms()
+        : admin?.uid
+          ? getProgramsByOwner(admin.uid)
+          : Promise.resolve([] as PartnerProgram[]);
+      const [prog, p] = await Promise.all([progPromise, getPartners()]);
       setPrograms(prog.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setPartners(p);
     } catch (error) {
@@ -29,7 +37,7 @@ export default function ProgramsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin, admin?.uid]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -70,23 +78,25 @@ export default function ProgramsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {programs.length} programme{programs.length !== 1 ? 's' : ''}
         </p>
-        <button
-          className="btn-primary flex items-center gap-2"
-          onClick={() => router.push('/programs/new')}
-          disabled={noPartners}
-          title={noPartners ? 'Créez d’abord un partenaire' : undefined}
-        >
-          <Plus size={16} />
-          Nouveau Programme
-        </button>
+        {isSuperAdmin && (
+          <button
+            className="btn-primary flex items-center gap-2"
+            onClick={() => router.push('/programs/new')}
+            disabled={noPartners}
+            title={noPartners ? 'Créez d’abord un partenaire' : undefined}
+          >
+            <Plus size={16} />
+            Nouveau Programme
+          </button>
+        )}
       </div>
 
-      {noPartners && (
+      {isSuperAdmin && noPartners && (
         <div className="glass-card p-4 mb-6" style={{ borderLeft: '3px solid #FFB347' }}>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
             Aucun partenaire défini. Créez d’abord un{' '}
             <button onClick={() => router.push('/partners/new')} style={{ background: 'none', border: 'none', color: '#FFB347', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>partenaire</button>{' '}
             avant d’ajouter un programme.
@@ -98,9 +108,11 @@ export default function ProgramsPage() {
         <EmptyState
           icon={<Rocket size={48} />}
           title="Aucun programme"
-          description="Créez votre premier programme partenaire (ex: Young Africa Works, YEAH, Meliteji Wasu)."
+          description={isSuperAdmin
+            ? 'Créez votre premier programme partenaire (ex: Young Africa Works, YEAH, Meliteji Wasu).'
+            : 'Aucun programme ne vous est encore assigné. Contactez le super administrateur.'}
           action={
-            !noPartners ? (
+            isSuperAdmin && !noPartners ? (
               <button className="btn-primary flex items-center gap-2" onClick={() => router.push('/programs/new')}>
                 <Plus size={16} />
                 Créer un programme
@@ -119,29 +131,29 @@ export default function ProgramsPage() {
                     <p style={{ fontSize: 11, color: prog.primaryColor || '#FFB347', marginBottom: 2, fontWeight: 600 }}>
                       {partnerName(prog.partnerId)}
                       {(prog.coPartnerIds?.length ?? 0) > 0 && (
-                        <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>
                           {' '}· en partenariat avec {prog.coPartnerIds!.map(partnerName).join(', ')}
                         </span>
                       )}
                     </p>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', marginBottom: 2 }}>{prog.name}</h3>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{prog.id}</p>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>{prog.name}</h3>
+                    <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{prog.id}</p>
                   </div>
                   <span className={`badge ${prog.isActive !== false ? 'badge-success' : 'badge-error'}`}>
                     {prog.isActive !== false ? 'Actif' : 'Inactif'}
                   </span>
                 </div>
                 {prog.description && (
-                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 12, lineHeight: 1.4 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12, lineHeight: 1.4 }}>
                     {prog.description.slice(0, 100)}{prog.description.length > 100 ? '...' : ''}
                   </p>
                 )}
                 <div className="flex gap-4 mb-4">
-                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                     <Package size={12} color="#9B59B6" />
-                    {prog.contentPacks?.length ?? 0} pack{(prog.contentPacks?.length ?? 0) !== 1 ? 's' : ''} · {contentCount(prog)} cartes
+                    {prog.contentPacks?.length ?? 0} niveau{(prog.contentPacks?.length ?? 0) !== 1 ? 'x' : ''} · {contentCount(prog)} cartes
                   </div>
-                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                     <Users size={12} color="#FFB347" />
                     {prog.playerCount ?? 0} joueurs
                   </div>

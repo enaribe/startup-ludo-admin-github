@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import type { Quiz, DifficultyLevel } from '@/types';
 import { generateId } from '@/lib/utils';
+import LangTabs, { type ContentLang } from '@/components/events/LangTabs';
 
 interface QuizEditorProps {
   quiz?: Quiz | null;
@@ -32,8 +33,38 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
     penaltyTokens: quiz?.penaltyTokens || 5,
     timeLimit: quiz?.timeLimit || 30,
     sectorId: quiz?.sectorId || '',
+    translations: quiz?.translations,
   });
+  const [lang, setLang] = useState<ContentLang>('fr');
 
+  // En FR on édite les champs originaux, en EN on édite translations.en.
+  const tr = formData.translations?.en;
+  const question = lang === 'fr' ? formData.question : (tr?.question ?? '');
+  const options = lang === 'fr' ? formData.options : (tr?.options ?? formData.options.map(() => ''));
+  const explanation = lang === 'fr' ? (formData.explanation ?? '') : (tr?.explanation ?? '');
+
+  const setQuestion = (v: string) =>
+    lang === 'fr'
+      ? setFormData((p) => ({ ...p, question: v }))
+      : setFormData((p) => ({ ...p, translations: { ...p.translations, en: { question: v, options: p.translations?.en?.options ?? p.options.map(() => ''), explanation: p.translations?.en?.explanation } } }));
+  const setExplanation = (v: string) =>
+    lang === 'fr'
+      ? setFormData((p) => ({ ...p, explanation: v }))
+      : setFormData((p) => ({ ...p, translations: { ...p.translations, en: { question: p.translations?.en?.question ?? '', options: p.translations?.en?.options ?? p.options.map(() => ''), explanation: v } } }));
+  const updateOption = (index: number, value: string) => {
+    if (lang === 'fr') {
+      const newOptions = [...formData.options];
+      newOptions[index] = value;
+      setFormData({ ...formData, options: newOptions });
+    } else {
+      const cur = formData.translations?.en?.options ?? formData.options.map(() => '');
+      const next = [...cur];
+      next[index] = value;
+      setFormData((p) => ({ ...p, translations: { ...p.translations, en: { question: p.translations?.en?.question ?? '', options: next, explanation: p.translations?.en?.explanation } } }));
+    }
+  };
+
+  // La validité ne dépend que du FR (la traduction est optionnelle).
   const isValid = formData.question.trim() &&
     formData.options.every(opt => opt.trim()) &&
     formData.options.length === 3;
@@ -44,23 +75,20 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
     onClose();
   };
 
-  const updateOption = (index: number, value: string) => {
-    const newOptions = [...formData.options];
-    newOptions[index] = value;
-    setFormData({ ...formData, options: newOptions });
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>
-      <div className="rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)' }}>
+      <div className="rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" style={{ background: '#FFFFFF', border: '1px solid var(--color-card-border)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
             {quiz ? 'Modifier le Quiz' : 'Nouveau Quiz'}
           </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-3">
+            <LangTabs lang={lang} onChange={setLang} />
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -68,12 +96,12 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
           <div className="flex flex-col gap-4">
             {/* Question */}
             <div>
-              <label className="label">Question *</label>
+              <label className="label">Question {lang === 'fr' ? '*' : '(EN)'}</label>
               <textarea
                 className="input-field"
-                value={formData.question}
-                onChange={(e) => setFormData({ ...formData, question: e.target.value })}
-                placeholder="Quelle est la meilleure stratégie pour..."
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder={lang === 'fr' ? 'Quelle est la meilleure stratégie pour...' : 'English translation…'}
                 rows={3}
                 style={{ resize: 'vertical' }}
               />
@@ -81,8 +109,8 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
 
             {/* Options */}
             <div>
-              <label className="label">Réponses (3 options) *</label>
-              {formData.options.map((option, index) => (
+              <label className="label">Réponses (3 options) {lang === 'fr' ? '*' : '(EN)'}</label>
+              {options.map((option, index) => (
                 <div key={index} className="mb-2 flex items-center gap-2">
                   <div className="flex items-center gap-2 flex-1">
                     <input
@@ -105,7 +133,7 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
                   )}
                 </div>
               ))}
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
                 Cochez la bonne réponse
               </p>
             </div>
@@ -123,7 +151,7 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
                 Si un secteur est sélectionné, ce contenu ne sera affiché qu&apos;aux joueurs ayant choisi ce secteur
               </p>
             </div>
@@ -158,11 +186,11 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
 
             {/* Explanation */}
             <div>
-              <label className="label">Explication (optionnel)</label>
+              <label className="label">Explication (optionnel){lang === 'en' ? ' (EN)' : ''}</label>
               <textarea
                 className="input-field"
-                value={formData.explanation}
-                onChange={(e) => setFormData({ ...formData, explanation: e.target.value })}
+                value={explanation}
+                onChange={(e) => setExplanation(e.target.value)}
                 placeholder="Pourquoi cette réponse est correcte..."
                 rows={2}
                 style={{ resize: 'vertical' }}
@@ -170,27 +198,8 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
             </div>
 
             {/* Rewards */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="label">Récompense (tokens)</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  value={formData.rewardTokens}
-                  onChange={(e) => setFormData({ ...formData, rewardTokens: Number(e.target.value) })}
-                  min={0}
-                />
-              </div>
-              <div>
-                <label className="label">Pénalité (tokens)</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  value={formData.penaltyTokens}
-                  onChange={(e) => setFormData({ ...formData, penaltyTokens: Number(e.target.value) })}
-                  min={0}
-                />
-              </div>
+            {/* Champs masqués : rewardTokens et penaltyTokens non consommés par le mobile (points fixes côté jeu). Conservés dans formData. */}
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="label">Temps (secondes)</label>
                 <input
@@ -206,7 +215,7 @@ export default function QuizEditor({ quiz, onSave, onClose, sectors }: QuizEdito
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid var(--color-card-border)' }}>
           <button onClick={onClose} className="btn-secondary" style={{ fontSize: 13 }}>
             Annuler
           </button>

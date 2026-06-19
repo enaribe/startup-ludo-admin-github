@@ -82,8 +82,8 @@ export default function ImageUploadField({
           width: previewWidth,
           height: previewHeight,
           borderRadius: 10,
-          border: '2px dashed rgba(255,255,255,0.2)',
-          background: value ? 'transparent' : 'rgba(255,255,255,0.04)',
+          border: '2px dashed var(--color-card-border)',
+          background: value ? 'transparent' : 'var(--color-surface)',
           cursor: uploading || disabled ? 'default' : 'pointer',
           opacity: disabled ? 0.5 : 1,
           overflow: 'hidden',
@@ -118,7 +118,7 @@ export default function ImageUploadField({
             </div>
           </>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.35)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--color-text-muted)' }}>
             <ImageIcon size={24} />
             <span style={{ fontSize: 12 }}>Cliquer pour uploader</span>
           </div>
@@ -189,7 +189,7 @@ export default function ImageUploadField({
       )}
 
       {disabled && disabledHint && !error && (
-        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', margin: 0 }}>{disabledHint}</p>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>{disabledHint}</p>
       )}
 
       <input

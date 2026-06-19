@@ -33,10 +33,10 @@ export default function DuelsPage() {
   return (
     <div>
       <div className="mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {totalDuels} question{totalDuels !== 1 ? 's' : ''} de duel au total
         </p>
-        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
           Les duels sont geres dans chaque edition. Cliquez pour modifier.
         </p>
       </div>
@@ -53,21 +53,21 @@ export default function DuelsPage() {
                 key={ed.id}
                 onClick={() => router.push(`/editions/${ed.id}`)}
                 className="glass-card p-5 text-left transition-all duration-200"
-                style={{ cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }}
+                style={{ cursor: 'pointer', border: '1px solid var(--color-card-border)' }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${color}40`; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-card-border)'; }}
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Swords size={16} color={color} />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>{ed.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{ed.name}</span>
                   </div>
-                  <ExternalLink size={14} color="rgba(255,255,255,0.3)" />
+                  <ExternalLink size={14} color="var(--color-text-muted)" />
                 </div>
                 <div style={{ fontSize: 28, fontFamily: "'Luckiest Guy', cursive", color, marginBottom: 4 }}>
                   {duelCount}
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                   question{duelCount !== 1 ? 's' : ''} de duel
                 </p>
               </button>

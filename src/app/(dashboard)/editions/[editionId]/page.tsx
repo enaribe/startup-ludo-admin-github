@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   ArrowLeft, Plus, Trash2,
-  HelpCircle, Swords, Coins, Star, Zap, Sparkles, FolderKanban, Upload,
+  HelpCircle, Swords, Coins, Star, Zap, Sparkles, FolderKanban, Upload, Languages,
 } from 'lucide-react';
 import { getEdition, saveEdition } from '@/lib/firestore-service';
 import type { EditionData, Quiz, Duel, DuelOption, Funding, Opportunity, ChallengeEvent, DefaultProject } from '@/types';
@@ -18,6 +18,7 @@ import { generateId } from '@/lib/utils';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import ImportContentModal, { type ImportedContent } from '@/components/ui/ImportContentModal';
 import ImportEditionProjectsModal from '@/components/ui/ImportEditionProjectsModal';
+import LangTabs, { type ContentLang } from '@/components/events/LangTabs';
 import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'quiz' | 'duels' | 'fundings' | 'opportunities' | 'challenges' | 'projects';
@@ -66,6 +67,9 @@ export default function EditionEditorPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showImportProjectsModal, setShowImportProjectsModal] = useState(false);
   const [importFilter, setImportFilter] = useState<keyof ImportedContent | null>(null);
+  const [translating, setTranslating] = useState(false);
+  // Langue de consultation/édition du contenu : 'fr' = texte original, 'en' = traduction (translations.en)
+  const [editLang, setEditLang] = useState<ContentLang>('fr');
 
   // Sauvegarde automatique : active uniquement sur une edition existante.
   // Pour une nouvelle edition, on garde l'etape de creation initiale (ID + nom).
@@ -258,6 +262,94 @@ Pour les projets par défaut, chaque projet doit avoir :
     setDeleteSection(null);
   };
 
+  // ===== Helpers d'édition multilingue (FR = racine, EN = translations.en) =====
+  const isEN = editLang === 'en';
+
+  // --- Quiz : question / options[] / explanation ---
+  const quizQuestion = (q: Quiz) => (isEN ? q.translations?.en?.question ?? '' : q.question);
+  const quizOptions = (q: Quiz): string[] => (isEN ? (q.translations?.en?.options ?? q.options.map(() => '')) : q.options);
+  const quizExplanation = (q: Quiz) => (isEN ? q.translations?.en?.explanation ?? '' : q.explanation ?? '');
+  const setQuizTr = (i: number, patch: Partial<{ question: string; options: string[]; explanation: string }>) => {
+    if (!isEN) return;
+    const q = data.quizzes[i];
+    const en = { question: q.translations?.en?.question ?? '', options: q.translations?.en?.options ?? q.options.map(() => ''), explanation: q.translations?.en?.explanation ?? '', ...patch };
+    updateQuiz(i, 'translations', { ...(q.translations ?? {}), en });
+  };
+
+  // --- Duel : question / options[].text ---
+  const duelQuestion = (d: Duel) => (isEN ? d.translations?.en?.question ?? '' : d.question);
+  const duelOptionText = (d: Duel, oi: number) => (isEN ? d.translations?.en?.options?.[oi] ?? '' : d.options?.[oi]?.text ?? '');
+  const setDuelTr = (i: number, patch: Partial<{ question: string; options: string[] }>) => {
+    if (!isEN) return;
+    const d = data.duels[i];
+    const en = { question: d.translations?.en?.question ?? '', options: d.translations?.en?.options ?? (d.options ?? []).map(() => ''), ...patch };
+    updateDuel(i, 'translations', { ...(d.translations ?? {}), en });
+  };
+  const setDuelOptionTr = (i: number, oi: number, value: string) => {
+    const d = data.duels[i];
+    const opts = [...(d.translations?.en?.options ?? (d.options ?? []).map(() => ''))];
+    opts[oi] = value;
+    setDuelTr(i, { options: opts });
+  };
+
+  // --- Funding / Opportunity / Challenge : title / description ---
+  const trTitle = (item: { title: string; translations?: { en?: { title?: string } } }) => (isEN ? item.translations?.en?.title ?? '' : item.title);
+  const trDesc = (item: { description: string; translations?: { en?: { description?: string } } }) => (isEN ? item.translations?.en?.description ?? '' : item.description);
+  const setTitleDescTr = (
+    update: (i: number, field: 'translations', value: unknown) => void,
+    item: { title: string; description: string; translations?: { en?: { title?: string; description?: string } } },
+    i: number,
+    patch: Partial<{ title: string; description: string }>
+  ) => {
+    if (!isEN) return;
+    const en = { title: item.translations?.en?.title ?? '', description: item.translations?.en?.description ?? '', ...patch };
+    update(i, 'translations', { ...(item.translations ?? {}), en });
+  };
+
+  // ===== Traduction de toute l'édition (IA) =====
+  async function translateEdition(targetLang = 'en') {
+    setTranslating(true);
+    try {
+      const items = {
+        quizzes: data.quizzes.map((q) => ({ id: q.id, question: q.question, options: q.options, explanation: q.explanation ?? '' })),
+        duels: data.duels.map((d) => ({ id: d.id, question: d.question, options: d.options.map((o) => o.text) })),
+        fundings: data.fundings.map((f) => ({ id: f.id, title: f.title, description: f.description })),
+        opportunities: data.opportunities.map((o) => ({ id: o.id, title: o.title, description: o.description })),
+        challengeEvents: data.challenges.map((c) => ({ id: c.id, title: c.title, description: c.description })),
+      };
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetLang, items }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Traduction impossible');
+      const t = json.translations as {
+        quizzes?: { id: string; question: string; options: string[]; explanation?: string }[];
+        duels?: { id: string; question: string; options: string[] }[];
+        fundings?: { id: string; title: string; description: string }[];
+        opportunities?: { id: string; title: string; description: string }[];
+        challengeEvents?: { id: string; title: string; description: string }[];
+      };
+      const idx = <U extends { id: string }>(arr?: U[]) => new Map((arr ?? []).map((x) => [x.id, x]));
+      const tq = idx(t.quizzes), td = idx(t.duels), tf = idx(t.fundings), to = idx(t.opportunities), tc = idx(t.challengeEvents);
+
+      setData((prev) => ({
+        ...prev,
+        quizzes: prev.quizzes.map((q) => { const r = tq.get(q.id); return r ? { ...q, translations: { ...(q.translations ?? {}), [targetLang]: { question: r.question, options: r.options, explanation: r.explanation } } } : q; }),
+        duels: prev.duels.map((d) => { const r = td.get(d.id); return r ? { ...d, translations: { ...(d.translations ?? {}), [targetLang]: { question: r.question, options: r.options } } } : d; }),
+        fundings: prev.fundings.map((f) => { const r = tf.get(f.id); return r ? { ...f, translations: { ...(f.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : f; }),
+        opportunities: prev.opportunities.map((o) => { const r = to.get(o.id); return r ? { ...o, translations: { ...(o.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : o; }),
+        challenges: prev.challenges.map((c) => { const r = tc.get(c.id); return r ? { ...c, translations: { ...(c.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : c; }),
+      }));
+      toast.success('Traduction anglaise générée pour toute l’édition.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur de traduction');
+    } finally {
+      setTranslating(false);
+    }
+  }
+
   // ===== Duel helpers =====
   const addDuel = () => {
     updateField('duels', [...data.duels, {
@@ -440,15 +532,15 @@ Pour les projets par défaut, chaque projet doit avoir :
           <button
             className="p-2 rounded-lg transition-colors"
             onClick={() => handleNavigate('/editions')}
-            style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ background: 'var(--color-surface)', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
           >
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h2 style={{ fontFamily: "'Luckiest Guy', cursive", fontSize: 20, color: '#FFFFFF' }}>
+            <h2 style={{ fontFamily: "'Luckiest Guy', cursive", fontSize: 20, color: 'var(--color-text-primary)' }}>
               {isNew ? 'Nouvelle Edition' : data.name || editionId}
             </h2>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
               {isNew ? 'Creez une nouvelle edition' : `Modifier ${editionId}`}
             </p>
           </div>
@@ -462,6 +554,21 @@ Pour les projets par défaut, chaque projet doit avoir :
             <Upload size={13} />
             Importer tout
           </button>
+          {!isNew && activeTab !== 'general' && activeTab !== 'projects' && (
+            <LangTabs lang={editLang} onChange={setEditLang} />
+          )}
+          {!isNew && (
+            <button
+              className="btn-secondary flex items-center gap-1.5"
+              onClick={() => translateEdition('en')}
+              disabled={translating}
+              title="Génère la version anglaise de tout le contenu de l'édition"
+              style={{ fontSize: 12, padding: '6px 12px' }}
+            >
+              <Languages size={13} />
+              {translating ? 'Traduction…' : 'Traduire en anglais'}
+            </button>
+          )}
           {isNew && (
             <button
               className="btn-secondary flex items-center gap-2"
@@ -488,7 +595,7 @@ Pour les projets par défaut, chaque projet doit avoir :
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'var(--color-surface)' }}>
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -496,7 +603,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg transition-all"
             style={{
               background: activeTab === tab.key ? 'rgba(255,188,64,0.15)' : 'transparent',
-              color: activeTab === tab.key ? '#FFBC40' : 'rgba(255,255,255,0.5)',
+              color: activeTab === tab.key ? '#FFBC40' : 'var(--color-text-muted)',
               border: 'none',
               cursor: 'pointer',
               fontSize: 13,
@@ -508,7 +615,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             {tab.key !== 'general' && (
               <span style={{
                 fontSize: 10,
-                background: 'rgba(255,255,255,0.1)',
+                background: 'var(--color-surface-variant)',
                 padding: '1px 6px',
                 borderRadius: 8,
                 marginLeft: 2,
@@ -540,7 +647,7 @@ Pour les projets par défaut, chaque projet doit avoir :
                   value={newId}
                   onChange={(e) => setNewId(e.target.value)}
                 />
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
                   Utilise comme cle unique. Pas d&apos;espaces, minuscules uniquement.
                 </p>
               </div>
@@ -612,7 +719,7 @@ Pour les projets par défaut, chaque projet doit avoir :
                 onClick={() => updateField('enabled', !data.enabled)}
                 className="relative w-10 h-5 rounded-full transition-colors"
                 style={{
-                  background: data.enabled ? '#4CAF50' : 'rgba(255,255,255,0.15)',
+                  background: data.enabled ? '#4CAF50' : 'var(--color-surface-variant)',
                   border: 'none',
                   cursor: 'pointer',
                 }}
@@ -630,7 +737,7 @@ Pour les projets par défaut, chaque projet doit avoir :
         {activeTab === 'quiz' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {data.quizzes.length} question{data.quizzes.length !== 1 ? 's' : ''} de quiz
               </p>
               <div className="flex gap-2">
@@ -658,7 +765,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             </div>
             <div className="flex flex-col gap-4">
               {data.quizzes.map((q, i) => (
-                <div key={q.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={q.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge badge-info">Quiz #{i + 1}</span>
                     <button
@@ -669,27 +776,28 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </button>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Question</label>
+                    <label className="label">Question{isEN ? ' (EN)' : ''}</label>
                     <textarea
                       className="input-field"
-                      value={q.question}
-                      onChange={(e) => updateQuiz(i, 'question', e.target.value)}
+                      value={quizQuestion(q)}
+                      onChange={(e) => isEN ? setQuizTr(i, { question: e.target.value }) : updateQuiz(i, 'question', e.target.value)}
                       rows={2}
                       style={{ resize: 'vertical' }}
+                      placeholder={isEN ? 'Traduction anglaise…' : undefined}
                     />
                   </div>
                   <div className="mb-3">
-                    <label className="label">Options (une par ligne)</label>
-                    {q.options.map((opt, oi) => (
+                    <label className="label">Options{isEN ? ' (EN)' : ''}</label>
+                    {quizOptions(q).map((opt, oi) => (
                       <div key={oi} className="flex items-center gap-2 mb-2">
                         <button
                           onClick={() => updateQuiz(i, 'correctAnswer', oi)}
                           className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center"
                           style={{
-                            background: q.correctAnswer === oi ? '#4CAF50' : 'rgba(255,255,255,0.1)',
-                            border: `2px solid ${q.correctAnswer === oi ? '#4CAF50' : 'rgba(255,255,255,0.2)'}`,
+                            background: q.correctAnswer === oi ? '#4CAF50' : 'var(--color-surface-variant)',
+                            border: `2px solid ${q.correctAnswer === oi ? '#4CAF50' : 'var(--color-card-border)'}`,
                             cursor: 'pointer',
-                            color: '#fff',
+                            color: q.correctAnswer === oi ? '#fff' : 'var(--color-text-secondary)',
                             fontSize: 10,
                             fontWeight: 700,
                           }}
@@ -701,32 +809,40 @@ Pour les projets par défaut, chaque projet doit avoir :
                           className="input-field flex-1"
                           value={opt}
                           onChange={(e) => {
-                            const newOpts = [...q.options];
-                            newOpts[oi] = e.target.value;
-                            updateQuiz(i, 'options', newOpts);
+                            if (isEN) {
+                              const newOpts = [...quizOptions(q)];
+                              newOpts[oi] = e.target.value;
+                              setQuizTr(i, { options: newOpts });
+                            } else {
+                              const newOpts = [...q.options];
+                              newOpts[oi] = e.target.value;
+                              updateQuiz(i, 'options', newOpts);
+                            }
                           }}
-                          placeholder={`Option ${oi + 1}`}
+                          placeholder={isEN ? `Option ${oi + 1} (EN)` : `Option ${oi + 1}`}
                           style={{ fontSize: 13 }}
                         />
                       </div>
                     ))}
-                    <button
-                      onClick={() => updateQuiz(i, 'options', [...q.options, ''])}
-                      className="flex items-center gap-1 mt-1"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40', fontSize: 12 }}
-                    >
-                      <Plus size={12} />
-                      Ajouter une option
-                    </button>
+                    {!isEN && (
+                      <button
+                        onClick={() => updateQuiz(i, 'options', [...q.options, ''])}
+                        className="flex items-center gap-1 mt-1"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FFBC40', fontSize: 12 }}
+                      >
+                        <Plus size={12} />
+                        Ajouter une option
+                      </button>
+                    )}
                   </div>
                   {/* Explanation */}
                   <div className="mb-3">
-                    <label className="label">Explication (optionnel)</label>
+                    <label className="label">Explication (optionnel){isEN ? ' (EN)' : ''}</label>
                     <input
                       className="input-field"
-                      value={q.explanation || ''}
-                      onChange={(e) => updateQuiz(i, 'explanation', e.target.value)}
-                      placeholder="Explication de la bonne reponse"
+                      value={quizExplanation(q)}
+                      onChange={(e) => isEN ? setQuizTr(i, { explanation: e.target.value }) : updateQuiz(i, 'explanation', e.target.value)}
+                      placeholder={isEN ? 'Traduction de l’explication…' : 'Explication de la bonne reponse'}
                       style={{ fontSize: 13 }}
                     />
                   </div>
@@ -776,9 +892,9 @@ Pour les projets par défaut, chaque projet doit avoir :
         {activeTab === 'duels' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {data.duels.length} question{data.duels.length !== 1 ? 's' : ''} de duel
-                <span style={{ marginLeft: 8, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--color-text-muted)' }}>
                   (3 questions par duel, chaque reponse vaut 30, 20 ou 10 pts)
                 </span>
               </p>
@@ -807,7 +923,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             </div>
             <div className="flex flex-col gap-4">
               {data.duels.map((d, i) => (
-                <div key={d.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={d.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge" style={{ background: 'rgba(255,107,107,0.15)', color: '#FF6B6B' }}>Duel Q{i + 1}</span>
                     <button
@@ -818,14 +934,14 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </button>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Question</label>
+                    <label className="label">Question{isEN ? ' (EN)' : ''}</label>
                     <textarea
                       className="input-field"
-                      value={d.question}
-                      onChange={(e) => updateDuel(i, 'question', e.target.value)}
+                      value={duelQuestion(d)}
+                      onChange={(e) => isEN ? setDuelTr(i, { question: e.target.value }) : updateDuel(i, 'question', e.target.value)}
                       rows={2}
                       style={{ resize: 'vertical' }}
-                      placeholder="Quelle est la meilleure strategie pour..."
+                      placeholder={isEN ? 'Traduction anglaise…' : 'Quelle est la meilleure strategie pour...'}
                     />
                   </div>
                   <div className="mb-3">
@@ -846,8 +962,8 @@ Pour les projets par défaut, chaque projet doit avoir :
                         <span
                           className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
                           style={{
-                            background: opt.points === 30 ? 'rgba(76,175,80,0.2)' : opt.points === 20 ? 'rgba(255,188,64,0.2)' : 'rgba(255,255,255,0.1)',
-                            color: opt.points === 30 ? '#4CAF50' : opt.points === 20 ? '#FFBC40' : 'rgba(255,255,255,0.5)',
+                            background: opt.points === 30 ? 'rgba(76,175,80,0.2)' : opt.points === 20 ? 'rgba(255,188,64,0.2)' : 'var(--color-surface-variant)',
+                            color: opt.points === 30 ? '#4CAF50' : opt.points === 20 ? '#FFBC40' : 'var(--color-text-secondary)',
                             fontSize: 11,
                             fontWeight: 700,
                           }}
@@ -856,9 +972,9 @@ Pour les projets par défaut, chaque projet doit avoir :
                         </span>
                         <input
                           className="input-field flex-1"
-                          value={opt.text}
-                          onChange={(e) => updateDuelOption(i, oi, 'text', e.target.value)}
-                          placeholder={opt.points === 30 ? 'Meilleure reponse (30 pts)' : opt.points === 20 ? 'Bonne reponse (20 pts)' : 'Reponse acceptable (10 pts)'}
+                          value={isEN ? duelOptionText(d, oi) : opt.text}
+                          onChange={(e) => isEN ? setDuelOptionTr(i, oi, e.target.value) : updateDuelOption(i, oi, 'text', e.target.value)}
+                          placeholder={isEN ? `Reponse ${oi + 1} (EN)` : (opt.points === 30 ? 'Meilleure reponse (30 pts)' : opt.points === 20 ? 'Bonne reponse (20 pts)' : 'Reponse acceptable (10 pts)')}
                           style={{ fontSize: 13 }}
                         />
                         <input
@@ -866,7 +982,8 @@ Pour les projets par défaut, chaque projet doit avoir :
                           className="input-field"
                           value={opt.points}
                           onChange={(e) => updateDuelOption(i, oi, 'points', Number(e.target.value))}
-                          style={{ width: 60, fontSize: 13, textAlign: 'center' as const }}
+                          disabled={isEN}
+                          style={{ width: 60, fontSize: 13, textAlign: 'center' as const, opacity: isEN ? 0.4 : 1 }}
                         />
                       </div>
                     ))}
@@ -881,7 +998,7 @@ Pour les projets par défaut, chaque projet doit avoir :
         {activeTab === 'fundings' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {data.fundings.length} evenement{data.fundings.length !== 1 ? 's' : ''} de financement
               </p>
               <div className="flex gap-2">
@@ -909,7 +1026,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             </div>
             <div className="flex flex-col gap-4">
               {data.fundings.map((f, i) => (
-                <div key={f.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={f.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge badge-success">Funding #{i + 1}</span>
                     <button onClick={() => { setDeleteItemIndex(i); setDeleteSection('fundings'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336', padding: 4 }}>
@@ -917,12 +1034,12 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </button>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Titre</label>
-                    <input className="input-field" value={f.title} onChange={(e) => updateFunding(i, 'title', e.target.value)} placeholder="Levee de fonds Serie A" />
+                    <label className="label">Titre{isEN ? ' (EN)' : ''}</label>
+                    <input className="input-field" value={trTitle(f)} onChange={(e) => isEN ? setTitleDescTr(updateFunding, f, i, { title: e.target.value }) : updateFunding(i, 'title', e.target.value)} placeholder={isEN ? 'Traduction du titre…' : 'Levee de fonds Serie A'} />
                   </div>
                   <div className="mb-3">
-                    <label className="label">Description</label>
-                    <textarea className="input-field" value={f.description} onChange={(e) => updateFunding(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
+                    <label className="label">Description{isEN ? ' (EN)' : ''}</label>
+                    <textarea className="input-field" value={trDesc(f)} onChange={(e) => isEN ? setTitleDescTr(updateFunding, f, i, { description: e.target.value }) : updateFunding(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder={isEN ? 'Traduction de la description…' : undefined} />
                   </div>
                   <div className="flex gap-4">
                     <div style={{ width: 120 }}>
@@ -944,7 +1061,7 @@ Pour les projets par défaut, chaque projet doit avoir :
         {activeTab === 'opportunities' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {data.opportunities.length} opportunite{data.opportunities.length !== 1 ? 's' : ''}
               </p>
               <div className="flex gap-2">
@@ -972,7 +1089,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             </div>
             <div className="flex flex-col gap-4">
               {data.opportunities.map((o, i) => (
-                <div key={o.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={o.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge badge-primary">Opportunite #{i + 1}</span>
                     <button onClick={() => { setDeleteItemIndex(i); setDeleteSection('opportunities'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336', padding: 4 }}>
@@ -980,12 +1097,12 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </button>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Titre</label>
-                    <input className="input-field" value={o.title} onChange={(e) => updateOpportunity(i, 'title', e.target.value)} placeholder="Partenariat strategique" />
+                    <label className="label">Titre{isEN ? ' (EN)' : ''}</label>
+                    <input className="input-field" value={trTitle(o)} onChange={(e) => isEN ? setTitleDescTr(updateOpportunity, o, i, { title: e.target.value }) : updateOpportunity(i, 'title', e.target.value)} placeholder={isEN ? 'Traduction du titre…' : 'Partenariat strategique'} />
                   </div>
                   <div className="mb-3">
-                    <label className="label">Description</label>
-                    <textarea className="input-field" value={o.description} onChange={(e) => updateOpportunity(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder="Gagnez X jetons grace a..." />
+                    <label className="label">Description{isEN ? ' (EN)' : ''}</label>
+                    <textarea className="input-field" value={trDesc(o)} onChange={(e) => isEN ? setTitleDescTr(updateOpportunity, o, i, { description: e.target.value }) : updateOpportunity(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder={isEN ? 'Traduction de la description…' : 'Gagnez X jetons grace a...'} />
                   </div>
                   <div style={{ width: 120 }}>
                     <label className="label">Tokens (positif)</label>
@@ -1001,7 +1118,7 @@ Pour les projets par défaut, chaque projet doit avoir :
         {activeTab === 'challenges' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {data.challenges.length} challenge{data.challenges.length !== 1 ? 's' : ''} en jeu
               </p>
               <div className="flex gap-2">
@@ -1029,7 +1146,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             </div>
             <div className="flex flex-col gap-4">
               {data.challenges.map((c, i) => (
-                <div key={c.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={c.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge" style={{ background: 'rgba(155,89,182,0.15)', color: '#9B59B6' }}>Challenge #{i + 1}</span>
                     <button onClick={() => { setDeleteItemIndex(i); setDeleteSection('challenges'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336', padding: 4 }}>
@@ -1037,12 +1154,12 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </button>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Titre</label>
-                    <input className="input-field" value={c.title} onChange={(e) => updateChallenge(i, 'title', e.target.value)} placeholder="Probleme technique majeur" />
+                    <label className="label">Titre{isEN ? ' (EN)' : ''}</label>
+                    <input className="input-field" value={trTitle(c)} onChange={(e) => isEN ? setTitleDescTr(updateChallenge, c, i, { title: e.target.value }) : updateChallenge(i, 'title', e.target.value)} placeholder={isEN ? 'Traduction du titre…' : 'Probleme technique majeur'} />
                   </div>
                   <div className="mb-3">
-                    <label className="label">Description</label>
-                    <textarea className="input-field" value={c.description} onChange={(e) => updateChallenge(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder="Un obstacle se dresse... Perdez X jetons." />
+                    <label className="label">Description{isEN ? ' (EN)' : ''}</label>
+                    <textarea className="input-field" value={trDesc(c)} onChange={(e) => isEN ? setTitleDescTr(updateChallenge, c, i, { description: e.target.value }) : updateChallenge(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder={isEN ? 'Traduction de la description…' : 'Un obstacle se dresse... Perdez X jetons.'} />
                   </div>
                   <div style={{ width: 140 }}>
                     <label className="label">Tokens (negatif)</label>
@@ -1059,10 +1176,10 @@ Pour les projets par défaut, chaque projet doit avoir :
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                   {(data.defaultProjects || []).length} projet{(data.defaultProjects || []).length !== 1 ? 's' : ''} par défaut
                 </p>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
                   Ces projets sont proposés aux joueurs qui n&apos;ont pas de startup personnelle
                 </p>
               </div>
@@ -1083,7 +1200,7 @@ Pour les projets par défaut, chaque projet doit avoir :
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(data.defaultProjects || []).map((p, i) => (
-                <div key={p.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={p.id} className="p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="flex items-start justify-between mb-3">
                     <span className="badge" style={{ background: 'rgba(255,188,64,0.15)', color: '#FFBC40' }}>Projet #{i + 1}</span>
                     <button onClick={() => { setDeleteItemIndex(i); setDeleteSection('projects'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336', padding: 4 }}>
@@ -1123,7 +1240,7 @@ Pour les projets par défaut, chaque projet doit avoir :
               ))}
             </div>
             {(data.defaultProjects || []).length === 0 && (
-              <div className="text-center py-12" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              <div className="text-center py-12" style={{ color: 'var(--color-text-muted)' }}>
                 <FolderKanban size={40} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
                 <p style={{ fontSize: 14 }}>Aucun projet par défaut</p>
                 <p style={{ fontSize: 12, marginTop: 4 }}>Générez une édition avec l&apos;IA, importez un texte ou ajoutez manuellement</p>

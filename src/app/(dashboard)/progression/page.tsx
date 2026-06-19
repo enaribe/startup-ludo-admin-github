@@ -85,14 +85,14 @@ export default function ProgressionPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {config.ranks.length} rangs, {config.xpRewards.length} recompenses XP
         </p>
         <SaveStatusIndicator status={saveStatus} />
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'var(--color-surface-variant)' }}>
         {[
           { key: 'ranks' as Tab, label: `Rangs (${config.ranks.length})` },
           { key: 'xp-rewards' as Tab, label: `XP Jeu (${config.xpRewards.length})` },
@@ -104,7 +104,7 @@ export default function ProgressionPage() {
             className="px-4 py-2 rounded-lg transition-all"
             style={{
               background: activeTab === tab.key ? 'rgba(255,188,64,0.15)' : 'transparent',
-              color: activeTab === tab.key ? '#FFBC40' : 'rgba(255,255,255,0.5)',
+              color: activeTab === tab.key ? '#FFBC40' : 'var(--color-text-muted)',
               border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: activeTab === tab.key ? 600 : 400,
             }}
           >
@@ -118,7 +118,7 @@ export default function ProgressionPage() {
         {activeTab === 'ranks' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Definissez les rangs et paliers XP</p>
+              <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Definissez les rangs et paliers XP</p>
               <button className="btn-primary flex items-center gap-2" onClick={addRank} style={{ fontSize: 13, padding: '8px 16px' }}>
                 <Plus size={14} />
                 Ajouter
@@ -126,16 +126,16 @@ export default function ProgressionPage() {
             </div>
             <div className="flex flex-col gap-3">
               {config.ranks.sort((a, b) => a.order - b.order).map((rank, i) => (
-                <div key={rank.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={rank.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${rank.color}20`, fontSize: 14, fontWeight: 700, color: rank.color }}>
                     {rank.order}
                   </div>
                   <input className="input-field flex-1" value={rank.name} onChange={(e) => updateRank(i, 'name', e.target.value)} placeholder="Nom du rang" style={{ fontSize: 13 }} />
                   <div className="flex items-center gap-1">
                     <input type="number" className="input-field" value={rank.minXP} onChange={(e) => updateRank(i, 'minXP', Number(e.target.value))} style={{ width: 80, fontSize: 12 }} />
-                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>-</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>-</span>
                     <input type="number" className="input-field" value={rank.maxXP} onChange={(e) => updateRank(i, 'maxXP', Number(e.target.value))} style={{ width: 80, fontSize: 12 }} />
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>XP</span>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>XP</span>
                   </div>
                   <input type="color" value={rank.color} onChange={(e) => updateRank(i, 'color', e.target.value)} style={{ width: 28, height: 28, border: 'none', cursor: 'pointer', borderRadius: 6 }} />
                   <button onClick={() => removeRank(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336', padding: 4 }}>
@@ -151,7 +151,7 @@ export default function ProgressionPage() {
         {(activeTab === 'xp-rewards' || activeTab === 'challenge-xp') && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
                 {activeTab === 'xp-rewards' ? 'XP gagnes pendant les parties' : 'XP gagnes dans les challenges'}
               </p>
               <button className="btn-primary flex items-center gap-2" onClick={() => addXPReward(activeTab === 'challenge-xp')} style={{ fontSize: 13, padding: '8px 16px' }}>
@@ -161,7 +161,7 @@ export default function ProgressionPage() {
             </div>
             <div className="flex flex-col gap-2">
               {(activeTab === 'challenge-xp' ? config.challengeXPRewards : config.xpRewards).map((reward, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}>
                   <input className="input-field" value={reward.action} onChange={(e) => updateXPReward(i, activeTab === 'challenge-xp', 'action', e.target.value)} placeholder="Action (ex: win_game)" style={{ width: 160, fontSize: 12 }} />
                   <input className="input-field flex-1" value={reward.label} onChange={(e) => updateXPReward(i, activeTab === 'challenge-xp', 'label', e.target.value)} placeholder="Label visible" style={{ fontSize: 12 }} />
                   <div className="flex items-center gap-1">

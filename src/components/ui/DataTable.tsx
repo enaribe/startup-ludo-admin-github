@@ -28,7 +28,7 @@ export default function DataTable<T extends Record<string, unknown>>({
 }: DataTableProps<T>) {
   if (data.length === 0) {
     return (
-      <div className="glass-card py-12 text-center" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>
+      <div className="glass-card py-12 text-center" style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>
         {emptyMessage}
       </div>
     );
@@ -39,7 +39,7 @@ export default function DataTable<T extends Record<string, unknown>>({
       <div className="overflow-x-auto">
         <table className="w-full" style={{ borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <tr style={{ borderBottom: '1px solid var(--color-card-border)' }}>
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -49,7 +49,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                     fontWeight: 600,
                     textTransform: 'uppercase',
                     letterSpacing: 0.8,
-                    color: 'rgba(255,255,255,0.4)',
+                    color: 'var(--color-text-muted)',
                     width: col.width,
                   }}
                 >
@@ -62,7 +62,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                   fontWeight: 600,
                   textTransform: 'uppercase',
                   letterSpacing: 0.8,
-                  color: 'rgba(255,255,255,0.4)',
+                  color: 'var(--color-text-muted)',
                   width: '100px',
                 }}>
                   Actions
@@ -76,13 +76,13 @@ export default function DataTable<T extends Record<string, unknown>>({
                 key={String(item[keyField] ?? index)}
                 className="transition-colors"
                 style={{
-                  borderBottom: index < data.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                  borderBottom: index < data.length - 1 ? '1px solid var(--color-card-border)' : 'none',
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-surface)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3" style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>
+                  <td key={col.key} className="px-4 py-3" style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                     {col.render ? col.render(item) : String(item[col.key] ?? '-')}
                   </td>
                 ))}

@@ -122,7 +122,7 @@ export default function AchievementsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {achievements.length} achievement{achievements.length !== 1 ? 's' : ''}
         </p>
         <div className="flex gap-2">
@@ -147,8 +147,8 @@ export default function AchievementsPage() {
           onClick={() => setActiveCategory('all')}
           className="px-3 py-2 rounded-lg transition-all whitespace-nowrap"
           style={{
-            background: activeCategory === 'all' ? 'rgba(255,255,255,0.1)' : 'transparent',
-            color: activeCategory === 'all' ? '#FFFFFF' : 'rgba(255,255,255,0.5)',
+            background: activeCategory === 'all' ? 'var(--color-surface-variant)' : 'transparent',
+            color: activeCategory === 'all' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
             border: 'none', cursor: 'pointer', fontSize: 12,
           }}
         >
@@ -163,7 +163,7 @@ export default function AchievementsPage() {
               className="px-3 py-2 rounded-lg transition-all whitespace-nowrap"
               style={{
                 background: activeCategory === cat.id ? `${cat.color}20` : 'transparent',
-                color: activeCategory === cat.id ? cat.color : 'rgba(255,255,255,0.5)',
+                color: activeCategory === cat.id ? cat.color : 'var(--color-text-muted)',
                 border: 'none', cursor: 'pointer', fontSize: 12,
               }}
             >
@@ -189,7 +189,7 @@ export default function AchievementsPage() {
                       🏆
                     </div>
                     <div>
-                      <h4 style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF' }}>{ach.title}</h4>
+                      <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{ach.title}</h4>
                       <div className="flex gap-1.5 mt-1">
                         <span className="badge" style={{ background: `${catConfig?.color || '#888'}15`, color: catConfig?.color, fontSize: 9 }}>{catConfig?.label}</span>
                         <span className="badge" style={{ background: `${rarityConfig?.color || '#888'}15`, color: rarityConfig?.color, fontSize: 9 }}>{rarityConfig?.label}</span>
@@ -205,9 +205,9 @@ export default function AchievementsPage() {
                     </button>
                   </div>
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: 8, lineHeight: 1.4 }}>{ach.description}</p>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8, lineHeight: 1.4 }}>{ach.description}</p>
                 <div className="flex items-center justify-between">
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Condition: {ach.condition.type} &ge; {ach.condition.target}</span>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>Condition: {ach.condition.type} &ge; {ach.condition.target}</span>
                   <span style={{ fontSize: 11, fontWeight: 600, color: '#FFBC40' }}>+{ach.xpReward} XP</span>
                 </div>
               </div>
@@ -267,7 +267,7 @@ export default function AchievementsPage() {
               <button
                 onClick={() => setEditItem({ ...editItem, enabled: !editItem.enabled })}
                 className="relative w-10 h-5 rounded-full"
-                style={{ background: editItem.enabled ? '#4CAF50' : 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer' }}
+                style={{ background: editItem.enabled ? '#4CAF50' : 'var(--color-surface-variant)', border: 'none', cursor: 'pointer' }}
               >
                 <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white" style={{ left: editItem.enabled ? 22 : 2, transition: 'left 0.2s' }} />
               </button>

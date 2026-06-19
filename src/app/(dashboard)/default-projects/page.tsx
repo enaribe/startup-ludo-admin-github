@@ -122,7 +122,7 @@ export default function DefaultProjectsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {projects.length} projet{projects.length !== 1 ? 's' : ''} par defaut au total
         </p>
         <div className="flex gap-2">
@@ -142,7 +142,7 @@ export default function DefaultProjectsPage() {
       </div>
 
       {/* Edition tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl overflow-x-auto" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div className="flex gap-1 mb-6 p-1 rounded-xl overflow-x-auto" style={{ background: 'var(--color-surface)' }}>
         {EDITIONS.map((ed) => {
           const count = projects.filter((p) => p.edition === ed.id).length;
           return (
@@ -152,7 +152,7 @@ export default function DefaultProjectsPage() {
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all whitespace-nowrap"
               style={{
                 background: activeEdition === ed.id ? `${ed.color}20` : 'transparent',
-                color: activeEdition === ed.id ? ed.color : 'rgba(255,255,255,0.5)',
+                color: activeEdition === ed.id ? ed.color : 'var(--color-text-muted)',
                 border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: activeEdition === ed.id ? 600 : 400,
               }}
             >
@@ -182,7 +182,7 @@ export default function DefaultProjectsPage() {
             return (
               <div key={proj.id} className="glass-card p-4">
                 <div className="flex items-start justify-between mb-2">
-                  <h4 style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>{proj.name}</h4>
+                  <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{proj.name}</h4>
                   <div className="flex gap-1">
                     <button onClick={() => { setEditProject(proj); setIsNewProject(false); }} className="p-1.5 rounded-md" style={{ background: 'rgba(255,188,64,0.1)', color: '#FFBC40', border: 'none', cursor: 'pointer' }}>
                       <Save size={12} />
@@ -193,7 +193,7 @@ export default function DefaultProjectsPage() {
                   </div>
                 </div>
                 {proj.sector && <span className="badge" style={{ background: `${edColor}15`, color: edColor, marginBottom: 8 }}>{proj.sector}</span>}
-                {proj.description && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>{proj.description}</p>}
+                {proj.description && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.4 }}>{proj.description}</p>}
               </div>
             );
           })}

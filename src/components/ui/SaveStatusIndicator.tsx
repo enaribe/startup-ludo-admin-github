@@ -13,7 +13,7 @@ interface SaveStatusIndicatorProps {
  */
 export default function SaveStatusIndicator({ status }: SaveStatusIndicatorProps) {
   const config = {
-    idle: { icon: <Check size={14} />, label: 'Enregistré', color: 'rgba(255,255,255,0.4)' },
+    idle: { icon: <Check size={14} />, label: 'Enregistré', color: 'var(--color-text-muted)' },
     saving: { icon: <Loader2 size={14} className="animate-spin" />, label: 'Enregistrement…', color: '#FFBC40' },
     saved: { icon: <Check size={14} />, label: 'Enregistré', color: '#4CAF50' },
     error: { icon: <CloudOff size={14} />, label: 'Erreur de sauvegarde', color: '#F44336' },

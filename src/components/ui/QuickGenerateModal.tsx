@@ -56,7 +56,7 @@ export default function QuickGenerateModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.8)' }}>
       <div
         className="rounded-2xl w-full max-w-md p-6 flex flex-col gap-4"
-        style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)' }}
+        style={{ background: 'var(--color-card)', border: '1px solid var(--color-card-border)' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -68,11 +68,11 @@ export default function QuickGenerateModal({
               {eventInfo.icon}
             </div>
             <div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: 0 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
                 Générer des {eventInfo.plural}
               </h3>
               {context?.subLevelTitle && (
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', margin: 0 }}>
+                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
                   {context.subLevelTitle}
                 </p>
               )}
@@ -81,7 +81,7 @@ export default function QuickGenerateModal({
           <button
             onClick={onClose}
             disabled={generating}
-            style={{ background: 'none', border: 'none', cursor: generating ? 'not-allowed' : 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ background: 'none', border: 'none', cursor: generating ? 'not-allowed' : 'pointer', color: 'var(--color-text-muted)' }}
           >
             <X size={18} />
           </button>
@@ -91,9 +91,9 @@ export default function QuickGenerateModal({
         {context?.subLevelDescription && (
           <div
             className="p-3 rounded-lg"
-            style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-card-border)' }}
           >
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
               {context.subLevelDescription}
             </p>
           </div>
@@ -127,7 +127,7 @@ export default function QuickGenerateModal({
               style={{ width: 80, textAlign: 'center' }}
             />
           </div>
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
             L'IA générera automatiquement {count} {count === 1 ? eventInfo.singular.toLowerCase() : eventInfo.plural.toLowerCase()} adapté{count === 1 ? '' : 's'} au contexte
           </p>
         </div>
