@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Sparkles, Search, Star, Check, Trash2, FileText, Settings, Wand2, X } from 'lucide-react';
+import { Sparkles, Search, Star, Check, Trash2, FileText, Settings, Wand2, X, Eye } from 'lucide-react';
 import { getScopedPrograms, getProgram, saveProgram } from '@/lib/firestore-service';
 import type { PartnerProgram, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import { useAuth } from '@/lib/auth-context';
@@ -213,12 +213,21 @@ function StudioPage() {
           </p>
         </div>
         <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-          <button className="btn-secondary flex items-center gap-2" style={{ padding: '9px 16px', fontSize: 13, whiteSpace: 'nowrap' }} onClick={() => setShowGen(true)}>
-            <Wand2 size={15} /> Générer avec l’IA
-          </button>
-          <button className="btn-primary flex items-center gap-2" style={{ whiteSpace: 'nowrap' }} onClick={save} disabled={saving}>
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
+          {isSuperAdmin ? (
+            /* Le super admin supervise : Studio en lecture seule (pas de génération ni d'enregistrement). */
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', background: 'var(--color-surface)', border: '1px solid var(--color-card-border)', padding: '8px 14px', borderRadius: 999, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <Eye size={14} /> Lecture seule
+            </span>
+          ) : (
+            <>
+              <button className="btn-secondary flex items-center gap-2" style={{ padding: '9px 16px', fontSize: 13, whiteSpace: 'nowrap' }} onClick={() => setShowGen(true)}>
+                <Wand2 size={15} /> Générer avec l’IA
+              </button>
+              <button className="btn-primary flex items-center gap-2" style={{ whiteSpace: 'nowrap' }} onClick={save} disabled={saving}>
+                {saving ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -299,13 +308,13 @@ function StudioPage() {
               <p style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>Sélectionnez une carte à gauche.</p>
             </div>
           ) : (
-            <CardEditor card={selected} onPatch={patchSelected} onDelete={deleteSelected} />
+            <CardEditor card={selected} onPatch={patchSelected} onDelete={deleteSelected} readOnly={isSuperAdmin} />
           )}
         </div>
 
         {/* Colonne droite — Insights IA (placeholder visuel) */}
         <div className="glass-card flex-col" style={{ width: 300, flexShrink: 0, padding: 20, minHeight: 0, overflowY: 'auto' }}>
-          <InsightsPanel card={selected} sources={contentSource?.documents ?? []} onRegenerate={() => setShowGen(true)} />
+          <InsightsPanel card={selected} sources={contentSource?.documents ?? []} onRegenerate={() => setShowGen(true)} readOnly={isSuperAdmin} />
         </div>
       </div>
 
@@ -375,10 +384,11 @@ function StudioPage() {
 }
 
 // ===== Éditeur de carte (colonne centrale) =====
-function CardEditor({ card, onPatch, onDelete }: {
+function CardEditor({ card, onPatch, onDelete, readOnly }: {
   card: StudioCard;
   onPatch: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
+  readOnly?: boolean;
 }) {
   const meta = CARD_META[card.type];
   return (
@@ -388,35 +398,37 @@ function CardEditor({ card, onPatch, onDelete }: {
         <Chip color={meta.color}>{meta.label}</Chip>
         {card.levelNum && <Chip color="var(--color-text-secondary)">Niveau {card.levelNum}</Chip>}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{card.id}</span>
-        <button onClick={onDelete} className="p-1.5 rounded-lg" style={{ background: 'rgba(229,72,77,0.08)', color: '#E5484D', border: 'none', cursor: 'pointer' }} title="Supprimer la carte"><Trash2 size={14} /></button>
+        {!readOnly && (
+          <button onClick={onDelete} className="p-1.5 rounded-lg" style={{ background: 'rgba(229,72,77,0.08)', color: '#E5484D', border: 'none', cursor: 'pointer' }} title="Supprimer la carte"><Trash2 size={14} /></button>
+        )}
       </div>
 
       {(card.type === 'quiz' || card.type === 'duel') ? (
-        <QuizDuelFields card={card} onPatch={onPatch} />
+        <QuizDuelFields card={card} onPatch={onPatch} readOnly={readOnly} />
       ) : (
-        <TitleTokensFields card={card} onPatch={onPatch} />
+        <TitleTokensFields card={card} onPatch={onPatch} readOnly={readOnly} />
       )}
     </div>
   );
 }
 
-function QuizDuelFields({ card, onPatch }: { card: StudioCard; onPatch: (p: Record<string, unknown>) => void }) {
+function QuizDuelFields({ card, onPatch, readOnly }: { card: StudioCard; onPatch: (p: Record<string, unknown>) => void; readOnly?: boolean }) {
   const isQuiz = card.type === 'quiz';
   const data = card.data as Quiz | Duel;
   return (
     <>
       <FieldLabel>Question</FieldLabel>
-      <textarea className="input-field" rows={2} value={data.question} onChange={(e) => onPatch({ question: e.target.value })} style={{ marginBottom: 16 }} />
+      <textarea className="input-field" rows={2} value={data.question} onChange={(e) => onPatch({ question: e.target.value })} readOnly={readOnly} style={{ marginBottom: 16 }} />
 
       <FieldLabel>Réponses</FieldLabel>
       {isQuiz ? (
         <div className="flex flex-col gap-2 mb-4">
           {(data as Quiz).options.map((opt, oi) => (
             <div key={oi} className="flex items-center gap-2">
-              <button onClick={() => onPatch({ correctAnswer: oi })} style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, border: `2px solid ${(data as Quiz).correctAnswer === oi ? 'var(--color-success)' : 'var(--color-card-border)'}`, background: (data as Quiz).correctAnswer === oi ? 'var(--color-success)' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button onClick={() => !readOnly && onPatch({ correctAnswer: oi })} disabled={readOnly} style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, border: `2px solid ${(data as Quiz).correctAnswer === oi ? 'var(--color-success)' : 'var(--color-card-border)'}`, background: (data as Quiz).correctAnswer === oi ? 'var(--color-success)' : 'transparent', cursor: readOnly ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {(data as Quiz).correctAnswer === oi && <Check size={12} color="#fff" />}
               </button>
-              <input className="input-field" value={opt} onChange={(e) => { const opts = [...(data as Quiz).options]; opts[oi] = e.target.value; onPatch({ options: opts }); }} />
+              <input className="input-field" value={opt} onChange={(e) => { const opts = [...(data as Quiz).options]; opts[oi] = e.target.value; onPatch({ options: opts }); }} readOnly={readOnly} />
             </div>
           ))}
         </div>
@@ -425,7 +437,7 @@ function QuizDuelFields({ card, onPatch }: { card: StudioCard; onPatch: (p: Reco
           {(data as Duel).options.map((opt, oi) => (
             <div key={oi} className="flex items-center gap-2">
               <span style={{ width: 44, fontSize: 12, fontWeight: 600, color: opt.points === 30 ? 'var(--color-success)' : opt.points === 20 ? '#FFB347' : 'var(--color-text-muted)' }}>{opt.points}pts</span>
-              <input className="input-field" value={opt.text} onChange={(e) => { const opts = (data as Duel).options.map((o, i) => i === oi ? { ...o, text: e.target.value } : o); onPatch({ options: opts }); }} />
+              <input className="input-field" value={opt.text} onChange={(e) => { const opts = (data as Duel).options.map((o, i) => i === oi ? { ...o, text: e.target.value } : o); onPatch({ options: opts }); }} readOnly={readOnly} />
             </div>
           ))}
         </div>
@@ -434,30 +446,30 @@ function QuizDuelFields({ card, onPatch }: { card: StudioCard; onPatch: (p: Reco
       {isQuiz && (
         <>
           <FieldLabel>Explication</FieldLabel>
-          <textarea className="input-field" rows={2} value={(data as Quiz).explanation ?? ''} onChange={(e) => onPatch({ explanation: e.target.value })} placeholder="Pourquoi cette réponse…" />
+          <textarea className="input-field" rows={2} value={(data as Quiz).explanation ?? ''} onChange={(e) => onPatch({ explanation: e.target.value })} readOnly={readOnly} placeholder="Pourquoi cette réponse…" />
         </>
       )}
     </>
   );
 }
 
-function TitleTokensFields({ card, onPatch }: { card: StudioCard; onPatch: (p: Record<string, unknown>) => void }) {
+function TitleTokensFields({ card, onPatch, readOnly }: { card: StudioCard; onPatch: (p: Record<string, unknown>) => void; readOnly?: boolean }) {
   const data = card.data as Funding | Opportunity | ChallengeEvent;
   return (
     <>
       <FieldLabel>Titre</FieldLabel>
-      <input className="input-field" value={data.title} onChange={(e) => onPatch({ title: e.target.value })} style={{ marginBottom: 16 }} />
+      <input className="input-field" value={data.title} onChange={(e) => onPatch({ title: e.target.value })} readOnly={readOnly} style={{ marginBottom: 16 }} />
 
       <FieldLabel>Effet jetons</FieldLabel>
-      <input type="number" className="input-field" value={data.tokens} onChange={(e) => onPatch({ tokens: Number(e.target.value) || 0 })} style={{ width: 160, marginBottom: 16 }} />
+      <input type="number" className="input-field" value={data.tokens} onChange={(e) => onPatch({ tokens: Number(e.target.value) || 0 })} readOnly={readOnly} style={{ width: 160, marginBottom: 16 }} />
 
       <FieldLabel>Description</FieldLabel>
-      <textarea className="input-field" rows={4} value={data.description} onChange={(e) => onPatch({ description: e.target.value })} style={{ marginBottom: 16 }} />
+      <textarea className="input-field" rows={4} value={data.description} onChange={(e) => onPatch({ description: e.target.value })} readOnly={readOnly} style={{ marginBottom: 16 }} />
 
       {card.type === 'funding' && (
         <>
           <FieldLabel>Source</FieldLabel>
-          <input className="input-field" value={(data as Funding).source ?? ''} onChange={(e) => onPatch({ source: e.target.value })} placeholder="Ex : DER, Tontine…" />
+          <input className="input-field" value={(data as Funding).source ?? ''} onChange={(e) => onPatch({ source: e.target.value })} readOnly={readOnly} placeholder="Ex : DER, Tontine…" />
         </>
       )}
     </>
@@ -465,10 +477,11 @@ function TitleTokensFields({ card, onPatch }: { card: StudioCard; onPatch: (p: R
 }
 
 // ===== Panneau Insights IA (colonne droite) =====
-function InsightsPanel({ card, sources, onRegenerate }: {
+function InsightsPanel({ card, sources, onRegenerate, readOnly }: {
   card: StudioCard | null;
   sources: { id: string; name: string; pages?: number }[];
   onRegenerate: () => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -513,9 +526,11 @@ function InsightsPanel({ card, sources, onRegenerate }: {
         ))}
       </div>
 
-      <button className="btn-secondary flex items-center justify-center gap-2" onClick={onRegenerate} disabled={!card} style={{ fontSize: 13 }}>
-        <Wand2 size={14} /> Régénérer du contenu
-      </button>
+      {!readOnly && (
+        <button className="btn-secondary flex items-center justify-center gap-2" onClick={onRegenerate} disabled={!card} style={{ fontSize: 13 }}>
+          <Wand2 size={14} /> Régénérer du contenu
+        </button>
+      )}
     </div>
   );
 }
