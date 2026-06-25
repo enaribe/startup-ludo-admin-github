@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Download, Target, Zap, Shield, Star, Trophy } from 'lucide-react';
-import { getPrograms, getProgramsByOwner, getLeadsByProgram, updateLeadStatus } from '@/lib/firestore-service';
+import { getScopedPrograms, getLeadsByProgram, updateLeadStatus } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramEnrollment, ProgramLeadStatus, EntrepreneurProfile } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -48,11 +48,12 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<ProgramEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [selectedLead, setSelectedLead] = useState<ProgramEnrollment | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const list = isSuperAdmin ? await getPrograms() : admin?.uid ? await getProgramsByOwner(admin.uid) : [];
+        const list = await getScopedPrograms(admin);
         setPrograms(list);
         if (list.length > 0) setProgramId(list[0].id);
         else setLoading(false);
@@ -94,6 +95,20 @@ export default function LeadsPage() {
     }
   }, [leads, filter]);
 
+  const currentProgram = programs.find((p) => p.id === programId);
+  const programName = currentProgram?.name ?? '';
+  // Maps id→label pour rendre lisibles les réponses dynamiques (customResponses/customConsents).
+  const fieldLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    currentProgram?.endForm?.fields.forEach((f) => m.set(f.id, f.label));
+    return m;
+  }, [currentProgram]);
+  const consentLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    currentProgram?.endForm?.consents.forEach((c) => m.set(c.id, c.label));
+    return m;
+  }, [currentProgram]);
+
   const setStatus = async (lead: ProgramEnrollment, status: ProgramLeadStatus) => {
     setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, leadStatus: status } : l)));
     try {
@@ -105,8 +120,15 @@ export default function LeadsPage() {
   };
 
   const exportCsv = () => {
+    // Colonnes dynamiques = champs custom du formulaire de fin du programme.
+    const customFields = currentProgram?.endForm?.fields ?? [];
+    const header = [
+      'Nom', 'Téléphone', 'Email', 'Ville', 'Persona', 'Concordance', 'Intention',
+      ...customFields.map((f) => f.label),
+      'Statut', 'Arrivée',
+    ];
     const rows = [
-      ['Nom', 'Téléphone', 'Email', 'Ville', 'Persona', 'Concordance', 'Intention', 'Statut', 'Arrivée'],
+      header,
       ...filtered.map((l) => [
         l.formData?.fullName ?? '',
         l.formData?.phone ?? '',
@@ -115,6 +137,10 @@ export default function LeadsPage() {
         l.profileName ?? '',
         l.formData?.profileMatch ?? '',
         String(l.formData?.applicationIntent ?? ''),
+        ...customFields.map((f) => {
+          const v = l.formData?.customResponses?.[f.id];
+          return Array.isArray(v) ? v.join(' | ') : v != null ? String(v) : '';
+        }),
         l.leadStatus ?? 'new',
         new Date(l.enrolledAt).toISOString(),
       ]),
@@ -135,8 +161,6 @@ export default function LeadsPage() {
   if (programs.length === 0) {
     return <div className="glass-card p-8" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>Aucun programme accessible.</div>;
   }
-
-  const programName = programs.find((p) => p.id === programId)?.name ?? '';
 
   return (
     <div>
@@ -196,7 +220,7 @@ export default function LeadsPage() {
                 const profile = l.entrepreneurProfile ? PROFILE_META[l.entrepreneurProfile] : null;
                 const status = l.leadStatus ?? 'new';
                 return (
-                  <tr key={l.id} style={{ borderTop: '1px solid var(--color-card-border)' }}>
+                  <tr key={l.id} onClick={() => setSelectedLead(l)} style={{ borderTop: '1px solid var(--color-card-border)', cursor: 'pointer' }}>
                     <td style={{ padding: '12px 14px', color: 'var(--color-text-muted)' }}>{timeAgo(l.enrolledAt)}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--color-text-primary)', fontWeight: 600 }}>{l.formData?.fullName || '—'}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--color-text-secondary)' }}>{l.profileName || '—'}</td>
@@ -216,7 +240,7 @@ export default function LeadsPage() {
                         <span className="flex items-center gap-1.5" style={{ color: profile.color }}>{profile.icon}{profile.label}</span>
                       ) : '—'}
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
                       <select
                         value={status}
                         onChange={(e) => setStatus(l, e.target.value as ProgramLeadStatus)}
@@ -235,6 +259,122 @@ export default function LeadsPage() {
           </table>
         </div>
       )}
+
+      {/* Panneau de détail d'un lead — toutes les réponses (fixes + custom). */}
+      {selectedLead && (
+        <LeadDetail
+          lead={selectedLead}
+          fieldLabels={fieldLabels}
+          consentLabels={consentLabels}
+          onClose={() => setSelectedLead(null)}
+          onStatus={(s) => setStatus(selectedLead, s)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Affiche une valeur de réponse (string, array, number, bool) de façon lisible. */
+function renderValue(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
+  if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
+  return String(v);
+}
+
+function LeadDetail({ lead, fieldLabels, consentLabels, onClose, onStatus }: {
+  lead: ProgramEnrollment;
+  fieldLabels: Map<string, string>;
+  consentLabels: Map<string, string>;
+  onClose: () => void;
+  onStatus: (s: ProgramLeadStatus) => void;
+}) {
+  const fd = lead.formData;
+  const status = lead.leadStatus ?? 'new';
+  const custom = fd?.customResponses ?? {};
+  const customC = fd?.customConsents ?? {};
+  const customKeys = Object.keys(custom);
+  const customCKeys = Object.keys(customC);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+      <div
+        className="h-full overflow-y-auto"
+        style={{ width: 'min(440px, 92vw)', background: 'var(--color-card)', borderLeft: '1px solid var(--color-card-border)', padding: 24 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-1">
+          <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--color-text-primary)' }}>{fd?.fullName || 'Candidat'}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>Candidature reçue {timeAgo(lead.enrolledAt)}</p>
+
+        {/* Statut */}
+        <div className="mb-5">
+          <select
+            value={status}
+            onChange={(e) => onStatus(e.target.value as ProgramLeadStatus)}
+            style={{ border: 'none', cursor: 'pointer', borderRadius: 999, padding: '5px 14px', fontSize: 13, fontWeight: 600, color: STATUS_META[status].color, background: STATUS_META[status].bg }}
+          >
+            {(Object.keys(STATUS_META) as ProgramLeadStatus[]).map((s) => (
+              <option key={s} value={s} style={{ color: '#000' }}>{STATUS_META[s].label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Coordonnées (champs fixes) */}
+        <Section title="Coordonnées">
+          <Row label="Nom complet" value={fd?.fullName} />
+          <Row label="Téléphone" value={fd?.phone} />
+          <Row label="Email" value={fd?.email} />
+          <Row label="Ville" value={fd?.city} />
+          <Row label="Statut professionnel" value={fd?.professionalStatus} />
+        </Section>
+
+        {/* Parcours / scoring */}
+        <Section title="Profil & intention">
+          <Row label="Persona incarné" value={lead.profileName} />
+          <Row label="Concordance profil" value={fd?.profileMatch ? (MATCH_LABEL[fd.profileMatch]?.label ?? fd.profileMatch) : undefined} />
+          <Row label="Intention de candidature" value={fd?.applicationIntent != null ? `${fd.applicationIntent} / 10` : undefined} />
+        </Section>
+
+        {/* Réponses dynamiques (custom) */}
+        {customKeys.length > 0 && (
+          <Section title="Réponses au formulaire">
+            {customKeys.map((id) => (
+              <Row key={id} label={fieldLabels.get(id) ?? id} value={renderValue(custom[id])} />
+            ))}
+          </Section>
+        )}
+
+        {/* Consentements */}
+        <Section title="Consentements">
+          <Row label="Traitement des données" value={fd?.consentDataProcessing ? 'Oui' : 'Non'} />
+          <Row label="Accepte d’être recontacté" value={fd?.consentContact ? 'Oui' : 'Non'} />
+          <Row label="Newsletter" value={fd?.newsletterOptIn ? 'Oui' : 'Non'} />
+          {customCKeys.map((id) => (
+            <Row key={id} label={consentLabels.get(id) ?? id} value={customC[id] ? 'Oui' : 'Non'} />
+          ))}
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-5">
+      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-text-muted)', marginBottom: 8 }}>{title}</p>
+      <div className="flex flex-col gap-2.5">{children}</div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value?: unknown }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span style={{ fontSize: 13, color: 'var(--color-text-muted)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--color-text-primary)', textAlign: 'right', fontWeight: 500 }}>{renderValue(value)}</span>
     </div>
   );
 }

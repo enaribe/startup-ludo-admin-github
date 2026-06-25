@@ -231,6 +231,34 @@ export interface ProgramAdvancedSettings {
   publicPreview: boolean;
 }
 
+// ===== Base de contenu (source de génération IA, partagée Config ↔ Studio) =====
+
+/** Document source ingéré (vectorisé pour la génération RAG). */
+export interface ProgramSourceDoc {
+  id: string;
+  name: string;
+  /** Taille lisible (ex: "2.4 Mo"). */
+  size?: string;
+  pages?: number;
+  /** URL du fichier dans le storage (optionnel tant que l'upload réel n'est pas branché). */
+  url?: string;
+}
+
+/**
+ * Base de contenu d'un programme : documents sources + brief de génération.
+ * Saisie UNE fois dans la Configuration (onglet « Informations »), puis réutilisée
+ * par le Studio de contenu à chaque génération (plus besoin de re-fournir un document).
+ */
+export interface ProgramContentSource {
+  documents: ProgramSourceDoc[];
+  /** Objectif pédagogique principal (Sensibilisation | Qualification | Pré-incubation | Accélération). */
+  objective?: string;
+  /** Sujets à valoriser dans la génération. */
+  topicsKeep: string[];
+  /** Sujets à éviter dans la génération. */
+  topicsAvoid: string[];
+}
+
 // ===== Formulaire de fin (form builder) =====
 
 export type FormFieldType =
@@ -382,6 +410,8 @@ export interface PartnerProgram {
   eligibility?: ProgramEligibility;
   /** Réglages avancés (règle 70/30, validation, frequency cap, preview). */
   advancedSettings?: ProgramAdvancedSettings;
+  /** Base de contenu (documents sources + brief) réutilisée par le Studio de génération. */
+  contentSource?: ProgramContentSource;
   /** Formulaire de fin de parcours configurable (form builder). */
   endForm?: ProgramEndForm;
   /** uid de l'admin propriétaire de ce programme (multi-tenant). Vide = géré par le super admin seul. */

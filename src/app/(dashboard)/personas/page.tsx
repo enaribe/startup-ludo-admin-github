@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, Download, Pencil, Trash2, User } from 'lucide-react';
-import { getPrograms, getProgramsByOwner, getProgram, saveProgram, getEnrollmentsByProgram } from '@/lib/firestore-service';
+import { getScopedPrograms, getProgram, saveProgram, getEnrollmentsByProgram } from '@/lib/firestore-service';
 import { generateId } from '@/lib/utils';
 import type { PartnerProgram, ProgramProfile, ProgramEnrollment } from '@/types';
 import { useAuth } from '@/lib/auth-context';
@@ -34,7 +34,7 @@ export default function PersonasPage() {
   useEffect(() => {
     (async () => {
       try {
-        const list = isSuperAdmin ? await getPrograms() : admin?.uid ? await getProgramsByOwner(admin.uid) : [];
+        const list = await getScopedPrograms(admin);
         setPrograms(list);
         if (list.length > 0) setProgramId(list[0].id);
         else setLoading(false);

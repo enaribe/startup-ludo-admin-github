@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Send, MessageSquare, Bell, Mail, Smartphone, Users } from 'lucide-react';
-import { getPrograms, getProgramsByOwner, getEnrollmentsByProgram } from '@/lib/firestore-service';
+import { getScopedPrograms, getEnrollmentsByProgram } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramEnrollment } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -34,7 +34,7 @@ export default function CommunicationsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const list = isSuperAdmin ? await getPrograms() : admin?.uid ? await getProgramsByOwner(admin.uid) : [];
+        const list = await getScopedPrograms(admin);
         setPrograms(list);
         if (list.length > 0) setProgramId(list[0].id);
         else setLoading(false);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Users, Target, UserCheck, Star, TrendingUp, TrendingDown, ExternalLink, Zap, Shield, Trophy } from 'lucide-react';
-import { getPrograms, getProgramsByOwner, getPartners, getEnrollmentsByProgram, getSessionsByProgram } from '@/lib/firestore-service';
+import { getScopedPrograms, getPartners, getEnrollmentsByProgram, getSessionsByProgram } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramPartner, ProgramEnrollment, ProgramSessionDoc, EntrepreneurProfile } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -49,7 +49,7 @@ function ProgramDashboard() {
     (async () => {
       try {
         const [list, p] = await Promise.all([
-          isSuperAdmin ? getPrograms() : admin?.uid ? getProgramsByOwner(admin.uid) : Promise.resolve([] as PartnerProgram[]),
+          getScopedPrograms(admin),
           getPartners(),
         ]);
         setPrograms(list);

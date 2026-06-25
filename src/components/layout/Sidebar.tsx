@@ -10,7 +10,6 @@ import {
   Award,
   TrendingUp,
   LogOut,
-  Gamepad2,
   Building2,
   Rocket,
   Users,
@@ -21,6 +20,7 @@ import {
   Sparkles,
   BarChart3,
   MessageSquare,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -29,29 +29,38 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   badge?: string;
-  /** Réservé au super admin (masqué pour un admin de programme). */
+  /** Couleur du badge : 'amber' (jaune, ex. leads à traiter) ou 'muted' (gris, ex. compteur). */
+  badgeTone?: 'amber' | 'muted';
+  /** Décoration ✨ violette à droite du label (ex. Studio de contenu). */
+  decorSparkle?: boolean;
+  /** Réservé au super admin. */
   superAdminOnly?: boolean;
-  /** Réservé à l'admin de programme (masqué pour le super admin). */
+  /** Réservé à l'admin de programme. */
   programAdminOnly?: boolean;
+  /** Réservé à l'admin de partenaire. */
+  partnerAdminOnly?: boolean;
 }
 
 interface NavSection {
   title: string;
   /** Toute la section est réservée au super admin. */
   superAdminOnly?: boolean;
-  /** Toute la section est réservée à l'admin de programme (masquée au super admin). */
+  /** Toute la section est réservée à l'admin de programme. */
   programAdminOnly?: boolean;
+  /** Toute la section est réservée à l'admin de partenaire. */
+  partnerAdminOnly?: boolean;
   items: NavItem[];
 }
 
 const NAV_SECTIONS: NavSection[] = [
+  // ===== SUPER ADMIN : gestion globale Startup Ludo =====
   {
     title: 'General',
+    superAdminOnly: true,
     items: [
       { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
     ],
   },
-  // ===== SUPER ADMIN : gestion globale Startup Ludo =====
   {
     title: 'Catalogue',
     superAdminOnly: true,
@@ -72,33 +81,6 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Projets par Defaut', href: '/default-projects', icon: <FolderKanban size={18} /> },
     ],
   },
-  // ===== ADMIN DE PROGRAMME : gestion de SON parcours =====
-  // Ces outils concernent UN programme : ils sont masqués au super admin dans la
-  // sidebar (programAdminOnly). Le super admin y accède en « support » depuis une
-  // page programme / via le sélecteur de programme, pas depuis son menu principal.
-  {
-    title: 'Pilotage du parcours',
-    programAdminOnly: true,
-    items: [
-      { label: 'Configuration', href: '/programs', icon: <Rocket size={18} /> },
-      { label: 'Personas', href: '/personas', icon: <UserCircle size={18} /> },
-      { label: 'Studio de contenu', href: '/studio', icon: <Sparkles size={18} /> },
-      { label: 'Formulaire de fin', href: '/end-form', icon: <ClipboardList size={18} /> },
-      { label: 'Leads & candidats', href: '/leads', icon: <UserCheck size={18} /> },
-      { label: 'Analytics', href: '/analytics', icon: <BarChart3 size={18} /> },
-    ],
-  },
-  {
-    title: 'Organisation',
-    programAdminOnly: true,
-    items: [
-      { label: 'Communications', href: '/communications', icon: <MessageSquare size={18} /> },
-      // Équipe & rôles + Paramètres org. : masqués tant qu'ils ne persistent rien
-      // (stubs non branchés à Firestore). À réactiver une fois la sauvegarde en place.
-    ],
-  },
-  // Section « Challenges (legacy) » retirée : ancien modèle remplacé par les
-  // PartnerPrograms. Les routes /challenges restent accessibles par URL si besoin.
   {
     title: 'Progression',
     superAdminOnly: true,
@@ -107,26 +89,70 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Rangs & XP', href: '/progression', icon: <TrendingUp size={18} /> },
     ],
   },
+  // ===== ADMIN DE PROGRAMME : gestion de SON parcours =====
+  // Ces outils concernent UN programme : ils sont masqués au super admin dans la
+  // sidebar (programAdminOnly). Structure et libellés calqués sur la maquette.
+  {
+    title: 'Pilotage',
+    programAdminOnly: true,
+    items: [
+      { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
+      { label: 'Configuration', href: '/programs', icon: <Settings size={18} /> },
+      { label: 'Personas', href: '/personas', icon: <UserCircle size={18} />, badge: '4', badgeTone: 'muted' },
+      { label: 'Studio de contenu', href: '/studio', icon: <Sparkles size={18} />, decorSparkle: true },
+      { label: 'Formulaire de fin', href: '/end-form', icon: <ClipboardList size={18} /> },
+      { label: 'Leads & candidats', href: '/leads', icon: <UserCheck size={18} />, badge: '12', badgeTone: 'amber' },
+      { label: 'Analytics', href: '/analytics', icon: <BarChart3 size={18} /> },
+    ],
+  },
+  {
+    title: 'Organisation',
+    programAdminOnly: true,
+    items: [
+      { label: 'Communications', href: '/communications', icon: <MessageSquare size={18} /> },
+      { label: 'Équipe & rôles', href: '/team', icon: <Users size={18} /> },
+      { label: 'Paramètres org.', href: '/settings', icon: <Building2 size={18} /> },
+    ],
+  },
+  // ===== ADMIN DE PARTENAIRE : pilotage de TOUS les programmes de son partenaire =====
+  {
+    title: 'Pilotage partenaire',
+    partnerAdminOnly: true,
+    items: [
+      { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
+      { label: 'Mes programmes', href: '/programs', icon: <Rocket size={18} /> },
+      { label: 'Studio de contenu', href: '/studio', icon: <Sparkles size={18} />, decorSparkle: true },
+      { label: 'Leads & candidats', href: '/leads', icon: <UserCheck size={18} /> },
+      { label: 'Analytics', href: '/analytics', icon: <BarChart3 size={18} /> },
+    ],
+  },
+  {
+    title: 'Équipe',
+    partnerAdminOnly: true,
+    items: [
+      // Délégation : l'admin partenaire crée/révoque des admins pour SES programmes.
+      { label: 'Admins programme', href: '/admins', icon: <Users size={18} /> },
+      { label: 'Communications', href: '/communications', icon: <MessageSquare size={18} /> },
+    ],
+  },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { admin, logout, isSuperAdmin } = useAuth();
+  const { admin, logout, isSuperAdmin, isPartnerAdmin, isProgramAdmin } = useAuth();
 
-  // Filtrage par rôle :
-  //  - superAdminOnly : visible seulement par le super admin
-  //  - programAdminOnly : visible seulement par l'admin de programme
+  // Filtrage par rôle : un élément flaggé *Only n'est visible que pour le rôle correspondant ;
+  // un élément sans flag est visible par tous.
+  const allowed = (flags: { superAdminOnly?: boolean; partnerAdminOnly?: boolean; programAdminOnly?: boolean }) => {
+    if (flags.superAdminOnly) return isSuperAdmin;
+    if (flags.partnerAdminOnly) return isPartnerAdmin;
+    if (flags.programAdminOnly) return isProgramAdmin;
+    return true;
+  };
+
   const sections = NAV_SECTIONS
-    .filter((section) => isSuperAdmin || !section.superAdminOnly)
-    .filter((section) => !isSuperAdmin || !section.programAdminOnly)
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => {
-        if (item.superAdminOnly && !isSuperAdmin) return false;
-        if (item.programAdminOnly && isSuperAdmin) return false;
-        return true;
-      }),
-    }))
+    .filter((section) => allowed(section))
+    .map((section) => ({ ...section, items: section.items.filter((item) => allowed(item)) }))
     .filter((section) => section.items.length > 0);
 
   return (
@@ -135,15 +161,20 @@ export default function Sidebar() {
       borderRight: '1px solid rgba(255, 255, 255, 0.08)',
     }}>
       {/* Logo / Brand */}
-      <div className="px-5 py-5 flex items-center gap-3" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255, 188, 64, 0.15)' }}>
-          <Gamepad2 size={20} color="#FFBC40" />
+      <div className="px-5 py-5 flex items-center gap-3">
+        {/* Pastille logo « START UP » sur fond blanc (cf. maquette) */}
+        <div
+          className="flex flex-col items-center justify-center"
+          style={{ width: 56, height: 40, borderRadius: 10, background: '#FFFFFF', flexShrink: 0, lineHeight: 1 }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#0C243E', letterSpacing: 0.3 }}>START</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#0C243E', letterSpacing: 0.3 }}>UP</span>
         </div>
         <div>
-          <h1 style={{ fontFamily: "'Luckiest Guy', cursive", fontSize: 16, color: '#FFBC40', letterSpacing: 0.5 }}>
+          <h1 style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: 0.2 }}>
             Plateforme
           </h1>
-          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: -2 }}>Programme</p>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: -1 }}>Programme</p>
         </div>
       </div>
 
@@ -160,25 +191,48 @@ export default function Sidebar() {
             }}>
               {section.title}
             </p>
-            <ul className="flex flex-col gap-0.5">
+            <ul className="flex flex-col gap-1">
               {section.items.map((item) => {
-                const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                const isActive = item.href === '/'
+                  ? pathname === '/'
+                  : pathname === item.href || pathname.startsWith(item.href + '/');
                 return (
-                  <li key={item.href}>
+                  <li key={item.href} style={{ position: 'relative' }}>
+                    {/* Liseré doré débordant à gauche pour l'item actif */}
+                    {isActive && (
+                      <span style={{
+                        position: 'absolute', left: -12, top: 8, bottom: 8, width: 3,
+                        borderRadius: 2, background: '#FFBC40',
+                      }} />
+                    )}
                     <Link
                       href={item.href}
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150"
                       style={{
-                        background: isActive ? 'rgba(255, 188, 64, 0.12)' : 'transparent',
-                        color: isActive ? '#FFBC40' : 'rgba(255, 255, 255, 0.6)',
-                        fontSize: 13,
-                        fontWeight: isActive ? 600 : 400,
+                        background: isActive ? 'rgba(255, 255, 255, 0.07)' : 'transparent',
+                        color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.62)',
+                        fontSize: 14,
+                        fontWeight: isActive ? 600 : 500,
                       }}
                     >
-                      <span style={{ opacity: isActive ? 1 : 0.6 }}>{item.icon}</span>
-                      {item.label}
+                      <span style={{ opacity: isActive ? 1 : 0.72, display: 'flex' }}>{item.icon}</span>
+                      <span>{item.label}</span>
+                      {item.decorSparkle && (
+                        <Sparkles size={14} style={{ color: '#9B8CFF', opacity: 0.9 }} />
+                      )}
                       {item.badge && (
-                        <span className="ml-auto badge badge-primary" style={{ fontSize: 10 }}>
+                        <span
+                          className="ml-auto"
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            lineHeight: 1,
+                            padding: '3px 9px',
+                            borderRadius: 999,
+                            background: item.badgeTone === 'amber' ? '#FFBC40' : 'rgba(255,255,255,0.10)',
+                            color: item.badgeTone === 'amber' ? '#0C243E' : 'rgba(255,255,255,0.75)',
+                          }}
+                        >
                           {item.badge}
                         </span>
                       )}

@@ -12,13 +12,23 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, firestore, COLLECTIONS } from './firebase';
 
+export type AdminRole = 'admin' | 'super_admin' | 'partner_admin';
+
 export interface AdminUser {
   uid: string;
   email: string;
   displayName: string;
-  role: 'admin' | 'super_admin';
-  /** Programme géré par cet admin (pour role === 'admin'). Absent pour un super_admin. */
+  role: AdminRole;
+  /** Programme géré par cet admin (pour role === 'admin'). Absent sinon. */
   programId?: string | null;
+  /** Partenaire géré par cet admin (pour role === 'partner_admin'). Absent sinon. */
+  partnerId?: string | null;
+}
+
+/** Rôles reconnus comme administrateurs autorisés à se connecter à l'admin. */
+const ADMIN_ROLES: AdminRole[] = ['admin', 'super_admin', 'partner_admin'];
+function isAdminRole(role: string | undefined): role is AdminRole {
+  return !!role && (ADMIN_ROLES as string[]).includes(role);
 }
 
 /**
@@ -39,7 +49,7 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
   const userData = userDoc.data();
   const role = userData.role as string | undefined;
 
-  if (role !== 'admin' && role !== 'super_admin') {
+  if (!isAdminRole(role)) {
     await firebaseSignOut(auth);
     throw new Error('Accès refusé. Vous n\'êtes pas administrateur.');
   }
@@ -48,8 +58,9 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
     uid: user.uid,
     email: user.email || email,
     displayName: userData.displayName || 'Admin',
-    role: role as 'admin' | 'super_admin',
+    role,
     programId: (userData.programId as string | undefined) ?? null,
+    partnerId: (userData.partnerId as string | undefined) ?? null,
   };
 }
 
@@ -81,14 +92,15 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
     const userData = userDoc.data();
     const role = userData.role as string | undefined;
 
-    if (role !== 'admin' && role !== 'super_admin') return null;
+    if (!isAdminRole(role)) return null;
 
     return {
       uid: user.uid,
       email: user.email || '',
       displayName: userData.displayName || 'Admin',
-      role: role as 'admin' | 'super_admin',
+      role,
       programId: (userData.programId as string | undefined) ?? null,
+      partnerId: (userData.partnerId as string | undefined) ?? null,
     };
   } catch {
     return null;

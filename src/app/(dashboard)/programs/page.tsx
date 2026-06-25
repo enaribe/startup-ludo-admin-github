@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Rocket, Plus, Pencil, Trash2, Package, Users } from 'lucide-react';
-import { getPrograms, getProgramsByOwner, getPartners, deleteProgram } from '@/lib/firestore-service';
+import { getScopedPrograms, getPartners, deleteProgram } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramPartner } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -22,13 +22,8 @@ export default function ProgramsPage() {
 
   const load = useCallback(async () => {
     try {
-      // Super admin : tous les programmes. Admin de programme : uniquement les siens.
-      const progPromise = isSuperAdmin
-        ? getPrograms()
-        : admin?.uid
-          ? getProgramsByOwner(admin.uid)
-          : Promise.resolve([] as PartnerProgram[]);
-      const [prog, p] = await Promise.all([progPromise, getPartners()]);
+      // Scoping selon le rôle : super = tous, partenaire = ceux de son partenaire, admin = les siens.
+      const [prog, p] = await Promise.all([getScopedPrograms(admin), getPartners()]);
       setPrograms(prog.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setPartners(p);
     } catch (error) {
@@ -37,6 +32,7 @@ export default function ProgramsPage() {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, admin?.uid]);
 
   useEffect(() => { load(); }, [load]);

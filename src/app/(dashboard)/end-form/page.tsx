@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Type, AlignLeft, Phone, Mail, ChevronDown, Layers, Target, Check, SlidersHorizontal, Calendar, Upload, Trash2, GripVertical,
 } from 'lucide-react';
-import { getPrograms, getProgramsByOwner, getProgram, saveProgram } from '@/lib/firestore-service';
+import { getScopedPrograms, getProgram, saveProgram } from '@/lib/firestore-service';
 import { defaultEndForm } from '@/lib/end-form-defaults';
 import { generateId } from '@/lib/utils';
 import type { PartnerProgram, ProgramEndForm, ProgramFormField, FormFieldType } from '@/types';
@@ -46,8 +47,17 @@ function newField(type: FormFieldType): ProgramFormField {
   };
 }
 
-export default function EndFormPage() {
+export default function EndFormPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20"><LoadingSpinner /></div>}>
+      <EndFormPage />
+    </Suspense>
+  );
+}
+
+function EndFormPage() {
   const { isSuperAdmin, admin } = useAuth();
+  const searchParams = useSearchParams();
   const [programs, setPrograms] = useState<PartnerProgram[]>([]);
   const [programId, setProgramId] = useState<string>('');
   const [form, setForm] = useState<ProgramEndForm>({ fields: [], consents: [] });
@@ -60,15 +70,19 @@ export default function EndFormPage() {
   useEffect(() => {
     (async () => {
       try {
-        const list = isSuperAdmin ? await getPrograms() : admin?.uid ? await getProgramsByOwner(admin.uid) : [];
+        const list = await getScopedPrograms(admin);
         setPrograms(list);
-        if (list.length > 0) setProgramId(list[0].id);
+        // Pré-sélection via ?program= (depuis l'onglet Configuration), sinon le premier.
+        const fromUrl = searchParams.get('program');
+        const initial = fromUrl && list.some((p) => p.id === fromUrl) ? fromUrl : list[0]?.id;
+        if (initial) setProgramId(initial);
       } catch {
         toast.error('Erreur de chargement');
       } finally {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, admin?.uid]);
 
   // Charge le formulaire du programme sélectionné.

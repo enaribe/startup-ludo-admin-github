@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, Plus, Trash2, ShieldCheck, Rocket } from 'lucide-react';
+import { Users, Plus, Trash2, ShieldCheck, Rocket, Building2 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { getPrograms } from '@/lib/firestore-service';
-import type { PartnerProgram } from '@/types';
+import { getScopedPrograms, getPartners } from '@/lib/firestore-service';
+import type { PartnerProgram, ProgramPartner } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -13,12 +13,15 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
 
+type NewAdminRole = 'admin' | 'partner_admin';
+
 interface AdminAccount {
   uid: string;
   email: string;
   displayName: string;
-  role: 'admin' | 'super_admin';
+  role: 'admin' | 'super_admin' | 'partner_admin';
   programId: string | null;
+  partnerId: string | null;
 }
 
 async function authHeader(): Promise<HeadersInit> {
@@ -28,60 +31,73 @@ async function authHeader(): Promise<HeadersInit> {
 
 export default function AdminsPage() {
   const router = useRouter();
-  const { isSuperAdmin, loading: authLoading } = useAuth();
+  const { admin, isSuperAdmin, isPartnerAdmin, loading: authLoading } = useAuth();
+  // Le super admin et l'admin de partenaire (délégation) accèdent à cette page.
+  const canAccess = isSuperAdmin || isPartnerAdmin;
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
   const [programs, setPrograms] = useState<PartnerProgram[]>([]);
+  const [partners, setPartners] = useState<ProgramPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminAccount | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   // form
+  const [role, setRole] = useState<NewAdminRole>('admin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [programId, setProgramId] = useState('');
+  const [partnerId, setPartnerId] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // Réservé au super admin.
+  // Réservé au super admin / admin de partenaire.
   useEffect(() => {
-    if (!authLoading && !isSuperAdmin) router.replace('/programs');
-  }, [authLoading, isSuperAdmin, router]);
+    if (!authLoading && !canAccess) router.replace('/programs');
+  }, [authLoading, canAccess, router]);
 
   const load = useCallback(async () => {
     try {
-      const [res, progs] = await Promise.all([
+      const [res, progs, parts] = await Promise.all([
         fetch('/api/admins', { headers: await authHeader() }),
-        getPrograms(),
+        getScopedPrograms(admin),
+        isSuperAdmin ? getPartners() : Promise.resolve([] as ProgramPartner[]),
       ]);
       if (!res.ok) throw new Error((await res.json()).error || 'Erreur');
       const data = await res.json();
       setAdmins(data.admins ?? []);
       setPrograms(progs.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+      setPartners(parts);
     } catch (error) {
       console.error('Failed to load admins:', error);
       toast.error('Erreur de chargement');
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin, admin?.uid]);
 
   useEffect(() => {
-    if (isSuperAdmin) load();
-  }, [isSuperAdmin, load]);
+    if (canAccess) load();
+  }, [canAccess, load]);
 
   const programName = (id: string | null) =>
     id ? programs.find((p) => p.id === id)?.name ?? id : '—';
+  const partnerName = (id: string | null) =>
+    id ? partners.find((p) => p.id === id)?.name ?? id : '—';
 
   const resetForm = () => {
+    setRole('admin');
     setEmail('');
     setPassword('');
     setDisplayName('');
     setProgramId('');
+    setPartnerId('');
   };
 
   const handleCreate = async () => {
-    if (!email.trim() || !password.trim() || !displayName.trim() || !programId) {
+    const wantsPartner = role === 'partner_admin';
+    if (!email.trim() || !password.trim() || !displayName.trim() || (wantsPartner ? !partnerId : !programId)) {
       toast.error('Tous les champs sont requis.');
       return;
     }
@@ -90,7 +106,11 @@ export default function AdminsPage() {
       const res = await fetch('/api/admins', {
         method: 'POST',
         headers: await authHeader(),
-        body: JSON.stringify({ email, password, displayName, programId }),
+        body: JSON.stringify(
+          wantsPartner
+            ? { email, password, displayName, role: 'partner_admin', partnerId }
+            : { email, password, displayName, role: 'admin', programId }
+        ),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Création impossible');
@@ -128,10 +148,10 @@ export default function AdminsPage() {
   // Programmes déjà assignés (pour éviter de les ré-attribuer par erreur — affichage indicatif).
   const assignedProgramIds = new Set(admins.map((a) => a.programId).filter(Boolean) as string[]);
 
-  if (authLoading || (isSuperAdmin && loading)) {
+  if (authLoading || (canAccess && loading)) {
     return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
   }
-  if (!isSuperAdmin) return null;
+  if (!canAccess) return null;
 
   return (
     <div>
@@ -142,8 +162,8 @@ export default function AdminsPage() {
         <button
           className="btn-primary flex items-center gap-2"
           onClick={() => { resetForm(); setShowCreate(true); }}
-          disabled={programs.length === 0}
-          title={programs.length === 0 ? 'Créez d’abord un programme' : undefined}
+          disabled={programs.length === 0 && partners.length === 0}
+          title={programs.length === 0 && partners.length === 0 ? 'Créez d’abord un programme ou un partenaire' : undefined}
         >
           <Plus size={16} />
           Créer un espace admin
@@ -170,13 +190,15 @@ export default function AdminsPage() {
                     <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{a.email}</p>
                   </div>
                 </div>
-                <span className={`badge ${a.role === 'super_admin' ? 'badge-primary' : 'badge-success'}`}>
-                  {a.role === 'super_admin' ? 'Super Admin' : 'Admin'}
+                <span className={`badge ${a.role === 'super_admin' ? 'badge-primary' : a.role === 'partner_admin' ? 'badge-info' : 'badge-success'}`}>
+                  {a.role === 'super_admin' ? 'Super Admin' : a.role === 'partner_admin' ? 'Admin partenaire' : 'Admin programme'}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 mb-4" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                <Rocket size={13} color="#FFB347" />
-                {a.role === 'super_admin' ? 'Accès complet' : programName(a.programId)}
+                {a.role === 'partner_admin'
+                  ? <><Building2 size={13} color="#FFB347" />{partnerName(a.partnerId)}</>
+                  : <><Rocket size={13} color="#FFB347" />{a.role === 'super_admin' ? 'Accès complet' : programName(a.programId)}</>
+                }
               </div>
               {a.role !== 'super_admin' && (
                 <button
@@ -195,6 +217,32 @@ export default function AdminsPage() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Nouvel espace admin">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Choix du rôle — réservé au super admin (le partenaire ne crée que des admins programme). */}
+          {isSuperAdmin && (
+            <Field label="Type d’admin">
+              <div className="flex gap-2">
+                {([
+                  { key: 'admin', label: 'Admin programme' },
+                  { key: 'partner_admin', label: 'Admin partenaire' },
+                ] as { key: NewAdminRole; label: string }[]).map((r) => (
+                  <button
+                    key={r.key}
+                    onClick={() => setRole(r.key)}
+                    style={{
+                      flex: 1, padding: '8px 12px', borderRadius: 10, fontSize: 13, cursor: 'pointer',
+                      fontWeight: role === r.key ? 600 : 500,
+                      border: `1px solid ${role === r.key ? 'transparent' : 'var(--color-card-border)'}`,
+                      background: role === r.key ? 'var(--color-info-light)' : '#FFFFFF',
+                      color: role === r.key ? 'var(--color-info)' : 'var(--color-text-secondary)',
+                    }}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+
           <Field label="Nom de l'admin">
             <input className="input-field" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Awa Diop" />
           </Field>
@@ -204,18 +252,31 @@ export default function AdminsPage() {
           <Field label="Mot de passe (min. 8 caractères)">
             <input className="input-field" type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe initial" />
           </Field>
-          <Field label="Programme assigné">
-            <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)}>
-              <option value="">— Choisir un programme —</option>
-              {programs.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}{assignedProgramIds.has(p.id) ? ' (déjà assigné)' : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
+
+          {role === 'partner_admin' ? (
+            <Field label="Partenaire assigné">
+              <select className="input-field" value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
+                <option value="">— Choisir un partenaire —</option>
+                {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Programme assigné">
+              <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)}>
+                <option value="">— Choisir un programme —</option>
+                {programs.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{assignedProgramIds.has(p.id) ? ' (déjà assigné)' : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            L’admin pourra se connecter avec cet email/mot de passe et ne gérera que ce programme.
+            {role === 'partner_admin'
+              ? 'L’admin partenaire gérera tous les programmes de ce partenaire et pourra déléguer des admins programme.'
+              : 'L’admin pourra se connecter avec cet email/mot de passe et ne gérera que ce programme.'}
           </p>
           <button className="btn-primary" onClick={handleCreate} disabled={creating}>
             {creating ? 'Création...' : 'Créer le compte'}

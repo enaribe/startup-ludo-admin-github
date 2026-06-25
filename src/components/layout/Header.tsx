@@ -1,23 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, Search, Monitor, Smartphone, ChevronDown } from 'lucide-react';
-import { getPrograms, getProgramsByOwner } from '@/lib/firestore-service';
+import { ChevronDown } from 'lucide-react';
+import { getScopedPrograms } from '@/lib/firestore-service';
 import { useAuth } from '@/lib/auth-context';
 import type { PartnerProgram } from '@/types';
 
 export default function Header() {
   const { admin, isSuperAdmin } = useAuth();
   const [programs, setPrograms] = useState<PartnerProgram[]>([]);
-  const [view, setView] = useState<'backoffice' | 'player'>('backoffice');
 
   useEffect(() => {
     (async () => {
       try {
-        const list = isSuperAdmin ? await getPrograms() : admin?.uid ? await getProgramsByOwner(admin.uid) : [];
-        setPrograms(list);
+        setPrograms(await getScopedPrograms(admin));
       } catch { /* silencieux */ }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, admin?.uid]);
 
   const current = programs[0];
@@ -41,33 +40,7 @@ export default function Header() {
         <ChevronDown size={14} color="var(--color-text-muted)" />
       </button>
 
-      {/* Recherche */}
-      <div className="relative" style={{ flex: 1, maxWidth: 480, margin: '0 24px' }}>
-        <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-        <input
-          type="text"
-          placeholder="Rechercher leads, cartes, personas..."
-          className="input-field"
-          style={{ paddingLeft: 38, width: '100%', fontSize: 13, height: 38 }}
-        />
-        <kbd style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--color-text-muted)', border: '1px solid var(--color-card-border)', borderRadius: 4, padding: '1px 6px' }}>⌘K</kbd>
-      </div>
-
-      <div className="flex items-center gap-3">
-        {/* Toggle Back-office / App joueur */}
-        <div className="flex items-center" style={{ background: 'var(--color-surface)', borderRadius: 10, padding: 3 }}>
-          <button onClick={() => setView('backoffice')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ border: 'none', cursor: 'pointer', fontSize: 12, background: view === 'backoffice' ? '#FFFFFF' : 'transparent', boxShadow: view === 'backoffice' ? '0 1px 2px rgba(12,36,62,0.08)' : 'none', color: view === 'backoffice' ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}>
-            <Monitor size={14} /> Back-office
-          </button>
-          <button onClick={() => setView('player')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ border: 'none', cursor: 'pointer', fontSize: 12, background: view === 'player' ? '#FFFFFF' : 'transparent', boxShadow: view === 'player' ? '0 1px 2px rgba(12,36,62,0.08)' : 'none', color: view === 'player' ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}>
-            <Smartphone size={14} /> App joueur
-          </button>
-        </div>
-
-        <button className="relative p-2 rounded-lg" style={{ background: '#FFFFFF', border: '1px solid var(--color-card-border)', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
-          <Bell size={16} />
-        </button>
-
+      <div className="flex items-center gap-3 ml-auto">
         {/* Profil admin */}
         <div className="flex items-center gap-2.5">
           <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,188,64,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--color-primary-dark)' }}>

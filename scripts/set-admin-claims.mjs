@@ -1,11 +1,12 @@
 /**
  * Pose les custom claims Firebase Auth pour les comptes back-office.
  *
- * Deux rôles :
- *   - super_admin : gère partenaires, programmes et comptes admin (claim super_admin + admin)
- *   - admin       : gère SON programme uniquement (claim admin, + programId optionnel)
+ * Trois rôles :
+ *   - super_admin   : gère partenaires, programmes et comptes admin (claim super_admin + admin)
+ *   - partner_admin : gère TOUS les programmes d'un partenaire (claim partner_admin + admin + partnerId)
+ *   - admin         : gère SON programme uniquement (claim admin, + programId optionnel)
  *
- * Le script pose AUSSI le doc Firestore users/{uid} (role, displayName, programId)
+ * Le script pose AUSSI le doc Firestore users/{uid} (role, displayName, programId/partnerId)
  * pour que la connexion au dashboard fonctionne (signInAdmin lit ce doc).
  *
  * Prérequis : le service account JSON doit être à la racine du repo admin
@@ -15,6 +16,7 @@
  * Usage :
  *   # par UID
  *   node scripts/set-admin-claims.mjs --uid <UID> --role super_admin --name "Tools"
+ *   node scripts/set-admin-claims.mjs --uid <UID> --role partner_admin --name "CJS Manager" --partner <partnerId>
  *   node scripts/set-admin-claims.mjs --uid <UID> --role admin --name "Awa Diop" --program <programId>
  *
  *   # par email (résolu en UID automatiquement)
@@ -69,16 +71,20 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const role = args.role;
   const program = args.program ?? null;
+  const partner = args.partner ?? null;
   const displayName = args.name ?? null;
 
-  if (role !== 'admin' && role !== 'super_admin') {
-    throw new Error('--role doit être "admin" ou "super_admin".');
+  if (role !== 'admin' && role !== 'super_admin' && role !== 'partner_admin') {
+    throw new Error('--role doit être "admin", "partner_admin" ou "super_admin".');
   }
   if (!args.uid && !args.email) {
     throw new Error('Précise --uid <UID> ou --email <email>.');
   }
   if (role === 'admin' && !program) {
     console.warn('⚠️  Rôle admin sans --program : le compte n\'aura aucun programme assigné.');
+  }
+  if (role === 'partner_admin' && !partner) {
+    throw new Error('Rôle partner_admin : --partner <partnerId> est requis.');
   }
 
   const serviceAccount = JSON.parse(readFileSync(resolveServiceAccountPath(), 'utf8'));
@@ -100,11 +106,14 @@ async function main() {
   }
 
   // ----- Custom claims -----
-  // Un super_admin a aussi le claim "admin" (pour les règles qui utilisent isAdmin()).
+  // Tous les rôles portent "admin" (pour les règles isAdmin()).
+  // partner_admin porte aussi partnerId dans les claims (exploité par les règles Firestore).
   const claims =
     role === 'super_admin'
       ? { super_admin: true, admin: true }
-      : { admin: true };
+      : role === 'partner_admin'
+        ? { partner_admin: true, admin: true, partnerId: partner }
+        : { admin: true };
 
   await authAdmin.setCustomUserClaims(uid, claims);
 
@@ -117,6 +126,9 @@ async function main() {
   };
   if (role === 'admin') {
     userDoc.programId = program;
+  }
+  if (role === 'partner_admin') {
+    userDoc.partnerId = partner;
   }
   // createdAt seulement à la création, pour respecter isValidUser des règles
   const existing = await db.collection('users').doc(uid).get();

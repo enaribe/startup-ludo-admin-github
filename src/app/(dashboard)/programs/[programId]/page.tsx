@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, X, Edit, Upload, Package, GripVertical, Languages } from 'lucide-react';
+import {
+  ArrowLeft, Plus, Trash2, X, Edit, Upload, GripVertical, Languages,
+  Info, Palette, Layers, Target, Users, Globe, SlidersHorizontal, FileText, ClipboardList,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { getProgram, saveProgram, getPartners } from '@/lib/firestore-service';
 import type {
-  PartnerProgram, ProgramContentPack, ProgramPartner, ProgramLevelTier,
+  PartnerProgram, ProgramContentPack, ProgramPartner, ProgramLevelTier, ProgramGameMode,
   Quiz, Duel, Funding, Opportunity, ChallengeEvent,
 } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -23,15 +27,15 @@ import toast from 'react-hot-toast';
 
 type Tab = 'identity' | 'branding' | 'structure' | 'eligibility' | 'personas' | 'language' | 'advanced';
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'identity', label: 'Identité' },
-  { key: 'branding', label: 'Branding' },
-  { key: 'structure', label: 'Structure' },
-  // Onglet « Audience » : édite audience.* + playerCount, qui sont les champs réellement
-  // affichés côté mobile (chips Info + badge joueurs). Remplace l'ancien onglet « Éligibilité »
-  // (eligibility.*) qui n'était pas lu par le mobile. (language/advanced restent masqués.)
-  { key: 'eligibility', label: 'Audience' },
-  { key: 'personas', label: 'Personas activés' },
+// Navigation latérale « Configuration du parcours » — 7 onglets avec icônes (cf. maquette).
+const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
+  { key: 'identity', label: 'Informations', icon: Info },
+  { key: 'branding', label: 'Branding', icon: Palette },
+  { key: 'structure', label: 'Structure', icon: Layers },
+  { key: 'eligibility', label: 'Éligibilité', icon: Target },
+  { key: 'personas', label: 'Personas activés', icon: Users },
+  { key: 'language', label: 'Langue', icon: Globe },
+  { key: 'advanced', label: 'Avancé', icon: SlidersHorizontal },
 ];
 
 const LEVEL_TIERS: { key: 'idea' | 'preparation' | 'launch' | 'development'; label: string }[] = [
@@ -44,7 +48,13 @@ const LEVEL_TIERS: { key: 'idea' | 'preparation' | 'launch' | 'development'; lab
 const SENEGAL_REGIONS = ['Dakar', 'Thiès', 'Saint-Louis', 'Kaolack', 'Diourbel', 'Fatick', 'Kaffrine', 'Louga', 'Matam', 'Ziguinchor', 'Tambacounda', 'Kolda'];
 const SECTOR_OPTIONS = ['Agriculture', 'Agroalimentaire', 'Agritech', 'Maraîchage', 'Élevage', 'Aviculture', 'Pêche', 'Artisanat', 'Commerce', 'Numérique', 'Énergie', 'Tourisme', 'Santé', 'Éducation', 'BTP'];
 const AUDIENCE_PROFILE_OPTIONS = ["Porteurs d'idée", 'Jeunes entrepreneurs en démarrage', 'Entrepreneurs en croissance', 'En reconversion', 'Étudiants'];
-// GAME_MODES retiré : UI des modes (allowedModes/recommendedMode) masquée, non lue par le mobile.
+// Modes de jeu (onglet Structure, cf. maquette). Le mobile applique des points fixes ;
+// ces réglages restent informatifs/persistés côté programme.
+const GAME_MODES: { key: ProgramGameMode; label: string; recommendedLabel: string }[] = [
+  { key: 'solo', label: 'Solo contre ADIA', recommendedLabel: 'Solo IA recommandé' },
+  { key: 'duel', label: '1 vs 1', recommendedLabel: '1 vs 1' },
+  { key: 'tournament', label: 'Tournoi', recommendedLabel: 'Tournoi' },
+];
 type ContentTab = 'quizzes' | 'duels' | 'fundings' | 'opportunities' | 'challengeEvents';
 
 const CONTENT_TABS: { key: ContentTab; label: string; color: string }[] = [
@@ -79,6 +89,7 @@ function makeEmpty(programId: string): Omit<PartnerProgram, 'id'> {
     recommendedMode: 'solo',
     eligibility: { ageMin: 18, ageMax: 35, regions: [], sectors: [], audienceProfiles: [] },
     advancedSettings: { rule7030: true, concreeValidationRequired: true, frequencyCap: true, publicPreview: false },
+    contentSource: { documents: [], objective: 'Qualification', topicsKeep: [], topicsAvoid: [] },
     ownerId: null,
     isActive: true, sortOrder: 0,
   };
@@ -87,10 +98,11 @@ function makeEmpty(programId: string): Omit<PartnerProgram, 'id'> {
 export default function ProgramEditorPage() {
   const router = useRouter();
   const params = useParams();
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, isPartnerAdmin, scopedPartnerId } = useAuth();
   const programId = params.programId as string;
   const isNew = programId === 'new';
   // Le partenaire/opérateur/bailleur n'est éditable que par le super admin.
+  // L'admin de partenaire crée ses programmes mais avec partnerId verrouillé sur son partenaire.
   const canEditPartner = isSuperAdmin;
 
   const [data, setData] = useState<Omit<PartnerProgram, 'id'>>(() => makeEmpty('new'));
@@ -100,6 +112,9 @@ export default function ProgramEditorPage() {
   const [loading, setLoading] = useState(!isNew);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Saisie des sujets (brief de génération) dans l'onglet Informations.
+  const [newTopicKeep, setNewTopicKeep] = useState('');
+  const [newTopicAvoid, setNewTopicAvoid] = useState('');
 
   // pack en cours d'édition de contenu
   const [contentPackIdx, setContentPackIdx] = useState<number | null>(null);
@@ -122,6 +137,13 @@ export default function ProgramEditorPage() {
     getPartners().then(setPartners).catch(() => toast.error('Erreur de chargement des partenaires'));
   }, []);
 
+  // Nouveau programme créé par un admin de partenaire : partnerId verrouillé sur son partenaire.
+  useEffect(() => {
+    if (isNew && isPartnerAdmin && scopedPartnerId) {
+      setData((prev) => (prev.partnerId === scopedPartnerId ? prev : { ...prev, partnerId: scopedPartnerId }));
+    }
+  }, [isNew, isPartnerAdmin, scopedPartnerId]);
+
   useEffect(() => {
     if (isNew) return;
     (async () => {
@@ -137,6 +159,7 @@ export default function ProgramEditorPage() {
             audience: { ...empty.audience, ...(rest.audience ?? {}) },
             eligibility: { ...empty.eligibility!, ...(rest.eligibility ?? {}) },
             advancedSettings: { ...empty.advancedSettings!, ...(rest.advancedSettings ?? {}) },
+            contentSource: { ...empty.contentSource!, ...(rest.contentSource ?? {}) },
             allowedModes: rest.allowedModes?.length ? rest.allowedModes : empty.allowedModes,
             contentPacks: rest.contentPacks?.length ? rest.contentPacks : [emptyPack(programId)],
           });
@@ -155,15 +178,55 @@ export default function ProgramEditorPage() {
   const update = <K extends keyof Omit<PartnerProgram, 'id'>>(key: K, value: Omit<PartnerProgram, 'id'>[K]) =>
     setData((prev) => ({ ...prev, [key]: value }));
 
-  const updateAudience = (key: keyof PartnerProgram['audience'], value: unknown) =>
-    setData((prev) => ({ ...prev, audience: { ...prev.audience, [key]: value } }));
+  // ===== Éligibilité (eligibility.*) — onglet « Éligibilité » de la maquette =====
+  const EMPTY_ELIG: NonNullable<PartnerProgram['eligibility']> = { ageMin: 18, ageMax: 35, regions: [], sectors: [], audienceProfiles: [] };
+  const elig = { ...EMPTY_ELIG, ...(data.eligibility ?? {}) };
+  const updateEligibility = (key: keyof NonNullable<PartnerProgram['eligibility']>, value: unknown) =>
+    setData((prev) => ({ ...prev, eligibility: { ...EMPTY_ELIG, ...prev.eligibility, [key]: value } }));
+  const toggleEligList = (key: 'regions' | 'sectors' | 'audienceProfiles', v: string) =>
+    setData((prev) => {
+      const cur = new Set((prev.eligibility ?? EMPTY_ELIG)[key]);
+      cur.has(v) ? cur.delete(v) : cur.add(v);
+      return { ...prev, eligibility: { ...EMPTY_ELIG, ...prev.eligibility, [key]: Array.from(cur) } };
+    });
 
-  // ===== Avancé (onglet masqué, conservé pour compat) =====
-  // L'édition de l'éligibilité (eligibility.*) a été retirée : non lue par le mobile.
-  // L'onglet « Audience » édite désormais audience.* via updateAudience (champs réellement affichés côté joueur).
+  // ===== Avancé (advancedSettings.*) — onglet « Avancé » de la maquette =====
   const EMPTY_ADV: NonNullable<PartnerProgram['advancedSettings']> = { rule7030: true, concreeValidationRequired: true, frequencyCap: true, publicPreview: false };
   const updateAdvanced = (key: keyof NonNullable<PartnerProgram['advancedSettings']>, value: boolean) =>
     setData((prev) => ({ ...prev, advancedSettings: { ...EMPTY_ADV, ...prev.advancedSettings, [key]: value } }));
+
+  // ===== Base de contenu (contentSource.*) — onglet « Informations » =====
+  // Documents sources + brief, saisis une fois et réutilisés par le Studio de génération.
+  const EMPTY_SOURCE: NonNullable<PartnerProgram['contentSource']> = { documents: [], objective: 'Qualification', topicsKeep: [], topicsAvoid: [] };
+  const source = { ...EMPTY_SOURCE, ...(data.contentSource ?? {}) };
+  const updateSource = <K extends keyof NonNullable<PartnerProgram['contentSource']>>(key: K, value: NonNullable<PartnerProgram['contentSource']>[K]) =>
+    setData((prev) => ({ ...prev, contentSource: { ...EMPTY_SOURCE, ...prev.contentSource, [key]: value } }));
+  const addSourceDoc = () =>
+    setData((prev) => {
+      const src = { ...EMPTY_SOURCE, ...prev.contentSource };
+      const n = src.documents.length + 1;
+      const doc = { id: `doc_${generateId()}`, name: `Document ${n}.pdf`, size: '—', pages: 0 };
+      return { ...prev, contentSource: { ...src, documents: [...src.documents, doc] } };
+    });
+  const removeSourceDoc = (id: string) =>
+    setData((prev) => {
+      const src = { ...EMPTY_SOURCE, ...prev.contentSource };
+      return { ...prev, contentSource: { ...src, documents: src.documents.filter((d) => d.id !== id) } };
+    });
+  const addTopic = (list: 'topicsKeep' | 'topicsAvoid', value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    setData((prev) => {
+      const src = { ...EMPTY_SOURCE, ...prev.contentSource };
+      if (src[list].includes(v)) return prev;
+      return { ...prev, contentSource: { ...src, [list]: [...src[list], v] } };
+    });
+  };
+  const removeTopic = (list: 'topicsKeep' | 'topicsAvoid', value: string) =>
+    setData((prev) => {
+      const src = { ...EMPTY_SOURCE, ...prev.contentSource };
+      return { ...prev, contentSource: { ...src, [list]: src[list].filter((t) => t !== value) } };
+    });
 
   // toggleMode retiré : UI des modes masquée (allowedModes conservé dans le state, valeur par défaut ['solo']).
 
@@ -176,6 +239,27 @@ export default function ProgramEditorPage() {
   const updatePack = (idx: number, patch: Partial<ProgramContentPack>) =>
     setData((prev) => ({ ...prev, contentPacks: prev.contentPacks.map((p, i) => (i === idx ? { ...p, ...patch } : p)) }));
 
+  // Slider « Nombre de parties » : ajuste la liste à la longueur cible.
+  // - On n'ampute jamais une partie qui contient du contenu (sécurité anti-perte).
+  const setPartCount = (target: number) =>
+    setData((prev) => {
+      const cur = prev.contentPacks.length;
+      if (target === cur) return prev;
+      if (target > cur) {
+        const add = Array.from({ length: target - cur }, () => emptyPack(isNew ? newId || 'new' : programId));
+        return { ...prev, contentPacks: [...prev.contentPacks, ...add] };
+      }
+      // Réduction : on retire en priorité les dernières parties VIDES.
+      const next = [...prev.contentPacks];
+      let toRemove = cur - target;
+      for (let i = next.length - 1; i >= 0 && toRemove > 0; i--) {
+        const p = next[i];
+        const empty = p.quizzes.length + p.duels.length + p.fundings.length + p.opportunities.length + p.challengeEvents.length === 0;
+        if (empty) { next.splice(i, 1); toRemove--; }
+      }
+      return { ...prev, contentPacks: next.length ? next : prev.contentPacks };
+    });
+
   // Réordonnancement des parties (drag & drop natif).
   const movePack = (from: number, to: number) =>
     setData((prev) => {
@@ -187,6 +271,18 @@ export default function ProgramEditorPage() {
     });
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [expandedPackIdx, setExpandedPackIdx] = useState<number | null>(null);
+
+  // Modes de jeu : 'solo' toujours actif (obligatoire). Toggle des autres.
+  const toggleMode = (mode: ProgramGameMode) => {
+    if (mode === 'solo') return;
+    setData((prev) => {
+      const set = new Set<ProgramGameMode>(prev.allowedModes ?? ['solo']);
+      set.has(mode) ? set.delete(mode) : set.add(mode);
+      set.add('solo');
+      return { ...prev, allowedModes: Array.from(set) };
+    });
+  };
 
   // ===== Traduction d'un pack en anglais (IA) =====
   async function translatePack(packIdx: number, targetLang = 'en') {
@@ -361,21 +457,64 @@ export default function ProgramEditorPage() {
         </div>
       </div>
 
-      {/* Onglets de configuration */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={activeTab === tab.key ? 'btn-primary' : 'btn-secondary'}
-            style={{ padding: '8px 16px', fontSize: 13 }}
-          >
-            {tab.label}
-            {tab.key === 'structure' ? ` (${data.contentPacks.length})` : ''}
-            {tab.key === 'personas' ? ` (${profiles.length})` : ''}
-          </button>
-        ))}
-      </div>
+      {/* Layout 2 colonnes : sidebar de navigation (card) + contenu de l'onglet */}
+      <div className="flex gap-6 items-start">
+        {/* Navigation latérale */}
+        <nav className="glass-card" style={{ width: 240, flexShrink: 0, padding: 12 }}>
+          {TABS.map((tab) => {
+            const active = activeTab === tab.key;
+            const Icon = tab.icon;
+            const count = tab.key === 'structure' ? data.contentPacks.length : tab.key === 'personas' ? profiles.length : null;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className="flex items-center gap-3 w-full"
+                style={{
+                  padding: '10px 12px',
+                  marginBottom: 2,
+                  borderRadius: 10,
+                  border: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontSize: 14,
+                  fontWeight: active ? 600 : 500,
+                  background: active ? 'var(--color-info-light)' : 'transparent',
+                  color: active ? 'var(--color-info)' : 'var(--color-text-secondary)',
+                }}
+              >
+                <Icon size={18} />
+                <span style={{ flex: 1 }}>{tab.label}</span>
+                {count !== null && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: active ? 'var(--color-info)' : 'var(--color-text-muted)' }}>{count}</span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* Formulaire de fin : ouvre le form builder dédié (/end-form) sur ce programme. */}
+          {!isNew && (
+            <>
+              <div style={{ height: 1, background: 'var(--color-card-border)', margin: '8px 4px' }} />
+              <button
+                onClick={() => router.push(`/end-form?program=${programId}`)}
+                className="flex items-center gap-3 w-full"
+                style={{
+                  padding: '10px 12px', marginBottom: 2, borderRadius: 10, border: 'none', cursor: 'pointer',
+                  textAlign: 'left', fontSize: 14, fontWeight: 500,
+                  background: 'transparent', color: 'var(--color-text-secondary)',
+                }}
+              >
+                <ClipboardList size={18} />
+                <span style={{ flex: 1 }}>Formulaire de fin</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>↗</span>
+              </button>
+            </>
+          )}
+        </nav>
+
+        {/* Contenu de l'onglet actif */}
+        <div style={{ flex: 1, minWidth: 0 }}>
 
       {activeTab === 'identity' && (
         <div className="glass-card p-6" style={{ maxWidth: 760 }}>
@@ -462,6 +601,81 @@ export default function ProgramEditorPage() {
             <input type="checkbox" checked={data.isActive} onChange={(e) => update('isActive', e.target.checked)} />
             <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>Programme actif</span>
           </label>
+
+          {/* ===== Base de contenu (réutilisée par le Studio de génération) ===== */}
+          <div style={{ borderTop: '1px solid var(--color-card-border)', marginTop: 24, paddingTop: 20 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>Base de contenu</h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+              Documents sources et brief de génération. Saisis une seule fois ici, ils sont réutilisés automatiquement par le <strong>Studio de contenu</strong> à chaque génération — plus besoin de re-fournir un document.
+            </p>
+
+            {/* Documents sources */}
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Documents sources</label>
+            <button
+              onClick={addSourceDoc}
+              className="w-full mb-3"
+              style={{ border: '2px dashed var(--color-card-border)', borderRadius: 12, padding: '20px', textAlign: 'center', cursor: 'pointer', background: 'transparent' }}
+            >
+              <Upload size={22} color="var(--color-text-muted)" style={{ margin: '0 auto 8px' }} />
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Ajouter un document</p>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>PDF, DOCX, MD, PPTX · indexé pour la génération</p>
+            </button>
+            {source.documents.length > 0 && (
+              <div className="flex flex-col gap-2 mb-5">
+                {source.documents.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between" style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--color-surface)' }}>
+                    <div className="flex items-center gap-2.5">
+                      <FileText size={15} color="var(--color-text-muted)" />
+                      <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>{d.name}</span>
+                      {(d.pages ?? 0) > 0 && <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{d.size} · {d.pages} p.</span>}
+                    </div>
+                    <button onClick={() => removeSourceDoc(d.id)} className="p-1.5 rounded-lg" style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer' }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Brief — Objectif pédagogique */}
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Objectif pédagogique principal</label>
+            <div className="flex gap-2 mb-5 flex-wrap">
+              {['Sensibilisation', 'Qualification', 'Pré-incubation', 'Accélération'].map((o) => {
+                const active = (source.objective ?? 'Qualification') === o;
+                return (
+                  <button
+                    key={o}
+                    onClick={() => updateSource('objective', o)}
+                    style={{ padding: '6px 16px', borderRadius: 999, fontSize: 13, cursor: 'pointer', fontWeight: active ? 600 : 500, border: `1px solid ${active ? 'transparent' : 'var(--color-card-border)'}`, background: active ? 'var(--color-info-light)' : '#FFFFFF', color: active ? 'var(--color-info)' : 'var(--color-text-secondary)' }}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Brief — Sujets à valoriser */}
+            <TopicField
+              label="Sujets à valoriser"
+              color="var(--color-success)"
+              topics={source.topicsKeep}
+              value={newTopicKeep}
+              onValueChange={setNewTopicKeep}
+              onAdd={() => { addTopic('topicsKeep', newTopicKeep); setNewTopicKeep(''); }}
+              onRemove={(t) => removeTopic('topicsKeep', t)}
+            />
+
+            {/* Brief — Sujets à éviter */}
+            <TopicField
+              label="Sujets à éviter"
+              color="#E5484D"
+              topics={source.topicsAvoid}
+              value={newTopicAvoid}
+              onValueChange={setNewTopicAvoid}
+              onAdd={() => { addTopic('topicsAvoid', newTopicAvoid); setNewTopicAvoid(''); }}
+              onRemove={(t) => removeTopic('topicsAvoid', t)}
+            />
+          </div>
         </div>
       )}
 
@@ -487,62 +701,70 @@ export default function ProgramEditorPage() {
       )}
 
       {activeTab === 'eligibility' && (
-        <div className="glass-card p-6" style={{ maxWidth: 760 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>Audience</h2>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 16 }}>
-            Ces informations s’affichent côté joueur sur la fiche du programme (chips d’info + nombre de joueurs).
-          </p>
+        <div className="glass-card p-6" style={{ maxWidth: 900 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>Éligibilité</h2>
 
-          <Field label="Tranche d'âge">
+          {/* Tranche d'âge */}
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Tranche d&apos;âge</label>
+          <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
             <input
+              type="number"
               className="input-field"
-              value={data.audience.ageRange}
-              onChange={(e) => updateAudience('ageRange', e.target.value)}
-              placeholder="Ex : 18-35 ans"
+              style={{ width: 120 }}
+              value={elig.ageMin ?? ''}
+              onChange={(e) => updateEligibility('ageMin', e.target.value === '' ? undefined : Number(e.target.value))}
+              placeholder="18"
             />
-          </Field>
-
-          <Field label="Localisations couvertes">
-            <ChipMultiSelect
-              options={SENEGAL_REGIONS}
-              selected={data.audience.locations}
-              onToggle={(v) => {
-                const set = new Set(data.audience.locations);
-                set.has(v) ? set.delete(v) : set.add(v);
-                updateAudience('locations', Array.from(set));
-              }}
-            />
-          </Field>
-
-          <Field label="Secteur principal">
+            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>à</span>
             <input
+              type="number"
               className="input-field"
-              value={data.audience.sector}
-              onChange={(e) => updateAudience('sector', e.target.value)}
-              placeholder="Ex : Agriculture, Numérique…"
-              list="audience-sectors"
+              style={{ width: 120 }}
+              value={elig.ageMax ?? ''}
+              onChange={(e) => updateEligibility('ageMax', e.target.value === '' ? undefined : Number(e.target.value))}
+              placeholder="35"
             />
-            <datalist id="audience-sectors">
-              {SECTOR_OPTIONS.map((s) => <option key={s} value={s} />)}
-            </datalist>
-          </Field>
+            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>ans</span>
+          </div>
 
-          <Field label="Profil ciblé">
-            <input
-              className="input-field"
-              value={data.audience.profile}
-              onChange={(e) => updateAudience('profile', e.target.value)}
-              placeholder="Ex : Jeunes entrepreneurs en démarrage"
-              list="audience-profiles"
-            />
-            <datalist id="audience-profiles">
-              {AUDIENCE_PROFILE_OPTIONS.map((p) => <option key={p} value={p} />)}
-            </datalist>
-          </Field>
+          {/* Régions couvertes */}
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Régions couvertes</label>
+          <div className="flex flex-wrap gap-2" style={{ marginBottom: 20 }}>
+            <ChipMultiSelect options={SENEGAL_REGIONS} selected={elig.regions} onToggle={(v) => toggleEligList('regions', v)} />
+          </div>
 
-          <Field label="Nombre de joueurs (affichage carte)">
-            <input type="number" className="input-field" value={data.playerCount} onChange={(e) => update('playerCount', Number(e.target.value) || 0)} />
-          </Field>
+          {/* Secteurs cibles */}
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Secteurs cibles</label>
+          <div className="flex flex-wrap gap-2" style={{ marginBottom: 20 }}>
+            <ChipMultiSelect options={SECTOR_OPTIONS} selected={elig.sectors} onToggle={(v) => toggleEligList('sectors', v)} />
+          </div>
+
+          {/* Profils éligibles */}
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Profils éligibles</label>
+          <div className="flex flex-col gap-2" style={{ marginBottom: 20 }}>
+            {AUDIENCE_PROFILE_OPTIONS.map((p) => {
+              const checked = elig.audienceProfiles.includes(p);
+              return (
+                <label key={p} className="flex items-center gap-2.5" style={{ cursor: 'pointer', fontSize: 14, color: 'var(--color-text-primary)' }}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleEligList('audienceProfiles', p)} />
+                  {p}
+                </label>
+              );
+            })}
+          </div>
+
+          {/* Aperçu joueur */}
+          <div className="glass-card" style={{ background: 'var(--color-surface)', padding: 16, marginTop: 4 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 12 }}>
+              Aperçu joueur · « À qui s&apos;adresse ce parcours »
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <PreviewChip>{elig.ageMin ?? '?'}–{elig.ageMax ?? '?'} ans</PreviewChip>
+              <PreviewChip>{elig.regions.length} région{elig.regions.length !== 1 ? 's' : ''}</PreviewChip>
+              <PreviewChip>{elig.sectors.length} secteur{elig.sectors.length !== 1 ? 's' : ''}</PreviewChip>
+              {elig.audienceProfiles.length > 0 && <PreviewChip>{elig.audienceProfiles.join(' & ')}</PreviewChip>}
+            </div>
+          </div>
         </div>
       )}
 
@@ -587,34 +809,67 @@ export default function ProgramEditorPage() {
       )}
 
       {activeTab === 'structure' && (
-        <div>
-          <div className="glass-card p-6 mb-4" style={{ maxWidth: 900 }}>
-            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-              Nombre de parties — <span style={{ color: '#FFB347' }}>{data.contentPacks.length}</span>
-            </p>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4, marginBottom: 12 }}>
-              Chaque partie = un niveau de jeu avec son propre contenu. L’ordre des parties = la progression du joueur (il débloque la suivante en gagnant).
-            </p>
-            <div className="flex items-center gap-3">
-              <button className="btn-secondary flex items-center gap-2" onClick={addPack} style={{ padding: '8px 14px', fontSize: 12 }}>
-                <Plus size={14} /> Ajouter une partie
-              </button>
-              <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                Niveaux entrepreneuriaux : {LEVEL_TIERS.map((t) => t.label).join(' · ')}
+        <div className="glass-card p-6" style={{ maxWidth: 900 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 20 }}>Structure</h2>
+
+          {/* Nombre de parties — slider */}
+          <div className="flex items-center gap-3 mb-3">
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+              Nombre de parties — <span style={{ color: 'var(--color-info)' }}>{data.contentPacks.length}</span>
+            </span>
+            {data.contentPacks.length >= 5 && data.contentPacks.length <= 8 && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-success)', background: 'var(--color-success-light)', padding: '3px 10px', borderRadius: 999 }}>
+                recommandé
               </span>
-            </div>
+            )}
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={12}
+            value={data.contentPacks.length}
+            onChange={(e) => setPartCount(Number(e.target.value))}
+            style={{ width: '100%', accentColor: 'var(--color-info)', marginBottom: 24, cursor: 'pointer' }}
+          />
+
+          {/* Niveaux entrepreneuriaux couverts */}
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Niveaux entrepreneuriaux couverts</p>
+          <div className="flex flex-wrap gap-2 mb-6">
+            {LEVEL_TIERS.map((t) => {
+              const covered = data.contentPacks.some((p) => p.levelTier === t.key);
+              return (
+                <span
+                  key={t.key}
+                  style={{
+                    padding: '7px 16px', borderRadius: 999, fontSize: 13,
+                    fontWeight: covered ? 600 : 500,
+                    background: covered ? 'var(--color-info-light)' : '#FFFFFF',
+                    border: `1px solid ${covered ? 'transparent' : 'var(--color-card-border)'}`,
+                    color: covered ? 'var(--color-info)' : 'var(--color-text-muted)',
+                  }}
+                >
+                  {covered ? '✓ ' : ''}{t.label}
+                </span>
+              );
+            })}
           </div>
 
+          {/* Séquence des parties */}
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>Séquence des parties</p>
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>Glissez la poignée ⠿ pour réordonner les parties.</p>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+            Glissez la poignée ⠿ pour réordonner. Cliquez sur une partie pour éditer son titre, son niveau et gérer son contenu.
+          </p>
 
-          <div className="flex flex-col gap-4" style={{ maxWidth: 900 }}>
+          <div className="flex flex-col gap-2.5">
             {data.contentPacks.map((p, idx) => {
               const total = p.quizzes.length + p.duels.length + p.fundings.length + p.opportunities.length + p.challengeEvents.length;
+              const tierLabel = LEVEL_TIERS.find((t) => t.key === p.levelTier)?.label;
+              const tierNum = p.levelTier ? LEVEL_TIERS.findIndex((t) => t.key === p.levelTier) + 1 : null;
+              const isOpen = expandedPackIdx === idx;
               return (
                 <div
                   key={p.id}
-                  className="glass-card p-4"
+                  className="glass-card"
                   draggable={dragIndex !== null}
                   onDragOver={(e) => { if (dragIndex !== null) { e.preventDefault(); setDragOverIndex(idx); } }}
                   onDrop={(e) => {
@@ -624,52 +879,107 @@ export default function ProgramEditorPage() {
                     setDragOverIndex(null);
                   }}
                   style={{
+                    padding: 0,
                     opacity: dragIndex === idx ? 0.4 : 1,
-                    outline: dragOverIndex === idx && dragIndex !== idx ? '2px dashed #9B59B6' : 'none',
+                    outline: dragOverIndex === idx && dragIndex !== idx ? '2px dashed var(--color-info)' : 'none',
                     outlineOffset: 2,
                   }}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span
-                        title="Glisser pour réordonner"
-                        onMouseDown={() => setDragIndex(idx)}
-                        onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
-                        style={{ cursor: 'grab', display: 'flex', color: 'var(--color-text-muted)' }}
-                      >
-                        <GripVertical size={16} />
-                      </span>
-                      <Package size={16} color="#9B59B6" />
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#9B59B6' }}>Partie {idx + 1}</span>
+                  {/* Ligne compacte (style maquette) */}
+                  <div
+                    className="flex items-center gap-3"
+                    style={{ padding: '14px 16px', cursor: 'pointer' }}
+                    onClick={() => setExpandedPackIdx(isOpen ? null : idx)}
+                  >
+                    <span
+                      title="Glisser pour réordonner"
+                      onMouseDown={(e) => { e.stopPropagation(); setDragIndex(idx); }}
+                      onClick={(e) => e.stopPropagation()}
+                      onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                      style={{ cursor: 'grab', display: 'flex', color: 'var(--color-text-muted)' }}
+                    >
+                      <GripVertical size={16} />
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '3px 10px', borderRadius: 8, whiteSpace: 'nowrap' }}>
+                      Partie {idx + 1}
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', flex: 1 }}>
+                      {p.title || p.name || 'Sans titre'}
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                      {tierNum ? `Niveau ${tierNum} · ${tierLabel}` : 'Niveau non défini'}
+                    </span>
+                  </div>
+
+                  {/* Panneau d'édition (déplié au clic) */}
+                  {isOpen && (
+                    <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--color-card-border)' }}>
+                      <div className="pt-4">
+                        <input className="input-field" value={p.title || p.name} onChange={(e) => updatePack(idx, { title: e.target.value, name: e.target.value })} placeholder="Titre de la partie (ex: Validation du problème)" style={{ marginBottom: 8 }} />
+                        <select className="input-field" value={p.levelTier ?? ''} onChange={(e) => updatePack(idx, { levelTier: (e.target.value || undefined) as ProgramLevelTier | undefined })} style={{ marginBottom: 8, fontSize: 12 }}>
+                          <option value="">— Niveau entrepreneurial —</option>
+                          {LEVEL_TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                        </select>
+                        <input className="input-field" value={p.description || ''} onChange={(e) => updatePack(idx, { description: e.target.value })} placeholder="Description (optionnel)" style={{ marginBottom: 12, fontSize: 12 }} />
+                        <div className="flex flex-wrap gap-3 mb-3">
+                          {CONTENT_TABS.map((ct) => (
+                            <span key={ct.key} style={{ fontSize: 11, color: ct.color }}>
+                              {(p[ct.key] as unknown[]).length} {ct.label}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                            onClick={() => router.push(`/studio?program=${storageId}&pack=${p.id}`)}
+                            style={{ padding: '8px 12px', fontSize: 12 }}
+                            title="Ouvrir le contenu de cette partie dans le Studio"
+                          >
+                            <Edit size={13} /> Gérer le contenu ({total})
+                          </button>
+                          {data.contentPacks.length > 1 && (
+                            <button onClick={() => { removePack(idx); setExpandedPackIdx(null); }} className="p-2 rounded-lg" style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer' }} title="Supprimer la partie">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    {data.contentPacks.length > 1 && (
-                      <button onClick={() => removePack(idx)} className="p-1.5 rounded-lg" style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer' }}>
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                  <input className="input-field" value={p.title || p.name} onChange={(e) => updatePack(idx, { title: e.target.value, name: e.target.value })} placeholder="Titre de la partie (ex: Validation du problème)" style={{ marginBottom: 8 }} />
-                  <select className="input-field" value={p.levelTier ?? ''} onChange={(e) => updatePack(idx, { levelTier: (e.target.value || undefined) as ProgramLevelTier | undefined })} style={{ marginBottom: 8, fontSize: 12 }}>
-                    <option value="">— Niveau entrepreneurial —</option>
-                    {LEVEL_TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-                  </select>
-                  <input className="input-field" value={p.description || ''} onChange={(e) => updatePack(idx, { description: e.target.value })} placeholder="Description (optionnel)" style={{ marginBottom: 12, fontSize: 12 }} />
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {CONTENT_TABS.map((ct) => (
-                      <span key={ct.key} style={{ fontSize: 11, color: ct.color }}>
-                        {(p[ct.key] as unknown[]).length} {ct.label}
-                      </span>
-                    ))}
-                  </div>
-                  <button className="btn-secondary w-full flex items-center justify-center gap-2" onClick={() => { setContentPackIdx(idx); setContentTab('quizzes'); }} style={{ padding: '8px 12px', fontSize: 12 }}>
-                    <Edit size={13} /> Gérer le contenu ({total})
-                  </button>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Bloc masqué : 'allowedModes' / 'recommendedMode' non lus par le mobile (points fixes côté jeu). Conservés dans le state. */}
+          {/* Ajouter une partie */}
+          <button className="btn-secondary flex items-center gap-2 mt-3" onClick={addPack} style={{ padding: '8px 14px', fontSize: 12 }}>
+            <Plus size={14} /> Ajouter une partie
+          </button>
+
+          {/* Modes de jeu autorisés + Mode recommandé */}
+          <div className="grid grid-cols-2 gap-6 mt-8" style={{ borderTop: '1px solid var(--color-card-border)', paddingTop: 24 }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 12 }}>Modes de jeu autorisés</p>
+              {GAME_MODES.map((m) => {
+                const checked = m.key === 'solo' || (data.allowedModes ?? []).includes(m.key);
+                return (
+                  <label key={m.key} className="flex items-center gap-2.5 mb-2.5" style={{ cursor: m.key === 'solo' ? 'not-allowed' : 'pointer', fontSize: 14, color: 'var(--color-text-primary)' }}>
+                    <input type="checkbox" checked={checked} disabled={m.key === 'solo'} onChange={() => toggleMode(m.key)} />
+                    {m.label}{m.key === 'solo' && <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>(obligatoire)</span>}
+                  </label>
+                );
+              })}
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 12 }}>Mode recommandé côté joueur</p>
+              {GAME_MODES.map((m) => (
+                <label key={m.key} className="flex items-center gap-2.5 mb-2.5" style={{ cursor: 'pointer', fontSize: 14, color: 'var(--color-text-primary)' }}>
+                  <input type="radio" name="recommendedMode" checked={(data.recommendedMode ?? 'solo') === m.key} onChange={() => update('recommendedMode', m.key)} />
+                  {m.recommendedLabel}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -704,6 +1014,9 @@ export default function ProgramEditorPage() {
           </button>
         </div>
       )}
+
+        </div>{/* fin colonne contenu */}
+      </div>{/* fin layout 2 colonnes */}
 
       {/* Modal contenu d'un pack */}
       {pack && contentPackIdx !== null && (
@@ -846,6 +1159,36 @@ function ContentList({ pack, contentTab, lang, onEdit, onDelete }: {
   );
 }
 
+function TopicField({ label, color, topics, value, onValueChange, onAdd, onRemove }: {
+  label: string; color: string; topics: string[];
+  value: string; onValueChange: (v: string) => void; onAdd: () => void; onRemove: (t: string) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}>{label}</label>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {topics.length === 0 && <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Aucun</span>}
+        {topics.map((t) => (
+          <span key={t} className="flex items-center gap-1.5" style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, color, background: `${color.startsWith('var') ? 'var(--color-success-light)' : color + '1a'}` }}>
+            {t}
+            <button onClick={() => onRemove(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color, display: 'flex' }}><X size={12} /></button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="input-field"
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdd(); } }}
+          placeholder="Ajouter un sujet…"
+        />
+        <button className="btn-secondary" onClick={onAdd} style={{ whiteSpace: 'nowrap', padding: '8px 14px', fontSize: 12 }}>+ Ajouter</button>
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 16 }}>
@@ -878,10 +1221,11 @@ function ChipMultiSelect({ options, selected, onToggle }: { options: string[]; s
               padding: '6px 14px',
               borderRadius: 999,
               fontSize: 13,
+              fontWeight: active ? 600 : 500,
               cursor: 'pointer',
-              border: `1px solid ${active ? '#5B8DEF' : 'var(--color-card-border)'}`,
-              background: active ? 'rgba(91,141,239,0.18)' : 'transparent',
-              color: active ? '#9DBDF7' : 'var(--color-text-secondary)',
+              border: `1px solid ${active ? 'transparent' : 'var(--color-card-border)'}`,
+              background: active ? 'var(--color-info-light)' : '#FFFFFF',
+              color: active ? 'var(--color-info)' : 'var(--color-text-secondary)',
             }}
           >
             {active ? '✓ ' : ''}{opt}
@@ -889,6 +1233,21 @@ function ChipMultiSelect({ options, selected, onToggle }: { options: string[]; s
         );
       })}
     </div>
+  );
+}
+
+function PreviewChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      padding: '6px 14px',
+      borderRadius: 999,
+      fontSize: 13,
+      background: '#FFFFFF',
+      border: '1px solid var(--color-card-border)',
+      color: 'var(--color-text-secondary)',
+    }}>
+      {children}
+    </span>
   );
 }
 

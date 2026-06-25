@@ -131,6 +131,23 @@ export async function getProgramsByOwner(ownerId: string): Promise<PartnerProgra
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
 }
 
+/**
+ * Programmes visibles selon le rôle de l'admin connecté — source unique de scoping :
+ *  - super_admin   → tous les programmes
+ *  - partner_admin → tous les programmes de son partenaire
+ *  - admin         → uniquement les programmes dont il est propriétaire (ownerId)
+ */
+export async function getScopedPrograms(admin: {
+  role: 'admin' | 'super_admin' | 'partner_admin';
+  uid: string;
+  partnerId?: string | null;
+} | null): Promise<PartnerProgram[]> {
+  if (!admin) return [];
+  if (admin.role === 'super_admin') return getPrograms();
+  if (admin.role === 'partner_admin') return admin.partnerId ? getProgramsByPartner(admin.partnerId) : [];
+  return getProgramsByOwner(admin.uid);
+}
+
 export async function getProgram(programId: string): Promise<PartnerProgram | null> {
   const snap = await getDoc(doc(firestore, COLLECTIONS.programs, programId));
   if (!snap.exists()) return null;
