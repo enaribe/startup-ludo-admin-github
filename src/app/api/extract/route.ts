@@ -34,11 +34,12 @@ export async function POST(req: NextRequest) {
     let pages = 0;
 
     if (name.endsWith('.pdf') || file.type === 'application/pdf') {
-      const { PDFParse } = await import('pdf-parse');
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await parser.getText();
+      // Import du sous-module lib pour éviter l'auto-test au chargement (pdf-parse v1),
+      // et pour ne pas dépendre de pdfjs/DOMMatrix indisponibles côté serveur.
+      const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
+      const result = await pdfParse(buffer);
       text = result.text ?? '';
-      pages = result.pages?.length ?? 0;
+      pages = result.numpages ?? 0;
     } else if (name.endsWith('.docx')) {
       const mammoth = await import('mammoth');
       const result = await mammoth.extractRawText({ buffer });
