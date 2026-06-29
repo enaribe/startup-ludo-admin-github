@@ -45,7 +45,16 @@ export interface StudioBrief {
   topicsKeep: string[];       // sujets à valoriser
   topicsAvoid: string[];      // sujets à éviter
   programName?: string;
+  /** Texte concaténé des documents sources, utilisé comme base de connaissances. */
+  sourceText?: string;
 }
+
+/**
+ * Limite de caractères du texte source injecté dans le prompt.
+ * ~60k caractères ≈ ~15k tokens : large marge sous la fenêtre de contexte du modèle,
+ * tout en laissant de la place pour la sortie JSON.
+ */
+const MAX_SOURCE_CHARS = 60_000;
 
 /** Compte des cartes par type pour un niveau (indexé sur les 5 types Studio). */
 export interface LevelMix {
@@ -81,6 +90,22 @@ function buildPrompt(brief: StudioBrief, levelLabel: string, mix: LevelMix): str
   lines.push(`Objectif pédagogique : ${brief.objective}.`);
   if (brief.topicsKeep.length) lines.push(`Sujets à valoriser : ${brief.topicsKeep.join(', ')}.`);
   if (brief.topicsAvoid.length) lines.push(`Sujets à éviter absolument : ${brief.topicsAvoid.join(', ')}.`);
+
+  // Base de connaissances : documents sources du programme.
+  const source = (brief.sourceText ?? '').trim();
+  if (source) {
+    const truncated = source.length > MAX_SOURCE_CHARS;
+    const body = truncated ? source.slice(0, MAX_SOURCE_CHARS) : source;
+    lines.push('');
+    lines.push('BASE DE CONNAISSANCES (documents fournis par le programme) :');
+    lines.push('Appuie-toi PRIORITAIREMENT sur ce contenu pour les faits, chiffres, vocabulaire et exemples.');
+    lines.push('Ne contredis jamais ces documents ; reste fidèle à leur terminologie.');
+    lines.push('"""');
+    lines.push(body);
+    if (truncated) lines.push('… [document tronqué]');
+    lines.push('"""');
+  }
+
   lines.push('');
   lines.push('Quantités EXACTES à produire pour ce niveau :');
   if (mix.quiz) lines.push(`- ${mix.quiz} quiz`);

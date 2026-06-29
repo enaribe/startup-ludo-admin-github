@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
 import {
   ArrowLeft, Plus, Trash2, X, Edit, Upload, GripVertical, Languages,
   Info, Palette, Layers, Target, Users, Globe, SlidersHorizontal, FileText, ClipboardList,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getProgram, saveProgram, getPartners } from '@/lib/firestore-service';
+import { getProgram, saveProgram, getPartners, saveSourceDocText, deleteSourceDoc } from '@/lib/firestore-service';
 import type {
   PartnerProgram, ProgramContentPack, ProgramPartner, ProgramLevelTier, ProgramGameMode,
   Quiz, Duel, Funding, Opportunity, ChallengeEvent,
@@ -201,18 +203,19 @@ export default function ProgramEditorPage() {
   const source = { ...EMPTY_SOURCE, ...(data.contentSource ?? {}) };
   const updateSource = <K extends keyof NonNullable<PartnerProgram['contentSource']>>(key: K, value: NonNullable<PartnerProgram['contentSource']>[K]) =>
     setData((prev) => ({ ...prev, contentSource: { ...EMPTY_SOURCE, ...prev.contentSource, [key]: value } }));
-  const addSourceDoc = () =>
+  const addSourceDoc = (doc: NonNullable<PartnerProgram['contentSource']>['documents'][number]) =>
     setData((prev) => {
       const src = { ...EMPTY_SOURCE, ...prev.contentSource };
-      const n = src.documents.length + 1;
-      const doc = { id: `doc_${generateId()}`, name: `Document ${n}.pdf`, size: '—', pages: 0 };
       return { ...prev, contentSource: { ...src, documents: [...src.documents, doc] } };
     });
-  const removeSourceDoc = (id: string) =>
+  const removeSourceDoc = (id: string) => {
     setData((prev) => {
       const src = { ...EMPTY_SOURCE, ...prev.contentSource };
       return { ...prev, contentSource: { ...src, documents: src.documents.filter((d) => d.id !== id) } };
     });
+    // Nettoie le texte extrait en sous-collection (best-effort).
+    deleteSourceDoc(storageId, id).catch(() => toast.error('Le texte indexé n’a pas pu être supprimé.'));
+  };
   const addTopic = (list: 'topicsKeep' | 'topicsAvoid', value: string) => {
     const v = value.trim();
     if (!v) return;
@@ -227,6 +230,68 @@ export default function ProgramEditorPage() {
       const src = { ...EMPTY_SOURCE, ...prev.contentSource };
       return { ...prev, contentSource: { ...src, [list]: src[list].filter((t) => t !== value) } };
     });
+
+  // Upload réel d'un document source vers Firebase Storage.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const ACCEPTED_DOC = '.pdf,.doc,.docx,.md,.markdown,.ppt,.pptx';
+
+  const handleSourceFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permet de re-sélectionner le même fichier
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      alert('Fichier trop lourd (max 25 Mo).');
+      return;
+    }
+
+    const docId = `doc_${generateId()}`;
+    setUploadingDoc(true);
+    setUploadProgress(0);
+    try {
+      // 1) Upload du fichier original dans Storage (l'admin peut le re-consulter).
+      const storageRef = ref(storage, `programs/${storageId}/sources/${Date.now()}_${file.name}`);
+      const task = uploadBytesResumable(storageRef, file);
+      const url = await new Promise<string>((resolve, reject) => {
+        task.on(
+          'state_changed',
+          (snap) => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 90)),
+          reject,
+          async () => resolve(await getDownloadURL(task.snapshot.ref))
+        );
+      });
+
+      // 2) Extraction du texte côté serveur.
+      setUploadProgress(92);
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/extract', { method: 'POST', body: fd });
+      const extracted = await res.json();
+      if (!res.ok) throw new Error(extracted.error || 'Extraction impossible');
+
+      // 3) Sauvegarde du texte extrait en sous-collection (base de génération).
+      setUploadProgress(97);
+      await saveSourceDocText(storageId, docId, { name: file.name, url, pages: extracted.pages ?? 0 }, extracted.text);
+
+      const sizeMo = file.size / (1024 * 1024);
+      addSourceDoc({
+        id: docId,
+        name: file.name,
+        size: sizeMo >= 1 ? `${sizeMo.toFixed(1)} Mo` : `${Math.max(1, Math.round(file.size / 1024))} Ko`,
+        pages: extracted.pages ?? 0,
+        url,
+      });
+      toast.success(`Document indexé (${extracted.charCount.toLocaleString('fr-FR')} caractères)`);
+    } catch (err) {
+      toast.error(`Erreur : ${err instanceof Error ? err.message : 'inconnue'}`);
+    } finally {
+      setUploadingDoc(false);
+      setUploadProgress(0);
+    }
+  };
 
   // toggleMode retiré : UI des modes masquée (allowedModes conservé dans le state, valeur par défaut ['solo']).
 
@@ -611,13 +676,24 @@ export default function ProgramEditorPage() {
 
             {/* Documents sources */}
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Documents sources</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_DOC}
+              onChange={handleSourceFile}
+              style={{ display: 'none' }}
+            />
             <button
-              onClick={addSourceDoc}
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingDoc}
               className="w-full mb-3"
-              style={{ border: '2px dashed var(--color-card-border)', borderRadius: 12, padding: '20px', textAlign: 'center', cursor: 'pointer', background: 'transparent' }}
+              style={{ border: '2px dashed var(--color-card-border)', borderRadius: 12, padding: '20px', textAlign: 'center', cursor: uploadingDoc ? 'wait' : 'pointer', background: 'transparent', opacity: uploadingDoc ? 0.6 : 1 }}
             >
               <Upload size={22} color="var(--color-text-muted)" style={{ margin: '0 auto 8px' }} />
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Ajouter un document</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                {uploadingDoc ? `Téléversement… ${uploadProgress}%` : 'Ajouter un document'}
+              </p>
               <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>PDF, DOCX, MD, PPTX · indexé pour la génération</p>
             </button>
             {source.documents.length > 0 && (
@@ -626,8 +702,14 @@ export default function ProgramEditorPage() {
                   <div key={d.id} className="flex items-center justify-between" style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--color-surface)' }}>
                     <div className="flex items-center gap-2.5">
                       <FileText size={15} color="var(--color-text-muted)" />
-                      <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>{d.name}</span>
-                      {(d.pages ?? 0) > 0 && <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{d.size} · {d.pages} p.</span>}
+                      {d.url ? (
+                        <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: 'var(--color-info)', textDecoration: 'underline' }}>{d.name}</a>
+                      ) : (
+                        <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>{d.name}</span>
+                      )}
+                      {d.size && d.size !== '—' && (
+                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{d.size}{(d.pages ?? 0) > 0 ? ` · ${d.pages} p.` : ''}</span>
+                      )}
                     </div>
                     <button onClick={() => removeSourceDoc(d.id)} className="p-1.5 rounded-lg" style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer' }}>
                       <Trash2 size={13} />

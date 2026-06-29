@@ -1,45 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Download, Target, Zap, Shield, Star, Trophy } from 'lucide-react';
+import { Download, Target, Search, X, Share2 } from 'lucide-react';
+import { auth } from '@/lib/firebase';
 import { getScopedPrograms, getLeadsByProgram, updateLeadStatus } from '@/lib/firestore-service';
-import type { PartnerProgram, ProgramEnrollment, ProgramLeadStatus, EntrepreneurProfile } from '@/types';
+import type { PartnerProgram, ProgramEnrollment, ProgramLeadStatus } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
+import Modal from '@/components/ui/Modal';
+import { STATUS_META, PROFILE_META, MATCH_LABEL, timeAgo, LeadDetail } from '@/components/leads/shared';
 import toast from 'react-hot-toast';
 
-const STATUS_META: Record<ProgramLeadStatus, { label: string; color: string; bg: string }> = {
-  new: { label: 'Nouveau', color: '#5B8DEF', bg: 'rgba(91,141,239,0.15)' },
-  contacted: { label: 'Contacté', color: '#F5A623', bg: 'rgba(245,166,35,0.15)' },
-  converted: { label: 'Converti', color: '#3FAE6B', bg: 'rgba(63,174,107,0.15)' },
-  rejected: { label: 'Rejeté', color: '#F44336', bg: 'rgba(244,67,54,0.15)' },
-};
-
-const PROFILE_META: Record<EntrepreneurProfile, { label: string; icon: React.ReactNode; color: string }> = {
-  strategist: { label: 'Stratège', icon: <Target size={13} />, color: '#5B8DEF' },
-  goer: { label: 'Fonceur', icon: <Zap size={13} />, color: '#F5A623' },
-  cautious: { label: 'Prudent', icon: <Shield size={13} />, color: '#3FAE6B' },
-  creative: { label: 'Créatif', icon: <Star size={13} />, color: '#9B59B6' },
-  builder: { label: 'Bâtisseur', icon: <Trophy size={13} />, color: '#C9821E' },
-};
-
-const MATCH_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  yes: { label: 'Oui', color: '#3FAE6B', bg: 'rgba(63,174,107,0.15)' },
-  partial: { label: 'Partiellement', color: '#F5A623', bg: 'rgba(245,166,35,0.15)' },
-  no: { label: 'Non', color: '#F44336', bg: 'rgba(244,67,54,0.15)' },
-};
-
 type FilterKey = 'all' | 'highIntent' | 'notContacted';
-
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  const h = Math.floor(diff / 3_600_000);
-  if (h < 1) return "à l'instant";
-  if (h < 24) return `il y a ${h} h`;
-  const d = Math.floor(h / 24);
-  return `il y a ${d} j`;
-}
 
 export default function LeadsPage() {
   const { isSuperAdmin, admin } = useAuth();
@@ -48,7 +21,14 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<ProgramEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [search, setSearch] = useState('');
+  // Filtres dynamiques sur les réponses du formulaire : fieldId → valeur sélectionnée.
+  const [formFilters, setFormFilters] = useState<Record<string, string>>({});
   const [selectedLead, setSelectedLead] = useState<ProgramEnrollment | null>(null);
+  // Partage public
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -77,7 +57,24 @@ export default function LeadsPage() {
     }
   }, []);
 
-  useEffect(() => { if (programId) loadLeads(programId); }, [programId, loadLeads]);
+  useEffect(() => {
+    if (programId) loadLeads(programId);
+    // Reset des filtres quand on change de programme (les champs custom diffèrent).
+    setFormFilters({});
+    setSearch('');
+    setFilter('all');
+  }, [programId, loadLeads]);
+
+  const currentProgram = programs.find((p) => p.id === programId);
+  const programName = currentProgram?.name ?? '';
+
+  // Champs du formulaire filtrables : ceux à choix fermé (valeur exacte).
+  const filterableFields = useMemo(
+    () => (currentProgram?.endForm?.fields ?? []).filter(
+      (f) => f.type === 'select' || f.type === 'radio' || f.type === 'multi_select'
+    ),
+    [currentProgram]
+  );
 
   const stats = useMemo(() => {
     const total = leads.length;
@@ -88,15 +85,35 @@ export default function LeadsPage() {
   }, [leads]);
 
   const filtered = useMemo(() => {
-    switch (filter) {
-      case 'highIntent': return leads.filter((l) => (l.formData?.applicationIntent ?? 0) >= 7);
-      case 'notContacted': return leads.filter((l) => !l.leadStatus || l.leadStatus === 'new');
-      default: return leads;
-    }
-  }, [leads, filter]);
+    let out = leads;
 
-  const currentProgram = programs.find((p) => p.id === programId);
-  const programName = currentProgram?.name ?? '';
+    // Filtre rapide (statut / intention).
+    if (filter === 'highIntent') out = out.filter((l) => (l.formData?.applicationIntent ?? 0) >= 7);
+    else if (filter === 'notContacted') out = out.filter((l) => !l.leadStatus || l.leadStatus === 'new');
+
+    // Recherche texte sur nom / email / téléphone.
+    const q = search.trim().toLowerCase();
+    if (q) {
+      out = out.filter((l) => {
+        const fd = l.formData;
+        return [fd?.fullName, fd?.email, fd?.phone].some((v) => (v ?? '').toLowerCase().includes(q));
+      });
+    }
+
+    // Filtres dynamiques sur les réponses du formulaire.
+    const activeFormFilters = Object.entries(formFilters).filter(([, v]) => v);
+    if (activeFormFilters.length) {
+      out = out.filter((l) =>
+        activeFormFilters.every(([fieldId, value]) => {
+          const resp = l.formData?.customResponses?.[fieldId];
+          if (Array.isArray(resp)) return resp.map(String).includes(value);
+          return resp != null && String(resp) === value;
+        })
+      );
+    }
+
+    return out;
+  }, [leads, filter, search, formFilters]);
   // Maps id→label pour rendre lisibles les réponses dynamiques (customResponses/customConsents).
   const fieldLabels = useMemo(() => {
     const m = new Map<string, string>();
@@ -117,6 +134,56 @@ export default function LeadsPage() {
       toast.error('Erreur de mise à jour');
       loadLeads(programId);
     }
+  };
+
+  const authHeader = async (): Promise<HeadersInit> => {
+    const token = await auth.currentUser?.getIdToken();
+    return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+  };
+
+  const openShare = async () => {
+    if (!programId) return;
+    setShareOpen(true);
+    setShareLoading(true);
+    setShareUrl('');
+    try {
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        headers: await authHeader(),
+        body: JSON.stringify({ programId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Génération impossible');
+      setShareUrl(`${window.location.origin}/share/${data.token}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erreur');
+      setShareOpen(false);
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const revokeShare = async () => {
+    if (!programId) return;
+    setShareLoading(true);
+    try {
+      const res = await fetch(`/api/share?programId=${encodeURIComponent(programId)}`, {
+        method: 'DELETE',
+        headers: await authHeader(),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Révocation impossible');
+      toast.success('Lien révoqué');
+      setShareOpen(false);
+      setShareUrl('');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erreur');
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const copyShareUrl = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => toast.success('Lien copié'));
   };
 
   const exportCsv = () => {
@@ -177,14 +244,17 @@ export default function LeadsPage() {
               {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
+          <button className="btn-secondary flex items-center gap-2" onClick={openShare} disabled={!programId}>
+            <Share2 size={16} /> Partager
+          </button>
           <button className="btn-primary flex items-center gap-2" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download size={16} /> Exporter CSV
           </button>
         </div>
       </div>
 
-      {/* Filtres */}
-      <div className="flex gap-2 mb-4 flex-wrap">
+      {/* Filtres rapides + recherche */}
+      <div className="flex gap-2 mb-3 flex-wrap items-center">
         {([
           { key: 'all', label: 'Tous' },
           { key: 'highIntent', label: 'Score ≥ 7' },
@@ -199,7 +269,44 @@ export default function LeadsPage() {
             {f.label}
           </button>
         ))}
+        <div className="flex items-center gap-2" style={{ marginLeft: 'auto', position: 'relative' }}>
+          <Search size={15} style={{ position: 'absolute', left: 10, color: 'var(--color-text-muted)' }} />
+          <input
+            className="input-field"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher nom, email, téléphone…"
+            style={{ paddingLeft: 32, minWidth: 240 }}
+          />
+        </div>
       </div>
+
+      {/* Filtres dynamiques sur les réponses du formulaire */}
+      {filterableFields.length > 0 && (
+        <div className="flex gap-2 mb-4 flex-wrap items-center">
+          {filterableFields.map((f) => (
+            <select
+              key={f.id}
+              className="input-field"
+              value={formFilters[f.id] ?? ''}
+              onChange={(e) => setFormFilters((prev) => ({ ...prev, [f.id]: e.target.value }))}
+              style={{ maxWidth: 220, fontSize: 13 }}
+            >
+              <option value="">{f.label} : tous</option>
+              {(f.options ?? []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          ))}
+          {Object.values(formFilters).some(Boolean) && (
+            <button
+              onClick={() => setFormFilters({})}
+              className="btn-secondary flex items-center gap-1.5"
+              style={{ padding: '6px 12px', fontSize: 13 }}
+            >
+              <X size={13} /> Réinitialiser
+            </button>
+          )}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState icon={<UserCheckIcon />} title="Aucun lead" description="Les candidatures soumises en fin de parcours apparaîtront ici." />
@@ -264,117 +371,46 @@ export default function LeadsPage() {
       {selectedLead && (
         <LeadDetail
           lead={selectedLead}
+          programId={programId}
           fieldLabels={fieldLabels}
           consentLabels={consentLabels}
           onClose={() => setSelectedLead(null)}
           onStatus={(s) => setStatus(selectedLead, s)}
         />
       )}
-    </div>
-  );
-}
 
-/** Affiche une valeur de réponse (string, array, number, bool) de façon lisible. */
-function renderValue(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—';
-  if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
-  if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
-  return String(v);
-}
-
-function LeadDetail({ lead, fieldLabels, consentLabels, onClose, onStatus }: {
-  lead: ProgramEnrollment;
-  fieldLabels: Map<string, string>;
-  consentLabels: Map<string, string>;
-  onClose: () => void;
-  onStatus: (s: ProgramLeadStatus) => void;
-}) {
-  const fd = lead.formData;
-  const status = lead.leadStatus ?? 'new';
-  const custom = fd?.customResponses ?? {};
-  const customC = fd?.customConsents ?? {};
-  const customKeys = Object.keys(custom);
-  const customCKeys = Object.keys(customC);
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
-      <div
-        className="h-full overflow-y-auto"
-        style={{ width: 'min(440px, 92vw)', background: 'var(--color-card)', borderLeft: '1px solid var(--color-card-border)', padding: 24 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between mb-1">
-          <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--color-text-primary)' }}>{fd?.fullName || 'Candidat'}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 20, lineHeight: 1 }}>×</button>
+      {/* Modal de partage public */}
+      <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Partager le suivi des joueurs">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+            Toute personne disposant de ce lien pourra consulter (en lecture seule) la liste des joueurs de
+            <strong> {programName}</strong> et leur progression, sans avoir à se connecter.
+          </p>
+          {shareLoading && !shareUrl ? (
+            <div className="flex items-center justify-center py-4"><LoadingSpinner /></div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <input className="input-field" value={shareUrl} readOnly style={{ flex: 1, fontSize: 13 }} onFocus={(e) => e.target.select()} />
+                <button className="btn-primary" onClick={copyShareUrl} disabled={!shareUrl} style={{ whiteSpace: 'nowrap' }}>
+                  Copier
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                Ce lien contient des données nominatives (nom, email, téléphone). Révoquez-le dès qu'il n'est plus nécessaire.
+              </p>
+              <button
+                className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                onClick={revokeShare}
+                disabled={shareLoading}
+                style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer', fontSize: 13, alignSelf: 'flex-start' }}
+              >
+                <X size={14} /> Révoquer ce lien
+              </button>
+            </>
+          )}
         </div>
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>Candidature reçue {timeAgo(lead.enrolledAt)}</p>
-
-        {/* Statut */}
-        <div className="mb-5">
-          <select
-            value={status}
-            onChange={(e) => onStatus(e.target.value as ProgramLeadStatus)}
-            style={{ border: 'none', cursor: 'pointer', borderRadius: 999, padding: '5px 14px', fontSize: 13, fontWeight: 600, color: STATUS_META[status].color, background: STATUS_META[status].bg }}
-          >
-            {(Object.keys(STATUS_META) as ProgramLeadStatus[]).map((s) => (
-              <option key={s} value={s} style={{ color: '#000' }}>{STATUS_META[s].label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Coordonnées (champs fixes) */}
-        <Section title="Coordonnées">
-          <Row label="Nom complet" value={fd?.fullName} />
-          <Row label="Téléphone" value={fd?.phone} />
-          <Row label="Email" value={fd?.email} />
-          <Row label="Ville" value={fd?.city} />
-          <Row label="Statut professionnel" value={fd?.professionalStatus} />
-        </Section>
-
-        {/* Parcours / scoring */}
-        <Section title="Profil & intention">
-          <Row label="Persona incarné" value={lead.profileName} />
-          <Row label="Concordance profil" value={fd?.profileMatch ? (MATCH_LABEL[fd.profileMatch]?.label ?? fd.profileMatch) : undefined} />
-          <Row label="Intention de candidature" value={fd?.applicationIntent != null ? `${fd.applicationIntent} / 10` : undefined} />
-        </Section>
-
-        {/* Réponses dynamiques (custom) */}
-        {customKeys.length > 0 && (
-          <Section title="Réponses au formulaire">
-            {customKeys.map((id) => (
-              <Row key={id} label={fieldLabels.get(id) ?? id} value={renderValue(custom[id])} />
-            ))}
-          </Section>
-        )}
-
-        {/* Consentements */}
-        <Section title="Consentements">
-          <Row label="Traitement des données" value={fd?.consentDataProcessing ? 'Oui' : 'Non'} />
-          <Row label="Accepte d’être recontacté" value={fd?.consentContact ? 'Oui' : 'Non'} />
-          <Row label="Newsletter" value={fd?.newsletterOptIn ? 'Oui' : 'Non'} />
-          {customCKeys.map((id) => (
-            <Row key={id} label={consentLabels.get(id) ?? id} value={customC[id] ? 'Oui' : 'Non'} />
-          ))}
-        </Section>
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-5">
-      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-text-muted)', marginBottom: 8 }}>{title}</p>
-      <div className="flex flex-col gap-2.5">{children}</div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value?: unknown }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <span style={{ fontSize: 13, color: 'var(--color-text-muted)', flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 13, color: 'var(--color-text-primary)', textAlign: 'right', fontWeight: 500 }}>{renderValue(value)}</span>
+      </Modal>
     </div>
   );
 }

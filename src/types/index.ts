@@ -416,6 +416,8 @@ export interface PartnerProgram {
   endForm?: ProgramEndForm;
   /** uid de l'admin propriétaire de ce programme (multi-tenant). Vide = géré par le super admin seul. */
   ownerId?: string | null;
+  /** Token secret de partage public (lecture seule des leads). Null/absent = partage désactivé. */
+  shareToken?: string | null;
   isActive: boolean;
   sortOrder: number;
   updatedAt?: number;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, Plus, Trash2, ShieldCheck, Rocket, Building2 } from 'lucide-react';
+import { Users, Plus, Trash2, ShieldCheck, Rocket, Building2, Pencil } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { getScopedPrograms, getPartners } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramPartner } from '@/types';
@@ -50,6 +50,14 @@ export default function AdminsPage() {
   const [programId, setProgramId] = useState('');
   const [partnerId, setPartnerId] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // édition (super admin uniquement)
+  const [editTarget, setEditTarget] = useState<AdminAccount | null>(null);
+  const [editRole, setEditRole] = useState<NewAdminRole>('admin');
+  const [editProgramId, setEditProgramId] = useState('');
+  const [editPartnerId, setEditPartnerId] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // Réservé au super admin / admin de partenaire.
   useEffect(() => {
@@ -122,6 +130,49 @@ export default function AdminsPage() {
       toast.error(error instanceof Error ? error.message : 'Erreur');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const openEdit = (a: AdminAccount) => {
+    setEditTarget(a);
+    setEditRole(a.role === 'partner_admin' ? 'partner_admin' : 'admin');
+    setEditProgramId(a.programId ?? '');
+    setEditPartnerId(a.partnerId ?? '');
+    setEditPassword('');
+  };
+
+  const handleSave = async () => {
+    if (!editTarget) return;
+    const wantsPartner = editRole === 'partner_admin';
+    if (wantsPartner ? !editPartnerId : !editProgramId) {
+      toast.error(wantsPartner ? 'Choisissez un partenaire.' : 'Choisissez un programme.');
+      return;
+    }
+    if (editPassword && editPassword.trim().length < 8) {
+      toast.error('Le mot de passe doit faire au moins 8 caractères.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = wantsPartner
+        ? { uid: editTarget.uid, role: 'partner_admin', partnerId: editPartnerId }
+        : { uid: editTarget.uid, role: 'admin', programId: editProgramId };
+      if (editPassword.trim()) body.password = editPassword.trim();
+
+      const res = await fetch('/api/admins', {
+        method: 'PATCH',
+        headers: await authHeader(),
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Modification impossible');
+      toast.success('Admin mis à jour !');
+      setEditTarget(null);
+      load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erreur');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -201,14 +252,26 @@ export default function AdminsPage() {
                 }
               </div>
               {a.role !== 'super_admin' && (
-                <button
-                  onClick={() => setDeleteTarget(a)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                  style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer', fontSize: 12 }}
-                >
-                  <Trash2 size={13} />
-                  Révoquer l’accès
-                </button>
+                <div className="flex items-center gap-2">
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => openEdit(a)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                      style={{ background: 'rgba(33,150,243,0.08)', color: 'var(--color-info)', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      <Pencil size={13} />
+                      Modifier
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setDeleteTarget(a)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                    style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                  >
+                    <Trash2 size={13} />
+                    Révoquer l’accès
+                  </button>
+                </div>
               )}
             </div>
           ))}
@@ -280,6 +343,72 @@ export default function AdminsPage() {
           </p>
           <button className="btn-primary" onClick={handleCreate} disabled={creating}>
             {creating ? 'Création...' : 'Créer le compte'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={`Modifier ${editTarget?.displayName || editTarget?.email || ''}`}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Field label="Type d’admin">
+            <div className="flex gap-2">
+              {([
+                { key: 'admin', label: 'Admin programme' },
+                { key: 'partner_admin', label: 'Admin partenaire' },
+              ] as { key: NewAdminRole; label: string }[]).map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setEditRole(r.key)}
+                  style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 10, fontSize: 13, cursor: 'pointer',
+                    fontWeight: editRole === r.key ? 600 : 500,
+                    border: `1px solid ${editRole === r.key ? 'transparent' : 'var(--color-card-border)'}`,
+                    background: editRole === r.key ? 'var(--color-info-light)' : '#FFFFFF',
+                    color: editRole === r.key ? 'var(--color-info)' : 'var(--color-text-secondary)',
+                  }}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {editRole === 'partner_admin' ? (
+            <Field label="Partenaire assigné">
+              <select className="input-field" value={editPartnerId} onChange={(e) => setEditPartnerId(e.target.value)}>
+                <option value="">— Choisir un partenaire —</option>
+                {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Programme assigné">
+              <select className="input-field" value={editProgramId} onChange={(e) => setEditProgramId(e.target.value)}>
+                <option value="">— Choisir un programme —</option>
+                {programs.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{assignedProgramIds.has(p.id) && p.id !== editTarget?.programId ? ' (déjà assigné)' : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          <Field label="Nouveau mot de passe (optionnel, min. 8 caractères)">
+            <input
+              className="input-field"
+              type="text"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              placeholder="Laisser vide pour ne pas changer"
+            />
+          </Field>
+
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+            {editRole === 'partner_admin'
+              ? 'L’admin partenaire gérera tous les programmes de ce partenaire.'
+              : 'L’admin ne gérera que ce programme. L’ancien programme sera libéré.'}
+          </p>
+          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Enregistrement...' : 'Enregistrer'}
           </button>
         </div>
       </Modal>

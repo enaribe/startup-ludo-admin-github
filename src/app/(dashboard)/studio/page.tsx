@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, Search, Star, Check, Trash2, FileText, Settings, Wand2, X, Eye } from 'lucide-react';
-import { getScopedPrograms, getProgram, saveProgram } from '@/lib/firestore-service';
+import { getScopedPrograms, getProgram, saveProgram, getSourceDocsText } from '@/lib/firestore-service';
 import type { PartnerProgram, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -153,12 +153,6 @@ function StudioPage() {
 
   const runGeneration = useCallback(async () => {
     if (!data || !programId) return;
-    const brief: StudioBrief = {
-      objective: contentSource?.objective ?? 'Qualification',
-      topicsKeep: contentSource?.topicsKeep ?? [],
-      topicsAvoid: contentSource?.topicsAvoid ?? [],
-      programName: currentProgram?.name,
-    };
     const activeLevels = [0, 1, 2, 3].filter((li) => GEN_TYPES.some((t) => (mix[t.key][li] || 0) > 0));
     if (activeLevels.length === 0) { toast.error('Renseignez le mix avant de générer.'); return; }
 
@@ -166,6 +160,15 @@ function StudioPage() {
     setGenProgress(0);
     const results: GeneratedLevel[] = [];
     try {
+      // Base de connaissances : texte des documents sources indexés.
+      const sourceText = await getSourceDocsText(programId).catch(() => '');
+      const brief: StudioBrief = {
+        objective: contentSource?.objective ?? 'Qualification',
+        topicsKeep: contentSource?.topicsKeep ?? [],
+        topicsAvoid: contentSource?.topicsAvoid ?? [],
+        programName: currentProgram?.name,
+        sourceText,
+      };
       for (let i = 0; i < activeLevels.length; i++) {
         const lvl = await generateLevelContent(brief, activeLevels[i], levelMix(activeLevels[i]));
         results.push(lvl);

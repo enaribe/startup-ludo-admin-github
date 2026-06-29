@@ -9,6 +9,7 @@
  *
  *  GET    /api/admins            → liste des comptes admin (scopée au partenaire si partner_admin)
  *  POST   /api/admins            → crée un admin (programme ou partenaire) + claims + doc + assignation
+ *  PATCH  /api/admins            → modifie un admin (rôle, programme, partenaire, mot de passe)
  *  DELETE /api/admins?uid=...    → révoque un admin (avec contrôle de périmètre)
  */
 
@@ -153,6 +154,119 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ uid, email, displayName, role: 'admin', programId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Création impossible';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  const caller = await requireAdmin(req);
+  if (!caller) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
+
+  // Seul le super admin peut éditer un admin (changement de rôle / partenaire
+  // dépasse le périmètre délégué d'un admin de partenaire).
+  if (!caller.isSuper) {
+    return NextResponse.json({ error: 'Seul un super admin peut modifier un admin.' }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const uid = (body.uid ?? '').trim();
+    if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
+    if (uid === caller.uid) {
+      return NextResponse.json({ error: 'Vous ne pouvez pas modifier votre propre compte ici.' }, { status: 400 });
+    }
+
+    const auth = getAdminAuth();
+    const db = getAdminFirestore();
+
+    const userRef = db.collection(COLLECTIONS.users).doc(uid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return NextResponse.json({ error: 'Admin introuvable.' }, { status: 404 });
+    const current = userSnap.data() ?? {};
+    const currentRole = (current.role ?? 'admin') as string;
+    const currentProgramId = (current.programId ?? null) as string | null;
+
+    if (currentRole === 'super_admin') {
+      return NextResponse.json({ error: 'Le super admin ne peut pas être modifié.' }, { status: 400 });
+    }
+
+    // Rôle cible : fourni ou inchangé.
+    const nextRole = (body.role ?? currentRole) as 'admin' | 'partner_admin';
+    if (nextRole !== 'admin' && nextRole !== 'partner_admin') {
+      return NextResponse.json({ error: 'Rôle invalide.' }, { status: 400 });
+    }
+
+    // Champs d'assignation cibles selon le rôle cible.
+    const nextProgramId = nextRole === 'admin' ? (body.programId ?? '').trim() : '';
+    const nextPartnerId = nextRole === 'partner_admin' ? (body.partnerId ?? '').trim() : '';
+    const newPassword = (body.password ?? '').trim();
+
+    if (nextRole === 'admin' && !nextProgramId) {
+      return NextResponse.json({ error: 'Un programme à assigner est requis.' }, { status: 400 });
+    }
+    if (nextRole === 'partner_admin' && !nextPartnerId) {
+      return NextResponse.json({ error: 'Un partenaire à assigner est requis.' }, { status: 400 });
+    }
+    if (newPassword && newPassword.length < 8) {
+      return NextResponse.json({ error: 'Le mot de passe doit faire au moins 8 caractères.' }, { status: 400 });
+    }
+
+    // Vérifie l'existence de la cible d'assignation.
+    if (nextRole === 'admin') {
+      const programSnap = await db.collection(COLLECTIONS.programs).doc(nextProgramId).get();
+      if (!programSnap.exists) return NextResponse.json({ error: 'Programme introuvable.' }, { status: 404 });
+    } else {
+      const partnerSnap = await db.collection(COLLECTIONS.partners).doc(nextPartnerId).get();
+      if (!partnerSnap.exists) return NextResponse.json({ error: 'Partenaire introuvable.' }, { status: 404 });
+    }
+
+    // Réinitialisation du mot de passe (optionnelle).
+    if (newPassword) {
+      await auth.updateUser(uid, { password: newPassword });
+    }
+
+    // Mise à jour des claims selon le rôle cible.
+    if (nextRole === 'partner_admin') {
+      await auth.setCustomUserClaims(uid, { admin: true, partner_admin: true, partnerId: nextPartnerId });
+    } else {
+      await auth.setCustomUserClaims(uid, { admin: true });
+    }
+
+    // Libère l'ancien programme s'il n'est plus le même (ou si l'admin quitte le rôle programme).
+    if (currentProgramId && currentProgramId !== nextProgramId) {
+      await db.collection(COLLECTIONS.programs).doc(currentProgramId).set(
+        { ownerId: null, updatedAt: Date.now() },
+        { merge: true }
+      );
+    }
+
+    // Assigne le nouveau programme.
+    if (nextRole === 'admin') {
+      await db.collection(COLLECTIONS.programs).doc(nextProgramId).set(
+        { ownerId: uid, updatedAt: Date.now() },
+        { merge: true }
+      );
+    }
+
+    // Met à jour le doc utilisateur (assignations mutuellement exclusives selon le rôle).
+    await userRef.set(
+      {
+        role: nextRole,
+        programId: nextRole === 'admin' ? nextProgramId : null,
+        partnerId: nextRole === 'partner_admin' ? nextPartnerId : null,
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+
+    return NextResponse.json({
+      uid,
+      role: nextRole,
+      programId: nextRole === 'admin' ? nextProgramId : null,
+      partnerId: nextRole === 'partner_admin' ? nextPartnerId : null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Modification impossible';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

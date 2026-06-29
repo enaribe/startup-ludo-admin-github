@@ -202,6 +202,89 @@ export async function getSessionsByProgram(programId: string): Promise<ProgramSe
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ProgramSessionDoc));
 }
 
+/** Sessions d'un joueur sur un programme donné — pour le suivi détaillé d'un lead. */
+export async function getSessionsByUserProgram(
+  userId: string,
+  programId: string
+): Promise<ProgramSessionDoc[]> {
+  const snap = await getDocs(
+    query(
+      collection(firestore, COLLECTIONS.programSessions),
+      where('programId', '==', programId),
+      where('userId', '==', userId)
+    )
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ProgramSessionDoc));
+}
+
+// ===== DOCUMENTS SOURCES (texte extrait, base de génération) =====
+// Stocké en sous-collection programs/{id}/sourceDocs/{docId}. Le texte est
+// découpé en chunks (sous-sous-collection /chunks) pour rester sous la limite
+// Firestore de 1 Mo par document.
+
+const SOURCE_CHUNK_SIZE = 700_000; // caractères/chunk (marge sous 1 Mo)
+
+export interface SourceDocMeta {
+  id: string;
+  name: string;
+  url?: string;
+  charCount: number;
+  pages: number;
+  chunkCount: number;
+  extractedAt?: number;
+}
+
+/** Enregistre le texte extrait d'un document source (métadonnées + chunks). */
+export async function saveSourceDocText(
+  programId: string,
+  docId: string,
+  meta: { name: string; url?: string; pages: number },
+  text: string
+): Promise<SourceDocMeta> {
+  const base = collection(firestore, COLLECTIONS.programs, programId, 'sourceDocs');
+  const docRef = doc(base, docId);
+
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += SOURCE_CHUNK_SIZE) {
+    chunks.push(text.slice(i, i + SOURCE_CHUNK_SIZE));
+  }
+
+  await setDoc(docRef, {
+    name: meta.name,
+    url: meta.url ?? null,
+    charCount: text.length,
+    pages: meta.pages,
+    chunkCount: chunks.length,
+    extractedAt: Date.now(),
+  });
+  await Promise.all(
+    chunks.map((content, i) => setDoc(doc(docRef, 'chunks', String(i)), { i, content }))
+  );
+
+  return { id: docId, name: meta.name, url: meta.url, charCount: text.length, pages: meta.pages, chunkCount: chunks.length };
+}
+
+/** Supprime un document source (métadonnées + chunks). */
+export async function deleteSourceDoc(programId: string, docId: string): Promise<void> {
+  const docRef = doc(firestore, COLLECTIONS.programs, programId, 'sourceDocs', docId);
+  const chunksSnap = await getDocs(collection(docRef, 'chunks'));
+  await Promise.all(chunksSnap.docs.map((c) => deleteDoc(c.ref)));
+  await deleteDoc(docRef);
+}
+
+/** Concatène le texte de tous les documents sources d'un programme (pour la génération). */
+export async function getSourceDocsText(programId: string): Promise<string> {
+  const base = collection(firestore, COLLECTIONS.programs, programId, 'sourceDocs');
+  const docsSnap = await getDocs(base);
+  const parts: string[] = [];
+  for (const d of docsSnap.docs) {
+    const chunksSnap = await getDocs(query(collection(d.ref, 'chunks'), orderBy('i')));
+    const text = chunksSnap.docs.map((c) => c.data().content as string).join('');
+    if (text) parts.push(`### ${d.data().name}\n\n${text}`);
+  }
+  return parts.join('\n\n---\n\n');
+}
+
 // ===== IDEATION CARDS =====
 
 export async function getIdeationDecks(): Promise<IdeationDeck[]> {
