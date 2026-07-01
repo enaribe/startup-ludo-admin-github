@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Rocket, Plus, Pencil, Trash2, Package, Users } from 'lucide-react';
-import { getScopedPrograms, getPartners, deleteProgram } from '@/lib/firestore-service';
+import { Rocket, Plus, Pencil, Trash2, Package, Users, Copy } from 'lucide-react';
+import { getScopedPrograms, getPartners, deleteProgram, duplicateProgram } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramPartner } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -19,6 +19,7 @@ export default function ProgramsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<PartnerProgram | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +52,20 @@ export default function ProgramsPage() {
         (pack.challengeEvents?.length ?? 0),
       0
     );
+
+  const handleDuplicate = async (prog: PartnerProgram) => {
+    setDuplicatingId(prog.id);
+    try {
+      const copy = await duplicateProgram(prog.id);
+      setPrograms((prev) => [...prev, copy].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+      toast.success('Programme dupliqué');
+      router.push(`/programs/${copy.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erreur de duplication');
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -159,6 +174,17 @@ export default function ProgramsPage() {
                     <Pencil size={13} />
                     Modifier
                   </button>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => handleDuplicate(prog)}
+                      disabled={duplicatingId === prog.id}
+                      title="Dupliquer ce programme"
+                      className="p-2 rounded-lg"
+                      style={{ background: 'rgba(33,150,243,0.08)', color: 'var(--color-info)', border: 'none', cursor: duplicatingId === prog.id ? 'wait' : 'pointer' }}
+                    >
+                      <Copy size={14} />
+                    </button>
+                  )}
                   <button onClick={() => setDeleteTarget(prog)} className="p-2 rounded-lg" style={{ background: 'rgba(244,67,54,0.08)', color: '#F44336', border: 'none', cursor: 'pointer' }}>
                     <Trash2 size={14} />
                   </button>

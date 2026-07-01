@@ -165,6 +165,46 @@ export async function deleteProgram(programId: string): Promise<void> {
   await deleteDoc(doc(firestore, COLLECTIONS.programs, programId));
 }
 
+/**
+ * Duplique un programme : crée une copie indépendante avec un nouvel id/slug.
+ * - ownerId et shareToken sont réinitialisés (la copie n'appartient à personne, pas de lien de partage).
+ * - Les contentPacks reçoivent de nouveaux ids et pointent vers le nouveau programme.
+ * - La sous-collection sourceDocs n'est PAS copiée (documents sources à re-uploader si besoin).
+ * Retourne le programme dupliqué (avec son nouvel id).
+ */
+export async function duplicateProgram(sourceId: string): Promise<PartnerProgram> {
+  const src = await getProgram(sourceId);
+  if (!src) throw new Error('Programme introuvable.');
+
+  // Nouvel id de document.
+  const newRef = doc(collection(firestore, COLLECTIONS.programs));
+  const newId = newRef.id;
+
+  const { id: _oldId, ...rest } = src;
+  const suffix = newId.slice(0, 5);
+
+  const clonedPacks = (rest.contentPacks ?? []).map((pack, i) => ({
+    ...pack,
+    id: `pack_${newId}_${i}`,
+    programId: newId,
+  }));
+
+  const data: Omit<PartnerProgram, 'id'> = {
+    ...rest,
+    slug: `${rest.slug || 'programme'}-copie-${suffix}`,
+    name: `${rest.name} (copie)`,
+    ownerId: null,
+    shareToken: null,
+    contentPacks: clonedPacks,
+    // Repart en brouillon inactif pour éviter une publication accidentelle.
+    isActive: false,
+    updatedAt: Date.now(),
+  };
+
+  await setDoc(newRef, data);
+  return { id: newId, ...data };
+}
+
 // ===== LEADS / CANDIDATS (programEnrollments) =====
 
 /** Candidatures d'un programme ayant un formulaire rempli (= leads). */
