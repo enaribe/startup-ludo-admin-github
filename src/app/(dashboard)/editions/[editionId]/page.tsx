@@ -23,6 +23,17 @@ import toast from 'react-hot-toast';
 
 type Tab = 'general' | 'quiz' | 'duels' | 'fundings' | 'opportunities' | 'challenges' | 'projects';
 
+/** Sections traduisibles (tous les onglets de contenu, hors « general »). */
+type TranslatableSection = Exclude<Tab, 'general'>;
+const SECTION_LABELS: Record<TranslatableSection, string> = {
+  quiz: 'Quiz',
+  duels: 'Duels',
+  fundings: 'Financements',
+  opportunities: 'Opportunités',
+  challenges: 'Défis',
+  projects: 'Projets',
+};
+
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'general', label: 'General', icon: null },
   { key: 'quiz', label: 'Quiz', icon: <HelpCircle size={14} /> },
@@ -84,7 +95,7 @@ export default function EditionEditorPage() {
   });
 
   // AI generation context
-  const aiContext = { editionName: data.name || editionId, sectors: data.sectors.join(', ') || 'multi-secteurs' };
+  const aiContext = { edition: editionId, editionName: data.name || editionId, sectors: data.sectors.join(', ') || 'multi-secteurs' };
 
   // Map tab -> AI generation type
   const TAB_AI_TYPE: Partial<Record<Tab, GenerationType>> = {
@@ -157,6 +168,9 @@ Pour les projets par défaut, chaque projet doit avoir :
     } else if (aiModalType === 'edition_challenges') {
       updateField('challenges', [...data.challenges, ...withIds as ChallengeEvent[]]);
       toast.success(`${withIds.length} challenges ajoutes`);
+    } else if (aiModalType === 'default_projects') {
+      updateField('defaultProjects', [...(data.defaultProjects || []), ...withIds as DefaultProject[]]);
+      toast.success(`${withIds.length} projet${withIds.length !== 1 ? 's' : ''} par défaut ajouté${withIds.length !== 1 ? 's' : ''}`);
     } else if (aiModalType === 'edition_full') {
       const gen = generated as Record<string, unknown>;
       if (gen.name) {
@@ -306,17 +320,38 @@ Pour les projets par défaut, chaque projet doit avoir :
     update(i, 'translations', { ...(item.translations ?? {}), en });
   };
 
+  // --- DefaultProject : name / description / target / mission ---
+  type ProjField = 'name' | 'description' | 'target' | 'mission';
+  const projField = (p: DefaultProject, field: ProjField) =>
+    isEN ? p.translations?.en?.[field] ?? '' : p[field] ?? '';
+  const setProjField = (p: DefaultProject, i: number, field: ProjField, value: string) => {
+    if (isEN) {
+      const en = { ...(p.translations?.en ?? {}), [field]: value };
+      updateDefaultProject(i, 'translations', { ...(p.translations ?? {}), en });
+    } else {
+      updateDefaultProject(i, field, value);
+    }
+  };
+
   // ===== Traduction de toute l'édition (IA) =====
-  async function translateEdition(targetLang = 'en') {
+  /**
+   * Traduit le contenu de l'édition vers `targetLang`.
+   * @param section - Si fournie, ne traduit QUE cette section (onglet courant).
+   *                  Sinon, traduit toute l'édition.
+   */
+  async function translateEdition(targetLang = 'en', section?: TranslatableSection) {
     setTranslating(true);
     try {
-      const items = {
-        quizzes: data.quizzes.map((q) => ({ id: q.id, question: q.question, options: q.options, explanation: q.explanation ?? '' })),
-        duels: data.duels.map((d) => ({ id: d.id, question: d.question, options: d.options.map((o) => o.text) })),
-        fundings: data.fundings.map((f) => ({ id: f.id, title: f.title, description: f.description })),
-        opportunities: data.opportunities.map((o) => ({ id: o.id, title: o.title, description: o.description })),
-        challengeEvents: data.challenges.map((c) => ({ id: c.id, title: c.title, description: c.description })),
-      };
+      // On n'envoie à l'API que les sections demandées (tout, ou une seule).
+      const want = (s: TranslatableSection) => !section || section === s;
+      const items: Record<string, unknown> = {};
+      if (want('quiz')) items.quizzes = data.quizzes.map((q) => ({ id: q.id, question: q.question, options: q.options, explanation: q.explanation ?? '' }));
+      if (want('duels')) items.duels = data.duels.map((d) => ({ id: d.id, question: d.question, options: d.options.map((o) => o.text) }));
+      if (want('fundings')) items.fundings = data.fundings.map((f) => ({ id: f.id, title: f.title, description: f.description }));
+      if (want('opportunities')) items.opportunities = data.opportunities.map((o) => ({ id: o.id, title: o.title, description: o.description }));
+      if (want('challenges')) items.challengeEvents = data.challenges.map((c) => ({ id: c.id, title: c.title, description: c.description }));
+      if (want('projects')) items.defaultProjects = (data.defaultProjects ?? []).map((p) => ({ id: p.id, name: p.name, description: p.description, target: p.target, mission: p.mission }));
+
       const res = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -330,19 +365,24 @@ Pour les projets par défaut, chaque projet doit avoir :
         fundings?: { id: string; title: string; description: string }[];
         opportunities?: { id: string; title: string; description: string }[];
         challengeEvents?: { id: string; title: string; description: string }[];
+        defaultProjects?: { id: string; name: string; description: string; target: string; mission: string }[];
       };
       const idx = <U extends { id: string }>(arr?: U[]) => new Map((arr ?? []).map((x) => [x.id, x]));
-      const tq = idx(t.quizzes), td = idx(t.duels), tf = idx(t.fundings), to = idx(t.opportunities), tc = idx(t.challengeEvents);
+      const tq = idx(t.quizzes), td = idx(t.duels), tf = idx(t.fundings), to = idx(t.opportunities), tc = idx(t.challengeEvents), tp = idx(t.defaultProjects);
 
+      // On ne remappe QUE les sections traduites ; les autres restent intactes.
       setData((prev) => ({
         ...prev,
-        quizzes: prev.quizzes.map((q) => { const r = tq.get(q.id); return r ? { ...q, translations: { ...(q.translations ?? {}), [targetLang]: { question: r.question, options: r.options, explanation: r.explanation } } } : q; }),
-        duels: prev.duels.map((d) => { const r = td.get(d.id); return r ? { ...d, translations: { ...(d.translations ?? {}), [targetLang]: { question: r.question, options: r.options } } } : d; }),
-        fundings: prev.fundings.map((f) => { const r = tf.get(f.id); return r ? { ...f, translations: { ...(f.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : f; }),
-        opportunities: prev.opportunities.map((o) => { const r = to.get(o.id); return r ? { ...o, translations: { ...(o.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : o; }),
-        challenges: prev.challenges.map((c) => { const r = tc.get(c.id); return r ? { ...c, translations: { ...(c.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : c; }),
+        ...(want('quiz') && { quizzes: prev.quizzes.map((q) => { const r = tq.get(q.id); return r ? { ...q, translations: { ...(q.translations ?? {}), [targetLang]: { question: r.question, options: r.options, explanation: r.explanation } } } : q; }) }),
+        ...(want('duels') && { duels: prev.duels.map((d) => { const r = td.get(d.id); return r ? { ...d, translations: { ...(d.translations ?? {}), [targetLang]: { question: r.question, options: r.options } } } : d; }) }),
+        ...(want('fundings') && { fundings: prev.fundings.map((f) => { const r = tf.get(f.id); return r ? { ...f, translations: { ...(f.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : f; }) }),
+        ...(want('opportunities') && { opportunities: prev.opportunities.map((o) => { const r = to.get(o.id); return r ? { ...o, translations: { ...(o.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : o; }) }),
+        ...(want('challenges') && { challenges: prev.challenges.map((c) => { const r = tc.get(c.id); return r ? { ...c, translations: { ...(c.translations ?? {}), [targetLang]: { title: r.title, description: r.description } } } : c; }) }),
+        ...(want('projects') && { defaultProjects: (prev.defaultProjects ?? []).map((p) => { const r = tp.get(p.id); return r ? { ...p, translations: { ...(p.translations ?? {}), [targetLang]: { name: r.name, description: r.description, target: r.target, mission: r.mission } } } : p; }) }),
       }));
-      toast.success('Traduction anglaise générée pour toute l’édition.');
+      toast.success(section
+        ? `Traduction anglaise générée pour la section « ${SECTION_LABELS[section]} ».`
+        : 'Traduction anglaise générée pour toute l’édition.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur de traduction');
     } finally {
@@ -554,19 +594,33 @@ Pour les projets par défaut, chaque projet doit avoir :
             <Upload size={13} />
             Importer tout
           </button>
-          {!isNew && activeTab !== 'general' && activeTab !== 'projects' && (
+          {!isNew && activeTab !== 'general' && (
             <LangTabs lang={editLang} onChange={setEditLang} />
           )}
+          {/* Traduire seulement la section active (onglet de contenu) */}
+          {!isNew && activeTab !== 'general' && (
+            <button
+              className="btn-secondary flex items-center gap-1.5"
+              onClick={() => translateEdition('en', activeTab as TranslatableSection)}
+              disabled={translating}
+              title={`Génère la version anglaise de la section « ${SECTION_LABELS[activeTab as TranslatableSection]} » uniquement`}
+              style={{ fontSize: 12, padding: '6px 12px' }}
+            >
+              <Languages size={13} />
+              {translating ? 'Traduction…' : `Traduire ${SECTION_LABELS[activeTab as TranslatableSection]}`}
+            </button>
+          )}
+          {/* Traduire toute l'édition */}
           {!isNew && (
             <button
               className="btn-secondary flex items-center gap-1.5"
               onClick={() => translateEdition('en')}
               disabled={translating}
-              title="Génère la version anglaise de tout le contenu de l'édition"
+              title="Génère la version anglaise de TOUT le contenu de l'édition"
               style={{ fontSize: 12, padding: '6px 12px' }}
             >
               <Languages size={13} />
-              {translating ? 'Traduction…' : 'Traduire en anglais'}
+              {translating ? 'Traduction…' : 'Tout traduire'}
             </button>
           )}
           {isNew && (
@@ -1186,6 +1240,14 @@ Pour les projets par défaut, chaque projet doit avoir :
               <div className="flex gap-2">
                 <button
                   className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => setAiModalType('default_projects')}
+                  style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(124,108,255,0.35)', color: '#9B8CFF' }}
+                >
+                  <Sparkles size={13} />
+                  Générer (IA)
+                </button>
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
                   onClick={() => setShowImportProjectsModal(true)}
                   style={{ fontSize: 12, padding: '6px 12px', borderColor: 'rgba(255,188,64,0.25)', color: '#FFBC40' }}
                 >
@@ -1208,12 +1270,12 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </button>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Nom de la startup</label>
-                    <input className="input-field" value={p.name} onChange={(e) => updateDefaultProject(i, 'name', e.target.value)} placeholder="AgriSmart" />
+                    <label className="label">Nom de la startup{isEN ? ' (EN)' : ''}</label>
+                    <input className="input-field" value={projField(p, 'name')} onChange={(e) => setProjField(p, i, 'name', e.target.value)} placeholder={isEN ? 'AgriSmart (English)' : 'AgriSmart'} />
                   </div>
                   <div className="mb-3">
-                    <label className="label">Description (pitch)</label>
-                    <textarea className="input-field" value={p.description} onChange={(e) => updateDefaultProject(i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder="Plateforme de digitalisation agricole..." />
+                    <label className="label">Description (pitch){isEN ? ' (EN)' : ''}</label>
+                    <textarea className="input-field" value={projField(p, 'description')} onChange={(e) => setProjField(p, i, 'description', e.target.value)} rows={2} style={{ resize: 'vertical' }} placeholder="Plateforme de digitalisation agricole..." />
                   </div>
                   <div className="flex gap-3 mb-3">
                     <div className="flex-1">
@@ -1229,12 +1291,12 @@ Pour les projets par défaut, chaque projet doit avoir :
                     </div>
                   </div>
                   <div className="mb-3">
-                    <label className="label">Cible client</label>
-                    <input className="input-field" value={p.target} onChange={(e) => updateDefaultProject(i, 'target', e.target.value)} placeholder="Agriculteurs, coopératives..." />
+                    <label className="label">Cible client{isEN ? ' (EN)' : ''}</label>
+                    <input className="input-field" value={projField(p, 'target')} onChange={(e) => setProjField(p, i, 'target', e.target.value)} placeholder="Agriculteurs, coopératives..." />
                   </div>
                   <div>
-                    <label className="label">Mission / Vision</label>
-                    <input className="input-field" value={p.mission} onChange={(e) => updateDefaultProject(i, 'mission', e.target.value)} placeholder="Améliorer les rendements agricoles..." />
+                    <label className="label">Mission / Vision{isEN ? ' (EN)' : ''}</label>
+                    <input className="input-field" value={projField(p, 'mission')} onChange={(e) => setProjField(p, i, 'mission', e.target.value)} placeholder="Améliorer les rendements agricoles..." />
                   </div>
                 </div>
               ))}

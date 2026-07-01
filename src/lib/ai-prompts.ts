@@ -499,16 +499,26 @@ Varie les categories et les raretes. Les legendaires doivent etre rares et diffi
     description: 'Genere des projets/startups fictifs pour les joueurs sans compte',
     systemPrompt: `${BASE_SYSTEM}
 
-Genere un tableau JSON de projets de startup fictifs. Format:
+Genere un tableau JSON de projets de startup fictifs (DefaultProject). Format EXACT:
 [
   {
-    "id": "proj_1",
+    "id": "slug-unique-en-minuscules",
     "name": "Nom de la startup",
-    "description": "Description courte de la startup et son activite",
-    "sector": "secteur_en_minuscule"
+    "description": "Pitch court et realiste (1-3 phrases)",
+    "sector": "secteur en minuscules, aligne sur les secteurs de l'edition si fournis",
+    "target": "cible client / utilisateurs",
+    "mission": "mission ou vision en une phrase",
+    "initialBudget": 100000,
+    "icon": "business-outline"
   }
 ]
-Les noms doivent sonner africains et modernes. Les descriptions doivent etre realistes.`,
+REGLES:
+- "id": slug ASCII unique deduit du nom (ex: agri-smart-dakar)
+- "sector": choisis parmi les secteurs de l'edition fournis dans le contexte
+- "initialBudget": entier positif plausible (50000-200000)
+- "icon": nom d'icone ionicons-style (ex: leaf-outline); business-outline par defaut
+- Les noms doivent sonner africains et modernes; les descriptions realistes
+- Retourne UNIQUEMENT le tableau JSON, sans texte autour`,
     buildUserPrompt: (input, ctx) =>
       `Edition: ${ctx?.edition || 'classic'}. Secteurs possibles: ${ctx?.sectors || 'variés'}.\n\nDemande: ${input}`,
   },

@@ -39,16 +39,17 @@ export async function POST(req: NextRequest) {
     const userPrompt = `Traduis en ${langLabel} les champs textuels du contenu suivant.
 Règles STRICTES :
 - Garde EXACTEMENT les mêmes "id" pour chaque élément.
-- Traduis "question", "options" (chaque option), "explanation", "title", "description".
+- Traduis "question", "options" (chaque option), "explanation", "title", "description", "name", "target", "mission".
 - Pour "options" : garde le même ordre et le même nombre d'éléments.
-- Ne traduis PAS les ids, ne change AUCUN nombre.
+- Ne traduis PAS les ids ni les "sector", ne change AUCUN nombre.
 - Réponds avec ce format JSON exact :
 {
   "quizzes": [{"id": "...", "question": "...", "options": ["...","..."], "explanation": "..."}],
   "duels": [{"id": "...", "question": "...", "options": ["...","...","..."]}],
   "fundings": [{"id": "...", "title": "...", "description": "..."}],
   "opportunities": [{"id": "...", "title": "...", "description": "..."}],
-  "challengeEvents": [{"id": "...", "title": "...", "description": "..."}]
+  "challengeEvents": [{"id": "...", "title": "...", "description": "..."}],
+  "defaultProjects": [{"id": "...", "name": "...", "description": "...", "target": "...", "mission": "..."}]
 }
 
 Contenu à traduire (JSON) :

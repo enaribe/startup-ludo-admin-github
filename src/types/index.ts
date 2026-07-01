@@ -444,6 +444,13 @@ export interface IdeationDeck {
 
 // ===== Default Projects =====
 
+export interface DefaultProjectTranslation {
+  name?: string;
+  description?: string;
+  target?: string;
+  mission?: string;
+}
+
 export interface DefaultProject {
   id: string;
   name: string;
@@ -453,6 +460,8 @@ export interface DefaultProject {
   mission: string;
   initialBudget?: number;
   icon?: string;
+  /** Traductions par langue (ex: translations.en). Seuls les champs textuels. */
+  translations?: Record<string, DefaultProjectTranslation>;
 }
 
 // ===== Achievements =====
