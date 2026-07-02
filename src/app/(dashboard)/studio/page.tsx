@@ -60,6 +60,9 @@ function StudioPage() {
   // Données éditables du programme courant (contentPacks).
   const [data, setData] = useState<Omit<PartnerProgram, 'id'> | null>(null);
 
+  // Cible affichée/éditée : 'common' (program.contentPacks) ou un id de persona.
+  const [viewTarget, setViewTarget] = useState<string>('common');
+
   // Sélection / filtres de la liste de cartes
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<StudioCardType | null>(null);
@@ -116,8 +119,35 @@ function StudioPage() {
   const currentProgram = programs.find((p) => p.id === programId);
   const contentSource = currentProgram?.contentSource;
 
+  // Packs de la cible active (commun ou persona sélectionné).
+  const activePacks = useMemo(() => {
+    if (!data) return [];
+    if (viewTarget === 'common') return data.contentPacks;
+    return data.profiles?.find((p) => p.id === viewTarget)?.contentPacks ?? [];
+  }, [data, viewTarget]);
+
+  // Réécrit les packs de la cible active dans data (commun ou persona).
+  const setActivePacks = useCallback((packs: typeof activePacks) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      if (viewTarget === 'common') return { ...prev, contentPacks: packs };
+      return {
+        ...prev,
+        profiles: (prev.profiles ?? []).map((p) =>
+          p.id === viewTarget ? { ...p, contentPacks: packs } : p
+        ),
+      };
+    });
+  }, [viewTarget]);
+
+  // Au changement de cible : reset de la sélection et du filtre de pack (spécifique au commun).
+  useEffect(() => {
+    setSelectedId(null);
+    setPackFilter(null);
+  }, [viewTarget]);
+
   // ===== Liste de cartes (aplatie + filtrée) =====
-  const allCards = useMemo(() => (data ? flattenCards(data.contentPacks) : []), [data]);
+  const allCards = useMemo(() => flattenCards(activePacks), [activePacks]);
   const cards = useMemo(() => {
     let list = allCards;
     if (packFilter !== null) list = list.filter((c) => c.ref.packIndex === packFilter);
@@ -136,12 +166,12 @@ function StudioPage() {
   const patchSelected = (patch: Record<string, unknown>) => {
     if (!selected || !data) return;
     const newData = { ...selected.data, ...patch } as typeof selected.data;
-    setData({ ...data, contentPacks: updateCardInPacks(data.contentPacks, selected.ref, newData) });
+    setActivePacks(updateCardInPacks(activePacks, selected.ref, newData));
   };
 
   const deleteSelected = () => {
     if (!selected || !data) return;
-    setData({ ...data, contentPacks: removeCardFromPacks(data.contentPacks, selected.ref) });
+    setActivePacks(removeCardFromPacks(activePacks, selected.ref));
     setSelectedId(null);
   };
 
@@ -231,7 +261,7 @@ function StudioPage() {
         return targetHasContentForLevels(packs, levelTiers);
       });
 
-      const applyAll = (mode: 'append' | 'replace') => {
+      const applyAll = async (mode: 'append' | 'replace') => {
         let updated = data;
         let n = 0;
         for (const { target, levels } of generatedByTarget) {
@@ -241,8 +271,15 @@ function StudioPage() {
             : publishToProfile(updated, programId, target.profile.id, levels, mode);
         }
         setData(updated);
-        toast.success(`${n} cartes générées pour ${targets.length} cible${targets.length !== 1 ? 's' : ''}. Pensez à Enregistrer.`);
         setShowGen(false);
+        // Enregistrement automatique : le contenu persona étant invisible dans la liste
+        // du commun, on persiste tout de suite pour éviter toute perte au rechargement.
+        try {
+          await saveProgram(programId, updated);
+          toast.success(`${n} cartes générées et enregistrées pour ${targets.length} cible${targets.length !== 1 ? 's' : ''}.`);
+        } catch {
+          toast.error('Généré mais échec de l’enregistrement. Cliquez sur Enregistrer.');
+        }
       };
 
       if (conflicting.length > 0) {
@@ -250,9 +287,9 @@ function StudioPage() {
         const names = conflicting.map(({ target }) =>
           target.kind === 'common' ? 'Contenu commun' : target.profile.name
         );
-        setConflict({ names, run: applyAll });
+        setConflict({ names, run: (mode) => { void applyAll(mode); } });
       } else {
-        applyAll('append');
+        await applyAll('append');
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'La génération a échoué.');
@@ -265,7 +302,8 @@ function StudioPage() {
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
   if (programs.length === 0) return <div className="glass-card p-8" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>Aucun programme accessible.</div>;
 
-  const total = data ? totalCards(data.contentPacks) : 0;
+  // Nombre de cartes de la cible affichée (commun ou persona).
+  const total = totalCards(activePacks);
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 140px)' }}>
@@ -288,6 +326,25 @@ function StudioPage() {
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>
             Visualisez, éditez et générez les cartes du parcours avec l’assistance IA
           </p>
+          {/* Cible affichée : contenu commun ou contenu d'un persona */}
+          {genProfiles.length > 0 && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Contenu :</span>
+              <TargetTab label="Commun" active={viewTarget === 'common'} onClick={() => setViewTarget('common')} />
+              {genProfiles.map((p) => {
+                const count = (p.contentPacks ?? []).reduce(
+                  (s, pk) => s + pk.quizzes.length + pk.duels.length + pk.fundings.length + pk.opportunities.length + pk.challengeEvents.length, 0);
+                return (
+                  <TargetTab
+                    key={p.id}
+                    label={`${p.name || 'Persona'}${count ? ` (${count})` : ''}`}
+                    active={viewTarget === p.id}
+                    onClick={() => setViewTarget(p.id)}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
           {isSuperAdmin ? (
@@ -397,7 +454,7 @@ function StudioPage() {
 
       {/* Footer — progression */}
       <div className="flex items-center gap-4 mt-3 px-1">
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{total} carte{total !== 1 ? 's' : ''} au total</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{total} carte{total !== 1 ? 's' : ''} {viewTarget === 'common' ? 'au total' : '(persona)'}</span>
         <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>· {allCards.filter((c) => c.type === 'quiz').length} quiz · {allCards.filter((c) => c.type === 'duel').length} duels · {allCards.filter((c) => c.type === 'funding').length} financements · {allCards.filter((c) => c.type === 'opportunity').length} opportunités · {allCards.filter((c) => c.type === 'challenge').length} défis</span>
       </div>
 
@@ -506,6 +563,23 @@ function StudioPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+function TargetTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '4px 12px', borderRadius: 999, fontSize: 12, cursor: 'pointer',
+        fontWeight: active ? 600 : 500,
+        border: `1px solid ${active ? 'transparent' : 'var(--color-card-border)'}`,
+        background: active ? 'var(--color-info-light)' : 'transparent',
+        color: active ? 'var(--color-info)' : 'var(--color-text-secondary)',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
