@@ -123,6 +123,9 @@ export default function PersonasPage() {
             objective: program.contentSource?.objective ?? '',
             sectors: [program.audience?.sector, ...(program.eligibility?.sectors ?? []), ...(program.tags ?? [])]
               .filter(Boolean).join(', '),
+            // Zone géographique : les personas doivent y être situés (anti « lieux hors zone »).
+            region: [...(program.audience?.locations ?? []), ...(program.eligibility?.regions ?? [])]
+              .filter(Boolean).join(', '),
             sourceText,
           },
         }),

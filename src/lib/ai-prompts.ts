@@ -593,15 +593,24 @@ REGLES:
 - "tokens": jetons de depart (50-200), coherents avec le statut (Idee=peu, En croissance=plus)
 - Varie les profils : genre, age, secteur, statut, region — pour une bonne diversite
 - Les personas doivent etre ancres dans le contexte du programme et realistes
-- Retourne UNIQUEMENT le tableau JSON, sans texte autour`,
+- Retourne UNIQUEMENT le tableau JSON, sans texte autour
+
+FIDELITE AUX DOCUMENTS (IMPERATIF) :
+- "location" : utilise UNIQUEMENT des lieux (villes, regions, pays) mentionnes ou clairement impliques par les documents du programme. N'INVENTE JAMAIS un lieu absent des documents.
+- Si les documents ne precisent pas de lieu, reste dans le pays/la zone geographique du programme ; NE PLACE JAMAIS un persona dans un autre pays.
+- Idem pour les secteurs, activites et realites : ancre-les dans les documents, n'invente pas a l'aveugle.
+- En cas de doute, prefere rester generique et fidele au contexte plutot qu'inventer un detail non etaye.`,
     buildUserPrompt: (input, ctx) => {
       const parts: string[] = [];
       if (ctx?.programName) parts.push(`Programme: ${ctx.programName}`);
       if (ctx?.objective) parts.push(`Objectif pedagogique: ${ctx.objective}`);
       if (ctx?.sectors) parts.push(`Secteurs du programme (pour aligner les personas): ${ctx.sectors}`);
+      if (ctx?.region) parts.push(`Zone geographique du programme (les personas DOIVENT y etre situes): ${ctx.region}`);
       if (ctx?.sourceText) {
         const src = String(ctx.sourceText).slice(0, 40000);
-        parts.push(`\n=== BASE DE CONNAISSANCES (documents du programme) ===\nAppuie-toi sur ce contenu pour ancrer les personas dans la realite du programme.\n"""\n${src}\n"""`);
+        parts.push(`\n=== BASE DE CONNAISSANCES (documents du programme) ===\nCes documents sont la SEULE source de verite pour les lieux, secteurs et realites. Ancre-y chaque persona. N'invente aucun lieu ni detail absent de ce texte.\n"""\n${src}\n"""`);
+      } else {
+        parts.push(`\n(Aucun document fourni : reste STRICTEMENT dans la zone geographique et les secteurs du programme indiques ci-dessus. N'invente pas de lieu hors de cette zone.)`);
       }
       parts.push(`\nDemande: ${input || 'Genere 3 a 5 personas varies et coherents avec le programme.'}`);
       return parts.join('\n');

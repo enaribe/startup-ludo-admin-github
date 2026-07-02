@@ -126,8 +126,10 @@ function buildPrompt(brief: StudioBrief, levelLabel: string, mix: LevelMix): str
     const body = truncated ? source.slice(0, MAX_SOURCE_CHARS) : source;
     lines.push('');
     lines.push('BASE DE CONNAISSANCES (documents fournis par le programme) :');
-    lines.push('Appuie-toi PRIORITAIREMENT sur ce contenu pour les faits, chiffres, vocabulaire et exemples.');
-    lines.push('Ne contredis jamais ces documents ; reste fidèle à leur terminologie.');
+    lines.push('Ces documents sont la SEULE source de vérité pour les faits, chiffres, lieux, noms propres, secteurs, vocabulaire et exemples.');
+    lines.push('Appuie-toi IMPÉRATIVEMENT sur ce contenu. N\'invente AUCUN lieu, nom propre ou fait absent de ces documents.');
+    lines.push('Si une information (lieu, chiffre, contexte) n\'est pas dans les documents, reste générique ou dans la zone géographique du programme — ne l\'invente jamais à l\'aveugle.');
+    lines.push('Ne contredis jamais ces documents ; reste fidèle à leur terminologie et à leur contexte géographique.');
     lines.push('"""');
     lines.push(body);
     if (truncated) lines.push('… [document tronqué]');
