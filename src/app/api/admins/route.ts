@@ -59,12 +59,14 @@ export async function GET(req: NextRequest) {
 
     let admins = snap.docs.map((d) => {
       const data = d.data();
+      const programIds = normalizeIds(data.programIds ?? data.programId);
       return {
         uid: d.id,
         email: data.email ?? '',
         displayName: data.displayName ?? '',
         role: data.role ?? 'admin',
-        programId: data.programId ?? null,
+        programIds,
+        programId: programIds[0] ?? null, // rétrocompat
         partnerId: data.partnerId ?? null,
       };
     });
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
     // Un admin de partenaire ne voit que les admins de SES programmes.
     if (caller.isPartner && !caller.isSuper) {
       const partnerProgramIds = await getPartnerProgramIds(caller.partnerId);
-      admins = admins.filter((a) => a.role === 'admin' && a.programId && partnerProgramIds.has(a.programId));
+      admins = admins.filter((a) => a.role === 'admin' && a.programIds.some((pid) => partnerProgramIds.has(pid)));
     }
 
     return NextResponse.json({ admins });
@@ -94,7 +96,8 @@ export async function POST(req: NextRequest) {
     const password = body.password ?? '';
     const displayName = (body.displayName ?? '').trim();
     const role = (body.role ?? 'admin') as 'admin' | 'partner_admin';
-    const programId = (body.programId ?? '').trim();
+    // Multi-programmes : accepte programIds[] (ou programId unique pour rétrocompat).
+    const programIds = normalizeIds(body.programIds ?? body.programId);
     const partnerId = (body.partnerId ?? '').trim();
 
     if (!email || !password || !displayName) {
@@ -128,30 +131,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ uid, email, displayName, role, partnerId });
     }
 
-    // ===== Création d'un admin de programme =====
-    if (!programId) return NextResponse.json({ error: 'Un programme à assigner est requis.' }, { status: 400 });
+    // ===== Création d'un admin de programme (un ou plusieurs) =====
+    if (programIds.length === 0) return NextResponse.json({ error: 'Au moins un programme à assigner est requis.' }, { status: 400 });
 
-    const programRef = db.collection(COLLECTIONS.programs).doc(programId);
-    const programSnap = await programRef.get();
-    if (!programSnap.exists) return NextResponse.json({ error: 'Programme introuvable.' }, { status: 404 });
-
-    // Un admin de partenaire ne peut déléguer que sur un programme de SON partenaire.
-    if (caller.isPartner && !caller.isSuper) {
-      const programPartnerId = programSnap.data()?.partnerId as string | undefined;
-      if (!programPartnerId || programPartnerId !== caller.partnerId) {
-        return NextResponse.json({ error: 'Ce programme n’appartient pas à votre partenaire.' }, { status: 403 });
+    // Vérifie l'existence + le périmètre de CHAQUE programme avant d'écrire quoi que ce soit.
+    const programRefs = [];
+    for (const pid of programIds) {
+      const programRef = db.collection(COLLECTIONS.programs).doc(pid);
+      const programSnap = await programRef.get();
+      if (!programSnap.exists) return NextResponse.json({ error: `Programme introuvable : ${pid}.` }, { status: 404 });
+      if (caller.isPartner && !caller.isSuper) {
+        const programPartnerId = programSnap.data()?.partnerId as string | undefined;
+        if (!programPartnerId || programPartnerId !== caller.partnerId) {
+          return NextResponse.json({ error: 'Un des programmes n’appartient pas à votre partenaire.' }, { status: 403 });
+        }
       }
+      programRefs.push(programRef);
     }
 
     const uid = await upsertAuthUser(email, password, displayName);
     await auth.setCustomUserClaims(uid, { admin: true });
     await db.collection(COLLECTIONS.users).doc(uid).set(
-      { email, displayName, role: 'admin', programId, partnerId: null, createdAt: Date.now(), updatedAt: Date.now() },
+      {
+        email, displayName, role: 'admin',
+        programIds,
+        programId: programIds[0], // rétrocompat lecture (anciens consommateurs)
+        partnerId: null,
+        createdAt: Date.now(), updatedAt: Date.now(),
+      },
       { merge: true }
     );
-    await programRef.set({ ownerId: uid, updatedAt: Date.now() }, { merge: true });
+    // Chaque programme reçoit cet admin comme propriétaire unique.
+    await Promise.all(programRefs.map((ref) => ref.set({ ownerId: uid, updatedAt: Date.now() }, { merge: true })));
 
-    return NextResponse.json({ uid, email, displayName, role: 'admin', programId });
+    return NextResponse.json({ uid, email, displayName, role: 'admin', programIds });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Création impossible';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -184,7 +197,8 @@ export async function PATCH(req: NextRequest) {
     if (!userSnap.exists) return NextResponse.json({ error: 'Admin introuvable.' }, { status: 404 });
     const current = userSnap.data() ?? {};
     const currentRole = (current.role ?? 'admin') as string;
-    const currentProgramId = (current.programId ?? null) as string | null;
+    // Programmes actuels (rétrocompat : programIds[] ou programId unique).
+    const currentProgramIds = normalizeIds(current.programIds ?? current.programId);
 
     if (currentRole === 'super_admin') {
       return NextResponse.json({ error: 'Le super admin ne peut pas être modifié.' }, { status: 400 });
@@ -197,12 +211,12 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Champs d'assignation cibles selon le rôle cible.
-    const nextProgramId = nextRole === 'admin' ? (body.programId ?? '').trim() : '';
+    const nextProgramIds = nextRole === 'admin' ? normalizeIds(body.programIds ?? body.programId) : [];
     const nextPartnerId = nextRole === 'partner_admin' ? (body.partnerId ?? '').trim() : '';
     const newPassword = (body.password ?? '').trim();
 
-    if (nextRole === 'admin' && !nextProgramId) {
-      return NextResponse.json({ error: 'Un programme à assigner est requis.' }, { status: 400 });
+    if (nextRole === 'admin' && nextProgramIds.length === 0) {
+      return NextResponse.json({ error: 'Au moins un programme à assigner est requis.' }, { status: 400 });
     }
     if (nextRole === 'partner_admin' && !nextPartnerId) {
       return NextResponse.json({ error: 'Un partenaire à assigner est requis.' }, { status: 400 });
@@ -211,10 +225,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Le mot de passe doit faire au moins 8 caractères.' }, { status: 400 });
     }
 
-    // Vérifie l'existence de la cible d'assignation.
+    // Vérifie l'existence de la/les cible(s) d'assignation.
     if (nextRole === 'admin') {
-      const programSnap = await db.collection(COLLECTIONS.programs).doc(nextProgramId).get();
-      if (!programSnap.exists) return NextResponse.json({ error: 'Programme introuvable.' }, { status: 404 });
+      for (const pid of nextProgramIds) {
+        const programSnap = await db.collection(COLLECTIONS.programs).doc(pid).get();
+        if (!programSnap.exists) return NextResponse.json({ error: `Programme introuvable : ${pid}.` }, { status: 404 });
+      }
     } else {
       const partnerSnap = await db.collection(COLLECTIONS.partners).doc(nextPartnerId).get();
       if (!partnerSnap.exists) return NextResponse.json({ error: 'Partenaire introuvable.' }, { status: 404 });
@@ -232,27 +248,26 @@ export async function PATCH(req: NextRequest) {
       await auth.setCustomUserClaims(uid, { admin: true });
     }
 
-    // Libère l'ancien programme s'il n'est plus le même (ou si l'admin quitte le rôle programme).
-    if (currentProgramId && currentProgramId !== nextProgramId) {
-      await db.collection(COLLECTIONS.programs).doc(currentProgramId).set(
-        { ownerId: null, updatedAt: Date.now() },
-        { merge: true }
-      );
-    }
+    // Libère les programmes retirés (présents avant, absents après).
+    const nextSet = new Set(nextRole === 'admin' ? nextProgramIds : []);
+    const removed = currentProgramIds.filter((pid) => !nextSet.has(pid));
+    await Promise.all(removed.map((pid) =>
+      db.collection(COLLECTIONS.programs).doc(pid).set({ ownerId: null, updatedAt: Date.now() }, { merge: true })
+    ));
 
-    // Assigne le nouveau programme.
+    // Assigne les programmes cibles à cet admin.
     if (nextRole === 'admin') {
-      await db.collection(COLLECTIONS.programs).doc(nextProgramId).set(
-        { ownerId: uid, updatedAt: Date.now() },
-        { merge: true }
-      );
+      await Promise.all(nextProgramIds.map((pid) =>
+        db.collection(COLLECTIONS.programs).doc(pid).set({ ownerId: uid, updatedAt: Date.now() }, { merge: true })
+      ));
     }
 
     // Met à jour le doc utilisateur (assignations mutuellement exclusives selon le rôle).
     await userRef.set(
       {
         role: nextRole,
-        programId: nextRole === 'admin' ? nextProgramId : null,
+        programIds: nextRole === 'admin' ? nextProgramIds : null,
+        programId: nextRole === 'admin' ? nextProgramIds[0] : null, // rétrocompat
         partnerId: nextRole === 'partner_admin' ? nextPartnerId : null,
         updatedAt: Date.now(),
       },
@@ -262,7 +277,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({
       uid,
       role: nextRole,
-      programId: nextRole === 'admin' ? nextProgramId : null,
+      programIds: nextRole === 'admin' ? nextProgramIds : null,
       partnerId: nextRole === 'partner_admin' ? nextPartnerId : null,
     });
   } catch (error) {
@@ -288,31 +303,28 @@ export async function DELETE(req: NextRequest) {
     const userSnap = await db.collection(COLLECTIONS.users).doc(uid).get();
     const userData = userSnap.exists ? userSnap.data() : undefined;
     const targetRole = userData?.role as string | undefined;
-    const programId = userData?.programId as string | undefined;
+    const programIds = normalizeIds(userData?.programIds ?? userData?.programId);
 
     // Un admin de partenaire ne peut révoquer qu'un admin de programme de SON partenaire.
     if (caller.isPartner && !caller.isSuper) {
-      if (targetRole !== 'admin' || !programId) {
+      if (targetRole !== 'admin' || programIds.length === 0) {
         return NextResponse.json({ error: 'Action non autorisée.' }, { status: 403 });
       }
       const partnerProgramIds = await getPartnerProgramIds(caller.partnerId);
-      if (!partnerProgramIds.has(programId)) {
+      if (!programIds.some((pid) => partnerProgramIds.has(pid))) {
         return NextResponse.json({ error: 'Cet admin ne dépend pas de votre partenaire.' }, { status: 403 });
       }
     }
 
-    // Retire tous les claims admin et libère le programme éventuel.
+    // Retire tous les claims admin et libère tous les programmes gérés.
     await auth.setCustomUserClaims(uid, { admin: false, super_admin: false, partner_admin: false });
     await db.collection(COLLECTIONS.users).doc(uid).set(
-      { role: 'revoked', programId: null, partnerId: null, updatedAt: Date.now() },
+      { role: 'revoked', programIds: null, programId: null, partnerId: null, updatedAt: Date.now() },
       { merge: true }
     );
-    if (programId) {
-      await db.collection(COLLECTIONS.programs).doc(programId).set(
-        { ownerId: null, updatedAt: Date.now() },
-        { merge: true }
-      );
-    }
+    await Promise.all(programIds.map((pid) =>
+      db.collection(COLLECTIONS.programs).doc(pid).set({ ownerId: null, updatedAt: Date.now() }, { merge: true })
+    ));
 
     return NextResponse.json({ uid, revoked: true });
   } catch (error) {
@@ -322,6 +334,16 @@ export async function DELETE(req: NextRequest) {
 }
 
 // ===== Helpers =====
+
+/**
+ * Normalise une valeur (string | string[] | null) en tableau d'ids nettoyé et dédupliqué.
+ * Sert la rétrocompatibilité programId (unique) → programIds (multiple).
+ */
+function normalizeIds(value: unknown): string[] {
+  const arr = Array.isArray(value) ? value : value ? [value] : [];
+  const cleaned = arr.map((v) => String(v).trim()).filter(Boolean);
+  return Array.from(new Set(cleaned));
+}
 
 /** Crée le compte Auth ou le réutilise s'il existe déjà (met à jour mdp + nom). */
 async function upsertAuthUser(email: string, password: string, displayName: string): Promise<string> {

@@ -8,7 +8,7 @@ import {
 import { getScopedPrograms, getProgram, saveProgram } from '@/lib/firestore-service';
 import { defaultEndForm } from '@/lib/end-form-defaults';
 import { generateId } from '@/lib/utils';
-import type { PartnerProgram, ProgramEndForm, ProgramFormField, FormFieldType } from '@/types';
+import type { PartnerProgram, ProgramEndForm, ProgramFormField, ProgramFormOptionGroup, FormFieldType } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -34,6 +34,66 @@ const TYPE_LABEL: Record<FormFieldType, string> = {
 };
 
 const HAS_OPTIONS: FormFieldType[] = ['select', 'multi_select', 'radio'];
+
+// ── Listes / sous-listes ──────────────────────────────────────────────────
+// Saisie en texte indenté : une ligne SANS indentation = titre de groupe
+// (grande liste, non sélectionnable), une ligne INDENTÉE (tab ou ≥2 espaces)
+// = sous-item sélectionnable. Les items sans titre au-dessus forment un groupe
+// sans titre.
+
+function isIndented(line: string): boolean {
+  return /^(\t| {2,})/.test(line);
+}
+
+/** Parse le texte en groupes + liste plate des items sélectionnables. */
+function parseOptionGroups(text: string): { groups: ProgramFormOptionGroup[]; flat: string[] } {
+  const groups: ProgramFormOptionGroup[] = [];
+  const flat: string[] = [];
+  let current: ProgramFormOptionGroup | null = null;
+
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) continue;
+    const value = raw.trim();
+    if (isIndented(raw)) {
+      // Sous-item : rattaché au groupe courant (ou groupe sans titre).
+      if (!current) { current = { items: [] }; groups.push(current); }
+      current.items.push(value);
+      flat.push(value);
+    } else {
+      // Titre de groupe (grande liste).
+      current = { title: value, items: [] };
+      groups.push(current);
+    }
+  }
+  // Un groupe titre sans aucun item est traité comme un item simple (rétrocompat
+  // avec les listes plates existantes : chaque ligne = une option).
+  const anyTitledWithItems = groups.some((g) => g.title && g.items.length > 0);
+  if (!anyTitledWithItems) {
+    // Aucune vraie hiérarchie : tout est plat.
+    const items = groups.map((g) => g.title!).filter(Boolean);
+    return { groups: [{ items }], flat: items };
+  }
+  // Promeut les titres orphelins (sans items) en items du groupe sans-titre suivant ? Non :
+  // on les laisse comme séparateurs vides — mais on retire les groupes totalement vides.
+  const cleaned = groups.filter((g) => g.title || g.items.length > 0);
+  return { groups: cleaned, flat };
+}
+
+/** Reconstruit le texte indenté depuis les groupes (pour édition). */
+function serializeOptionGroups(field: ProgramFormField): string {
+  const groups = field.optionGroups;
+  if (groups && groups.length && groups.some((g) => g.title)) {
+    return groups
+      .map((g) => {
+        const head = g.title ? `${g.title}\n` : '';
+        const items = g.items.map((it) => `  ${it}`).join('\n');
+        return head + items;
+      })
+      .join('\n');
+  }
+  // Pas de hiérarchie → liste plate classique.
+  return (field.options ?? []).join('\n');
+}
 
 function newField(type: FormFieldType): ProgramFormField {
   return {
@@ -282,13 +342,20 @@ function EndFormPage() {
                 <input className="input-field" value={selectedField.placeholder ?? ''} onChange={(e) => updateField(selectedField.id, { placeholder: e.target.value })} placeholder="Saisissez…" />
               </PropField>
               {HAS_OPTIONS.includes(selectedField.type) && (
-                <PropField label="Options (une par ligne)">
+                <PropField label="Options (une par ligne · indentez avec une tabulation pour créer une sous-liste)">
                   <textarea
                     className="input-field"
-                    rows={4}
-                    value={(selectedField.options ?? []).join('\n')}
-                    onChange={(e) => updateField(selectedField.id, { options: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })}
+                    rows={6}
+                    style={{ fontFamily: 'monospace', fontSize: 13, whiteSpace: 'pre' }}
+                    value={serializeOptionGroups(selectedField)}
+                    onChange={(e) => {
+                      const { groups, flat } = parseOptionGroups(e.target.value);
+                      updateField(selectedField.id, { optionGroups: groups, options: flat });
+                    }}
                   />
+                  <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6 }}>
+                    Une ligne sans indentation = titre de liste (non sélectionnable). Une ligne indentée = choix sélectionnable.
+                  </p>
                 </PropField>
               )}
               {selectedField.type === 'slider' && (

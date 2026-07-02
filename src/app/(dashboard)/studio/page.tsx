@@ -4,13 +4,15 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, Search, Star, Check, Trash2, FileText, Settings, Wand2, X, Eye } from 'lucide-react';
 import { getScopedPrograms, getProgram, saveProgram, getSourceDocsText } from '@/lib/firestore-service';
-import type { PartnerProgram, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
+import type { PartnerProgram, ProgramProfile, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
 import {
-  generateLevelContent, publishToProgram, countContent,
-  type GeneratedLevel, type LevelMix, type StudioBrief,
+  generateLevelContent, publishToProgram, publishToProfile, countContent,
+  targetHasContentForLevels, LEVEL_TIERS,
+  type GeneratedLevel, type LevelMix, type StudioBrief, type ProfileContext,
 } from '@/lib/studio-generation';
 import {
   flattenCards, totalCards, updateCardInPacks, removeCardFromPacks,
@@ -25,6 +27,17 @@ const GEN_TYPES = [
   { key: 'duel', label: 'Duel', color: '#9B59B6' },
 ] as const;
 const LEVELS = ['Niv. 1', 'Niv. 2', 'Niv. 3', 'Niv. 4'];
+
+function toProfileContext(p: ProgramProfile): ProfileContext {
+  return {
+    name: p.name,
+    age: p.age,
+    description: p.description,
+    location: p.location,
+    sector: p.sector,
+    status: p.status,
+  };
+}
 
 export default function StudioPageWrapper() {
   return (
@@ -59,6 +72,10 @@ function StudioPage() {
     Object.fromEntries(GEN_TYPES.map((t) => [t.key, [8, 7, 5, 4]])));
   const [generating, setGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState(0);
+  // Cibles de génération : 'common' + un id par persona. Défaut : commun coché.
+  const [genTargets, setGenTargets] = useState<Record<string, boolean>>({ common: true });
+  // Dialogue de résolution de conflit (cibles ayant déjà du contenu au niveau généré).
+  const [conflict, setConflict] = useState<{ names: string[]; run: (mode: 'append' | 'replace') => void } | null>(null);
 
   // ===== Chargement des programmes =====
   useEffect(() => {
@@ -151,42 +168,99 @@ function StudioPage() {
   });
   const mixTotal = Object.values(mix).reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
 
+  // Personas jouables du programme (cibles possibles de génération).
+  const genProfiles: ProgramProfile[] = useMemo(
+    () => (data?.profiles ?? []).filter((p) => !p.isDraft),
+    [data]
+  );
+
   const runGeneration = useCallback(async () => {
     if (!data || !programId) return;
     const activeLevels = [0, 1, 2, 3].filter((li) => GEN_TYPES.some((t) => (mix[t.key][li] || 0) > 0));
     if (activeLevels.length === 0) { toast.error('Renseignez le mix avant de générer.'); return; }
 
+    // Cibles cochées : commun + personas.
+    const targetCommon = genTargets.common;
+    const targetProfiles = genProfiles.filter((p) => genTargets[p.id]);
+    if (!targetCommon && targetProfiles.length === 0) {
+      toast.error('Sélectionnez au moins une cible (commun ou persona).');
+      return;
+    }
+
     setGenerating(true);
     setGenProgress(0);
-    const results: GeneratedLevel[] = [];
     try {
-      // Base de connaissances : texte des documents sources indexés.
       const sourceText = await getSourceDocsText(programId).catch(() => '');
-      const brief: StudioBrief = {
+      const baseBrief: StudioBrief = {
         objective: contentSource?.objective ?? 'Qualification',
         topicsKeep: contentSource?.topicsKeep ?? [],
         topicsAvoid: contentSource?.topicsAvoid ?? [],
         programName: currentProgram?.name,
         sourceText,
       };
-      for (let i = 0; i < activeLevels.length; i++) {
-        const lvl = await generateLevelContent(brief, activeLevels[i], levelMix(activeLevels[i]));
-        results.push(lvl);
-        setGenProgress(Math.round(((i + 1) / activeLevels.length) * 100));
+
+      // Génère le contenu POUR CHAQUE cible (le brief diffère par persona).
+      type Target = { kind: 'common' } | { kind: 'profile'; profile: ProgramProfile };
+      const targets: Target[] = [
+        ...(targetCommon ? [{ kind: 'common' as const }] : []),
+        ...targetProfiles.map((p) => ({ kind: 'profile' as const, profile: p })),
+      ];
+      const totalSteps = targets.length * activeLevels.length;
+      let step = 0;
+
+      const generatedByTarget: { target: Target; levels: GeneratedLevel[] }[] = [];
+      for (const target of targets) {
+        const brief: StudioBrief = target.kind === 'profile'
+          ? { ...baseBrief, profileContext: toProfileContext(target.profile) }
+          : baseBrief;
+        const levels: GeneratedLevel[] = [];
+        for (const li of activeLevels) {
+          const lvl = await generateLevelContent(brief, li, levelMix(li));
+          levels.push(lvl);
+          step++;
+          setGenProgress(Math.round((step / totalSteps) * 100));
+        }
+        generatedByTarget.push({ target, levels });
       }
-      // Publie directement dans les contentPacks en mémoire (visible dans la liste).
-      const updated = publishToProgram(data, programId, results);
-      setData(updated);
-      const n = results.reduce((s, l) => s + countContent(l.content), 0);
-      toast.success(`${n} cartes générées et ajoutées. Pensez à Enregistrer.`);
-      setShowGen(false);
+
+      const levelTiers = activeLevels.map((li) => LEVEL_TIERS[li].tier);
+
+      // Détecte les cibles ayant DÉJÀ du contenu sur ces niveaux (conflit).
+      const conflicting = generatedByTarget.filter(({ target }) => {
+        const packs = target.kind === 'common' ? data.contentPacks : target.profile.contentPacks;
+        return targetHasContentForLevels(packs, levelTiers);
+      });
+
+      const applyAll = (mode: 'append' | 'replace') => {
+        let updated = data;
+        let n = 0;
+        for (const { target, levels } of generatedByTarget) {
+          n += levels.reduce((s, l) => s + countContent(l.content), 0);
+          updated = target.kind === 'common'
+            ? publishToProgram(updated, programId, levels, mode)
+            : publishToProfile(updated, programId, target.profile.id, levels, mode);
+        }
+        setData(updated);
+        toast.success(`${n} cartes générées pour ${targets.length} cible${targets.length !== 1 ? 's' : ''}. Pensez à Enregistrer.`);
+        setShowGen(false);
+      };
+
+      if (conflicting.length > 0) {
+        // Demande Annuler / Ajouter / Remplacer.
+        const names = conflicting.map(({ target }) =>
+          target.kind === 'common' ? 'Contenu commun' : target.profile.name
+        );
+        setConflict({ names, run: applyAll });
+      } else {
+        applyAll('append');
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'La génération a échoué.');
     } finally {
       setGenerating(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, programId, mix, contentSource, currentProgram]);
+  }, [data, programId, mix, contentSource, currentProgram, genTargets, genProfiles]);
 
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
   if (programs.length === 0) return <div className="glass-card p-8" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>Aucun programme accessible.</div>;
@@ -366,6 +440,31 @@ function StudioPage() {
               </table>
             </div>
 
+            {/* Cibles de génération : commun + personas */}
+            <div className="mt-5">
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>Générer pour</p>
+              <div className="flex flex-wrap gap-2">
+                <TargetChip
+                  label="Contenu commun"
+                  checked={!!genTargets.common}
+                  onToggle={() => setGenTargets((prev) => ({ ...prev, common: !prev.common }))}
+                />
+                {genProfiles.map((p) => (
+                  <TargetChip
+                    key={p.id}
+                    label={p.name || 'Persona'}
+                    checked={!!genTargets[p.id]}
+                    onToggle={() => setGenTargets((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                  />
+                ))}
+              </div>
+              {genProfiles.length === 0 && (
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6 }}>
+                  Aucun persona jouable. Créez ou générez des personas pour cibler du contenu par profil.
+                </p>
+              )}
+            </div>
+
             {generating ? (
               <div className="mt-5">
                 <div style={{ height: 8, borderRadius: 4, background: 'var(--color-surface-variant)', marginBottom: 8 }}>
@@ -382,7 +481,54 @@ function StudioPage() {
           </div>
         </div>
       )}
+
+      {/* Résolution de conflit : cible(s) ayant déjà du contenu au niveau généré */}
+      <Modal open={!!conflict} onClose={() => setConflict(null)} title="Contenu déjà présent">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+            Ces cibles ont déjà du contenu pour le(s) niveau(x) généré(s) :
+            <strong> {conflict?.names.join(', ')}</strong>.
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+            Voulez-vous <strong>ajouter</strong> les nouvelles cartes à l’existant, ou <strong>remplacer</strong> le contenu de ces niveaux ?
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <button className="btn-secondary flex-1" onClick={() => setConflict(null)}>Annuler</button>
+            <button className="btn-secondary flex-1" onClick={() => { conflict?.run('append'); setConflict(null); }}>Ajouter</button>
+            <button
+              className="flex-1"
+              style={{ padding: '9px 12px', borderRadius: 8, background: 'rgba(244,67,54,0.1)', color: '#F44336', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+              onClick={() => { conflict?.run('replace'); setConflict(null); }}
+            >
+              Remplacer
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+function TargetChip({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="flex items-center gap-2"
+      style={{
+        padding: '7px 14px', borderRadius: 999, fontSize: 13, cursor: 'pointer',
+        fontWeight: checked ? 600 : 500,
+        border: `1px solid ${checked ? 'transparent' : 'var(--color-card-border)'}`,
+        background: checked ? 'var(--color-info-light)' : '#FFFFFF',
+        color: checked ? 'var(--color-info)' : 'var(--color-text-secondary)',
+      }}
+    >
+      <span style={{
+        width: 16, height: 16, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        border: `1px solid ${checked ? 'var(--color-info)' : 'var(--color-card-border)'}`,
+        background: checked ? 'var(--color-info)' : 'transparent', color: '#fff', fontSize: 11,
+      }}>{checked ? '✓' : ''}</span>
+      {label}
+    </button>
   );
 }
 

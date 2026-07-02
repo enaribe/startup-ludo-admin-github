@@ -20,6 +20,8 @@ interface AdminAccount {
   email: string;
   displayName: string;
   role: 'admin' | 'super_admin' | 'partner_admin';
+  /** Programmes gérés (multi). programId (unique) conservé pour rétrocompat. */
+  programIds?: string[] | null;
   programId: string | null;
   partnerId: string | null;
 }
@@ -47,14 +49,14 @@ export default function AdminsPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [programId, setProgramId] = useState('');
+  const [programIds, setProgramIds] = useState<string[]>([]);
   const [partnerId, setPartnerId] = useState('');
   const [creating, setCreating] = useState(false);
 
   // édition (super admin uniquement)
   const [editTarget, setEditTarget] = useState<AdminAccount | null>(null);
   const [editRole, setEditRole] = useState<NewAdminRole>('admin');
-  const [editProgramId, setEditProgramId] = useState('');
+  const [editProgramIds, setEditProgramIds] = useState<string[]>([]);
   const [editPartnerId, setEditPartnerId] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -99,14 +101,14 @@ export default function AdminsPage() {
     setEmail('');
     setPassword('');
     setDisplayName('');
-    setProgramId('');
+    setProgramIds([]);
     setPartnerId('');
   };
 
   const handleCreate = async () => {
     const wantsPartner = role === 'partner_admin';
-    if (!email.trim() || !password.trim() || !displayName.trim() || (wantsPartner ? !partnerId : !programId)) {
-      toast.error('Tous les champs sont requis.');
+    if (!email.trim() || !password.trim() || !displayName.trim() || (wantsPartner ? !partnerId : programIds.length === 0)) {
+      toast.error(wantsPartner ? 'Tous les champs sont requis.' : 'Renseignez les infos et sélectionnez au moins un programme.');
       return;
     }
     setCreating(true);
@@ -117,7 +119,7 @@ export default function AdminsPage() {
         body: JSON.stringify(
           wantsPartner
             ? { email, password, displayName, role: 'partner_admin', partnerId }
-            : { email, password, displayName, role: 'admin', programId }
+            : { email, password, displayName, role: 'admin', programIds }
         ),
       });
       const data = await res.json();
@@ -136,7 +138,7 @@ export default function AdminsPage() {
   const openEdit = (a: AdminAccount) => {
     setEditTarget(a);
     setEditRole(a.role === 'partner_admin' ? 'partner_admin' : 'admin');
-    setEditProgramId(a.programId ?? '');
+    setEditProgramIds(a.programIds ?? (a.programId ? [a.programId] : []));
     setEditPartnerId(a.partnerId ?? '');
     setEditPassword('');
   };
@@ -144,8 +146,8 @@ export default function AdminsPage() {
   const handleSave = async () => {
     if (!editTarget) return;
     const wantsPartner = editRole === 'partner_admin';
-    if (wantsPartner ? !editPartnerId : !editProgramId) {
-      toast.error(wantsPartner ? 'Choisissez un partenaire.' : 'Choisissez un programme.');
+    if (wantsPartner ? !editPartnerId : editProgramIds.length === 0) {
+      toast.error(wantsPartner ? 'Choisissez un partenaire.' : 'Sélectionnez au moins un programme.');
       return;
     }
     if (editPassword && editPassword.trim().length < 8) {
@@ -156,7 +158,7 @@ export default function AdminsPage() {
     try {
       const body: Record<string, unknown> = wantsPartner
         ? { uid: editTarget.uid, role: 'partner_admin', partnerId: editPartnerId }
-        : { uid: editTarget.uid, role: 'admin', programId: editProgramId };
+        : { uid: editTarget.uid, role: 'admin', programIds: editProgramIds };
       if (editPassword.trim()) body.password = editPassword.trim();
 
       const res = await fetch('/api/admins', {
@@ -196,8 +198,11 @@ export default function AdminsPage() {
     }
   };
 
-  // Programmes déjà assignés (pour éviter de les ré-attribuer par erreur — affichage indicatif).
-  const assignedProgramIds = new Set(admins.map((a) => a.programId).filter(Boolean) as string[]);
+  // Programmes déjà assignés à un admin (indicatif) : un programme = un seul admin.
+  const assignedProgramIds = new Set(
+    admins.flatMap((a) => a.programIds ?? (a.programId ? [a.programId] : []))
+  );
+  const adminProgramIds = (a: AdminAccount): string[] => a.programIds ?? (a.programId ? [a.programId] : []);
 
   if (authLoading || (canAccess && loading)) {
     return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
@@ -245,11 +250,17 @@ export default function AdminsPage() {
                   {a.role === 'super_admin' ? 'Super Admin' : a.role === 'partner_admin' ? 'Admin partenaire' : 'Admin programme'}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 mb-4" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                {a.role === 'partner_admin'
-                  ? <><Building2 size={13} color="#FFB347" />{partnerName(a.partnerId)}</>
-                  : <><Rocket size={13} color="#FFB347" />{a.role === 'super_admin' ? 'Accès complet' : programName(a.programId)}</>
-                }
+              <div className="flex items-start gap-1.5 mb-4" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                {a.role === 'partner_admin' ? (
+                  <><Building2 size={13} color="#FFB347" />{partnerName(a.partnerId)}</>
+                ) : a.role === 'super_admin' ? (
+                  <><Rocket size={13} color="#FFB347" />Accès complet</>
+                ) : (
+                  <>
+                    <Rocket size={13} color="#FFB347" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span>{adminProgramIds(a).map((id) => programName(id)).join(', ') || '—'}</span>
+                  </>
+                )}
               </div>
               {a.role !== 'super_admin' && (
                 <div className="flex items-center gap-2">
@@ -324,22 +335,20 @@ export default function AdminsPage() {
               </select>
             </Field>
           ) : (
-            <Field label="Programme assigné">
-              <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)}>
-                <option value="">— Choisir un programme —</option>
-                {programs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}{assignedProgramIds.has(p.id) ? ' (déjà assigné)' : ''}
-                  </option>
-                ))}
-              </select>
+            <Field label={`Programmes assignés${programIds.length ? ` (${programIds.length})` : ''}`}>
+              <ProgramMultiSelect
+                programs={programs}
+                selected={programIds}
+                onChange={setProgramIds}
+                assigned={assignedProgramIds}
+              />
             </Field>
           )}
 
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
             {role === 'partner_admin'
               ? 'L’admin partenaire gérera tous les programmes de ce partenaire et pourra déléguer des admins programme.'
-              : 'L’admin pourra se connecter avec cet email/mot de passe et ne gérera que ce programme.'}
+              : 'L’admin pourra se connecter avec cet email/mot de passe et gérera les programmes sélectionnés.'}
           </p>
           <button className="btn-primary" onClick={handleCreate} disabled={creating}>
             {creating ? 'Création...' : 'Créer le compte'}
@@ -380,15 +389,14 @@ export default function AdminsPage() {
               </select>
             </Field>
           ) : (
-            <Field label="Programme assigné">
-              <select className="input-field" value={editProgramId} onChange={(e) => setEditProgramId(e.target.value)}>
-                <option value="">— Choisir un programme —</option>
-                {programs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}{assignedProgramIds.has(p.id) && p.id !== editTarget?.programId ? ' (déjà assigné)' : ''}
-                  </option>
-                ))}
-              </select>
+            <Field label={`Programmes assignés${editProgramIds.length ? ` (${editProgramIds.length})` : ''}`}>
+              <ProgramMultiSelect
+                programs={programs}
+                selected={editProgramIds}
+                onChange={setEditProgramIds}
+                assigned={assignedProgramIds}
+                currentIds={editTarget ? adminProgramIds(editTarget) : []}
+              />
             </Field>
           )}
 
@@ -432,6 +440,61 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+/** Sélection multiple de programmes par cases à cocher. */
+function ProgramMultiSelect({
+  programs,
+  selected,
+  onChange,
+  assigned,
+  currentIds,
+}: {
+  programs: PartnerProgram[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  /** Programmes déjà pris par un autre admin (indicatif). */
+  assigned: Set<string>;
+  /** Programmes déjà gérés par l'admin en cours d'édition (ne pas les marquer « déjà assigné »). */
+  currentIds?: string[];
+}) {
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  const current = new Set(currentIds ?? []);
+
+  return (
+    <div
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 220, overflowY: 'auto',
+        border: '1px solid var(--color-card-border)', borderRadius: 10, padding: 6,
+      }}
+    >
+      {programs.length === 0 && (
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: 8 }}>Aucun programme disponible.</p>
+      )}
+      {programs.map((p) => {
+        const checked = selected.includes(p.id);
+        const takenByOther = assigned.has(p.id) && !current.has(p.id) && !checked;
+        return (
+          <label
+            key={p.id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8,
+              cursor: 'pointer', fontSize: 13,
+              background: checked ? 'var(--color-info-light)' : 'transparent',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            <input type="checkbox" checked={checked} onChange={() => toggle(p.id)} />
+            <span style={{ flex: 1 }}>{p.name}</span>
+            {takenByOther && (
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>déjà assigné</span>
+            )}
+          </label>
+        );
+      })}
     </div>
   );
 }

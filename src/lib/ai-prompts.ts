@@ -20,7 +20,8 @@ export type GenerationType =
   | 'sublevel_content_import'
   | 'achievements'
   | 'default_projects'
-  | 'edition_projects_import';
+  | 'edition_projects_import'
+  | 'personas';
 
 interface PromptConfig {
   systemPrompt: string;
@@ -561,6 +562,48 @@ REGLES:
       if (ctx?.editionName) parts.push(`Edition: ${ctx.editionName}`);
       if (ctx?.sectors) parts.push(`Secteurs de l'edition (pour aligner les secteurs des projets): ${ctx.sectors}`);
       parts.push(`\n=== TEXTE A ANALYSER ===\n${input}`);
+      return parts.join('\n');
+    },
+  },
+
+  personas: {
+    label: 'Personas',
+    placeholder: 'Ex: 4 personas d\'entrepreneurs pour ce programme agricole',
+    description: 'Genere des personas-personnages que les joueurs incarnent (nom, age, secteur, statut, jetons)',
+    systemPrompt: `${BASE_SYSTEM}
+
+Genere un tableau JSON de personas-personnages d'entrepreneurs que les joueurs vont INCARNER pendant le parcours. Chaque persona est un profil realiste et attachant. Format EXACT:
+[
+  {
+    "id": "slug-unique-en-minuscules",
+    "name": "Prenom (africain, moderne)",
+    "age": 27,
+    "description": "2-3 phrases : qui est ce persona, son activite, sa situation entrepreneuriale, ses defis",
+    "location": "Ville / region (contexte africain)",
+    "sector": "secteur en minuscules, aligne sur les secteurs du programme si fournis",
+    "status": "Idee | Informel | Formalise | En croissance",
+    "tokens": 100
+  }
+]
+REGLES:
+- "id": slug ASCII unique deduit du nom (ex: awa-thies)
+- "age": entier realiste (20-45)
+- "sector": choisis parmi les secteurs du programme fournis dans le contexte
+- "status": l'un des quatre statuts entrepreneuriaux exacts ci-dessus
+- "tokens": jetons de depart (50-200), coherents avec le statut (Idee=peu, En croissance=plus)
+- Varie les profils : genre, age, secteur, statut, region — pour une bonne diversite
+- Les personas doivent etre ancres dans le contexte du programme et realistes
+- Retourne UNIQUEMENT le tableau JSON, sans texte autour`,
+    buildUserPrompt: (input, ctx) => {
+      const parts: string[] = [];
+      if (ctx?.programName) parts.push(`Programme: ${ctx.programName}`);
+      if (ctx?.objective) parts.push(`Objectif pedagogique: ${ctx.objective}`);
+      if (ctx?.sectors) parts.push(`Secteurs du programme (pour aligner les personas): ${ctx.sectors}`);
+      if (ctx?.sourceText) {
+        const src = String(ctx.sourceText).slice(0, 40000);
+        parts.push(`\n=== BASE DE CONNAISSANCES (documents du programme) ===\nAppuie-toi sur ce contenu pour ancrer les personas dans la realite du programme.\n"""\n${src}\n"""`);
+      }
+      parts.push(`\nDemande: ${input || 'Genere 3 a 5 personas varies et coherents avec le programme.'}`);
       return parts.join('\n');
     },
   },

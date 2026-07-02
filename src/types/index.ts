@@ -274,13 +274,24 @@ export type FormFieldType =
   | 'date'
   | 'file';
 
+/** Groupe d'options pour les champs liste : un titre (grande liste) + ses sous-items. */
+export interface ProgramFormOptionGroup {
+  /** Titre du groupe (grand titre). Vide/absent = items sans en-tête. */
+  title?: string;
+  /** Sous-items sélectionnables de ce groupe. */
+  items: string[];
+}
+
 export interface ProgramFormField {
   id: string;
   type: FormFieldType;
   label: string;
   placeholder?: string;
   required: boolean;
+  /** Liste PLATE de tous les items sélectionnables (source de vérité pour sélection/filtres). */
   options?: string[];
+  /** Structure hiérarchique (titres + sous-items) pour l'affichage. Dérivée d'options. */
+  optionGroups?: ProgramFormOptionGroup[];
   min?: number;
   max?: number;
   maxLength?: number;
@@ -373,6 +384,12 @@ export interface ProgramProfile {
   enabled?: boolean;
   /** Brouillon non publié. */
   isDraft?: boolean;
+  /**
+   * Contenu de jeu propre à ce persona, par niveau (même structure que program.contentPacks).
+   * Un joueur qui incarne ce persona joue CE contenu au niveau concerné ; à défaut, le
+   * contenu commun du programme (program.contentPacks) est utilisé (remplace + fallback).
+   */
+  contentPacks?: ProgramContentPack[];
 }
 
 export interface PartnerProgram {

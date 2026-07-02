@@ -39,6 +39,16 @@ export const LEVEL_TIERS: { tier: ProgramLevelTier; label: string }[] = [
   { tier: 'development', label: 'Développement' },
 ];
 
+/** Contexte d'un persona ciblé par la génération (adapte le contenu à ce profil). */
+export interface ProfileContext {
+  name: string;
+  age?: number;
+  description?: string;
+  location?: string;
+  sector?: string;
+  status?: string;
+}
+
 /** Brief pédagogique du Studio, partagé pour piloter la génération. */
 export interface StudioBrief {
   objective: string;          // Sensibilisation | Qualification | Pré-incubation | Accélération
@@ -47,6 +57,8 @@ export interface StudioBrief {
   programName?: string;
   /** Texte concaténé des documents sources, utilisé comme base de connaissances. */
   sourceText?: string;
+  /** Si présent, le contenu est généré POUR ce persona (adapté à son profil). */
+  profileContext?: ProfileContext;
 }
 
 /**
@@ -90,6 +102,22 @@ function buildPrompt(brief: StudioBrief, levelLabel: string, mix: LevelMix): str
   lines.push(`Objectif pédagogique : ${brief.objective}.`);
   if (brief.topicsKeep.length) lines.push(`Sujets à valoriser : ${brief.topicsKeep.join(', ')}.`);
   if (brief.topicsAvoid.length) lines.push(`Sujets à éviter absolument : ${brief.topicsAvoid.join(', ')}.`);
+
+  // Persona ciblé : le contenu doit être adapté à ce profil précis.
+  const pc = brief.profileContext;
+  if (pc) {
+    const bits = [
+      pc.name && `${pc.name}`,
+      pc.age && `${pc.age} ans`,
+      pc.sector && `secteur ${pc.sector}`,
+      pc.status && `statut ${pc.status}`,
+      pc.location && `à ${pc.location}`,
+    ].filter(Boolean).join(', ');
+    lines.push('');
+    lines.push(`PERSONA CIBLE : ce contenu s'adresse à un joueur qui incarne ${bits}.`);
+    if (pc.description) lines.push(`Profil : ${pc.description}`);
+    lines.push('Adapte IMPÉRATIVEMENT le vocabulaire, les montants, les situations, les obstacles et les opportunités à ce profil précis (son secteur, son niveau de maturité, son contexte local).');
+  }
 
   // Base de connaissances : documents sources du programme.
   const source = (brief.sourceText ?? '').trim();
@@ -159,18 +187,22 @@ export function countContent(c: GeneratedContent): number {
   return c.quizzes.length + c.duels.length + c.fundings.length + c.opportunities.length + c.challengeEvents.length;
 }
 
+/** Mode d'écriture quand un pack existe déjà pour le niveau ciblé. */
+export type PublishMode = 'append' | 'replace';
+
 /**
- * Publie les niveaux générés dans les contentPacks d'un programme.
- * - Pour chaque niveau : si une partie a déjà ce levelTier, on y AJOUTE les cartes ;
- *   sinon on crée une nouvelle partie portant ce levelTier.
- * Retourne le programme mis à jour (à enregistrer via saveProgram).
+ * Publie les niveaux générés dans un TABLEAU de contentPacks (commun ou persona).
+ * - append : ajoute aux cartes existantes du pack du niveau.
+ * - replace : remplace le contenu du pack du niveau par les cartes générées.
+ * Retourne un NOUVEAU tableau de packs (immutable).
  */
-export function publishToProgram(
-  program: Omit<PartnerProgram, 'id'>,
+export function publishIntoPacks(
+  existingPacks: ProgramContentPack[] | undefined,
   programId: string,
   levels: GeneratedLevel[],
-): Omit<PartnerProgram, 'id'> {
-  const packs: ProgramContentPack[] = [...(program.contentPacks ?? [])];
+  mode: PublishMode = 'append',
+): ProgramContentPack[] {
+  const packs: ProgramContentPack[] = (existingPacks ?? []).map((p) => ({ ...p }));
 
   for (const lvl of levels) {
     if (countContent(lvl.content) === 0) continue;
@@ -188,13 +220,60 @@ export function publishToProgram(
       };
       packs.push(pack);
     }
-    // Append (ne remplace pas l'existant édité manuellement dans l'onglet Structure).
-    pack.quizzes = [...pack.quizzes, ...lvl.content.quizzes];
-    pack.duels = [...pack.duels, ...lvl.content.duels];
-    pack.fundings = [...pack.fundings, ...lvl.content.fundings];
-    pack.opportunities = [...pack.opportunities, ...lvl.content.opportunities];
-    pack.challengeEvents = [...pack.challengeEvents, ...lvl.content.challengeEvents];
+    const base = mode === 'replace'
+      ? { quizzes: [], duels: [], fundings: [], opportunities: [], challengeEvents: [] }
+      : pack;
+    pack.quizzes = [...base.quizzes, ...lvl.content.quizzes];
+    pack.duels = [...base.duels, ...lvl.content.duels];
+    pack.fundings = [...base.fundings, ...lvl.content.fundings];
+    pack.opportunities = [...base.opportunities, ...lvl.content.opportunities];
+    pack.challengeEvents = [...base.challengeEvents, ...lvl.content.challengeEvents];
   }
 
-  return { ...program, contentPacks: packs };
+  return packs;
+}
+
+/**
+ * Publie les niveaux générés dans les contentPacks COMMUNS d'un programme.
+ * (Wrapper de publishIntoPacks, conservé pour compatibilité.)
+ */
+export function publishToProgram(
+  program: Omit<PartnerProgram, 'id'>,
+  programId: string,
+  levels: GeneratedLevel[],
+  mode: PublishMode = 'append',
+): Omit<PartnerProgram, 'id'> {
+  return { ...program, contentPacks: publishIntoPacks(program.contentPacks, programId, levels, mode) };
+}
+
+/**
+ * Publie les niveaux générés dans les contentPacks d'un PERSONA précis du programme.
+ * Retourne le programme mis à jour (profiles[profileId].contentPacks alimenté).
+ */
+export function publishToProfile(
+  program: Omit<PartnerProgram, 'id'>,
+  programId: string,
+  profileId: string,
+  levels: GeneratedLevel[],
+  mode: PublishMode = 'append',
+): Omit<PartnerProgram, 'id'> {
+  const profiles = (program.profiles ?? []).map((p) =>
+    p.id === profileId
+      ? { ...p, contentPacks: publishIntoPacks(p.contentPacks, programId, levels, mode) }
+      : p
+  );
+  return { ...program, profiles };
+}
+
+/**
+ * Indique si une cible (commun ou persona) a DÉJÀ du contenu pour au moins un des
+ * niveaux à générer — pour proposer Ajouter / Remplacer / Annuler.
+ */
+export function targetHasContentForLevels(
+  packs: ProgramContentPack[] | undefined,
+  levelTiers: ProgramLevelTier[],
+): boolean {
+  return (packs ?? []).some(
+    (p) => p.levelTier && levelTiers.includes(p.levelTier) && countContent(p) > 0
+  );
 }

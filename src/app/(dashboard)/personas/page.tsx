@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Download, Pencil, Trash2, User } from 'lucide-react';
-import { getScopedPrograms, getProgram, saveProgram, getEnrollmentsByProgram } from '@/lib/firestore-service';
+import { Plus, Download, Pencil, Trash2, User, Sparkles } from 'lucide-react';
+import { getScopedPrograms, getProgram, saveProgram, getEnrollmentsByProgram, getSourceDocsText } from '@/lib/firestore-service';
 import { generateId } from '@/lib/utils';
 import type { PartnerProgram, ProgramProfile, ProgramEnrollment } from '@/types';
 import { useAuth } from '@/lib/auth-context';
@@ -30,6 +30,9 @@ export default function PersonasPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<ProgramProfile | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProgramProfile | null>(null);
+  // Génération IA
+  const [generating, setGenerating] = useState(false);
+  const [confirmReplace, setConfirmReplace] = useState<ProgramProfile[] | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -103,6 +106,74 @@ export default function PersonasPage() {
     }
   };
 
+  // Génère 3-5 personas via IA à partir du contexte du programme.
+  const handleGenerate = async () => {
+    if (!program) return;
+    setGenerating(true);
+    try {
+      const sourceText = await getSourceDocsText(programId).catch(() => '');
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'personas',
+          prompt: 'Génère 3 à 5 personas variés et cohérents avec ce programme.',
+          context: {
+            programName: program.name,
+            objective: program.contentSource?.objective ?? '',
+            sectors: [program.audience?.sector, ...(program.eligibility?.sectors ?? []), ...(program.tags ?? [])]
+              .filter(Boolean).join(', '),
+            sourceText,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'Génération impossible');
+
+      const raw = Array.isArray(data.data) ? data.data : [];
+      const generated: ProgramProfile[] = raw.map((r: Record<string, unknown>) => ({
+        id: `profile_${generateId()}`,
+        name: String(r.name ?? '').trim(),
+        age: Number(r.age) || 25,
+        description: String(r.description ?? '').trim(),
+        location: String(r.location ?? '').trim(),
+        sector: String(r.sector ?? '').trim(),
+        avatarUrl: '',
+        status: String(r.status ?? '').trim(),
+        tokens: Number(r.tokens) || 0,
+        enabled: true,
+        isDraft: false,
+      })).filter((p: ProgramProfile) => p.name);
+
+      if (generated.length === 0) {
+        toast.error('Aucun persona généré. Réessayez.');
+        return;
+      }
+
+      // Mode « remplace » : confirmation si des personas existent déjà.
+      if (profiles.length > 0) {
+        setConfirmReplace(generated);
+      } else {
+        await applyGenerated(generated);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erreur de génération');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const applyGenerated = async (generated: ProgramProfile[]) => {
+    try {
+      await persist(generated);
+      toast.success(`${generated.length} persona${generated.length !== 1 ? 's' : ''} généré${generated.length !== 1 ? 's' : ''}`);
+    } catch {
+      toast.error('Erreur lors de l’enregistrement');
+    } finally {
+      setConfirmReplace(null);
+    }
+  };
+
   // KPI par persona depuis les enrollments.
   const kpi = useCallback((profileId: string) => {
     const players = enrollments.filter((e) => e.profileId === profileId);
@@ -136,6 +207,15 @@ export default function PersonasPage() {
           )}
           <button className="btn-secondary flex items-center gap-2" disabled title="Bientôt" style={{ fontSize: 12, opacity: 0.5 }}>
             <Download size={14} /> Importer depuis CONCREE
+          </button>
+          <button
+            className="btn-secondary flex items-center gap-2"
+            onClick={handleGenerate}
+            disabled={generating}
+            title="Générer des personas avec l'IA à partir du programme"
+            style={{ fontSize: 13, borderColor: 'rgba(124,108,255,0.35)', color: '#9B8CFF' }}
+          >
+            <Sparkles size={15} /> {generating ? 'Génération…' : 'Générer (IA)'}
           </button>
           <button className="btn-primary flex items-center gap-2" onClick={() => setEditing(emptyProfile())}>
             <Plus size={16} /> Créer un persona
@@ -240,6 +320,16 @@ export default function PersonasPage() {
         title="Supprimer le persona"
         message={`Supprimer "${deleteTarget?.name}" ? Action irréversible.`}
         confirmLabel="Supprimer"
+        danger
+      />
+
+      <ConfirmDialog
+        open={!!confirmReplace}
+        onClose={() => setConfirmReplace(null)}
+        onConfirm={() => confirmReplace && applyGenerated(confirmReplace)}
+        title="Remplacer les personas ?"
+        message={`Les ${profiles.length} persona${profiles.length !== 1 ? 's' : ''} actuel${profiles.length !== 1 ? 's' : ''} seront remplacés par ${confirmReplace?.length ?? 0} persona${(confirmReplace?.length ?? 0) !== 1 ? 's' : ''} généré${(confirmReplace?.length ?? 0) !== 1 ? 's' : ''}. Action irréversible.`}
+        confirmLabel="Remplacer"
         danger
       />
     </div>
