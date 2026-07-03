@@ -5,11 +5,12 @@ import { useSearchParams } from 'next/navigation';
 import {
   Type, AlignLeft, Phone, Mail, ChevronDown, Layers, Target, Check, SlidersHorizontal, Calendar, Upload, Trash2, GripVertical,
 } from 'lucide-react';
-import { getScopedPrograms, getProgram, saveProgram } from '@/lib/firestore-service';
+import { getProgram, saveProgram } from '@/lib/firestore-service';
 import { defaultEndForm } from '@/lib/end-form-defaults';
 import { generateId } from '@/lib/utils';
-import type { PartnerProgram, ProgramEndForm, ProgramFormField, ProgramFormOptionGroup, FormFieldType } from '@/types';
+import type { ProgramEndForm, ProgramFormField, ProgramFormOptionGroup, FormFieldType } from '@/types';
 import { useAuth } from '@/lib/auth-context';
+import { useCurrentProgram } from '@/lib/program-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -116,49 +117,50 @@ export default function EndFormPageWrapper() {
 }
 
 function EndFormPage() {
-  const { isSuperAdmin, admin } = useAuth();
+  const { isSuperAdmin } = useAuth();
+  const { programs, currentProgramId: programId, setCurrentProgramId, loading: programsLoading } = useCurrentProgram();
   const searchParams = useSearchParams();
-  const [programs, setPrograms] = useState<PartnerProgram[]>([]);
-  const [programId, setProgramId] = useState<string>('');
   const [form, setForm] = useState<ProgramEndForm>({ fields: [], consents: [] });
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
 
-  // Charge les programmes accessibles (super admin = tous, admin = les siens).
+  // Pré-sélection via ?program= (depuis l'onglet Configuration) : aligne le contexte
+  // si le programme de l'URL est accessible.
   useEffect(() => {
-    (async () => {
-      try {
-        const list = await getScopedPrograms(admin);
-        setPrograms(list);
-        // Pré-sélection via ?program= (depuis l'onglet Configuration), sinon le premier.
-        const fromUrl = searchParams.get('program');
-        const initial = fromUrl && list.some((p) => p.id === fromUrl) ? fromUrl : list[0]?.id;
-        if (initial) setProgramId(initial);
-      } catch {
-        toast.error('Erreur de chargement');
-      } finally {
-        setLoading(false);
-      }
-    })();
+    if (programsLoading) return;
+    const fromUrl = searchParams.get('program');
+    if (fromUrl && fromUrl !== programId && programs.some((p) => p.id === fromUrl)) {
+      setCurrentProgramId(fromUrl);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperAdmin, admin?.uid]);
+  }, [programsLoading, programs, searchParams]);
 
   // Charge le formulaire du programme sélectionné.
   const loadForm = useCallback(async (id: string) => {
     if (!id) return;
-    const prog = await getProgram(id);
-    if (prog?.endForm && (prog.endForm.fields?.length || prog.endForm.consents?.length)) {
-      setForm(prog.endForm);
-    } else {
-      const partnerShort = prog?.name ?? undefined;
-      setForm(defaultEndForm(partnerShort));
+    setLoading(true);
+    try {
+      const prog = await getProgram(id);
+      if (prog?.endForm && (prog.endForm.fields?.length || prog.endForm.consents?.length)) {
+        setForm(prog.endForm);
+      } else {
+        const partnerShort = prog?.name ?? undefined;
+        setForm(defaultEndForm(partnerShort));
+      }
+      setSelectedFieldId(null);
+    } catch {
+      toast.error('Erreur de chargement');
+    } finally {
+      setLoading(false);
     }
-    setSelectedFieldId(null);
   }, []);
 
-  useEffect(() => { if (programId) loadForm(programId); }, [programId, loadForm]);
+  useEffect(() => {
+    if (programId) loadForm(programId);
+    else if (!programsLoading) setLoading(false);
+  }, [programId, programsLoading, loadForm]);
 
   const selectedField = form.fields.find((f) => f.id === selectedFieldId) ?? null;
 
@@ -220,11 +222,6 @@ function EndFormPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {isSuperAdmin && programs.length > 1 && (
-            <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)} style={{ maxWidth: 220 }}>
-              {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
           <button className="btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? 'Enregistrement...' : 'Enregistrer'}
           </button>

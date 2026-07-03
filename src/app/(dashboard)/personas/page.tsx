@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, Download, Pencil, Trash2, User, Sparkles } from 'lucide-react';
-import { getScopedPrograms, getProgram, saveProgram, getEnrollmentsByProgram, getSourceDocsText } from '@/lib/firestore-service';
+import { getProgram, saveProgram, getEnrollmentsByProgram, getSourceDocsText } from '@/lib/firestore-service';
 import { generateId } from '@/lib/utils';
-import type { PartnerProgram, ProgramProfile, ProgramEnrollment } from '@/types';
+import type { ProgramProfile, ProgramEnrollment } from '@/types';
 import { useAuth } from '@/lib/auth-context';
+import { useCurrentProgram } from '@/lib/program-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -20,9 +21,8 @@ function emptyProfile(): ProgramProfile {
 }
 
 export default function PersonasPage() {
-  const { isSuperAdmin, admin } = useAuth();
-  const [programs, setPrograms] = useState<PartnerProgram[]>([]);
-  const [programId, setProgramId] = useState('');
+  const { isSuperAdmin } = useAuth();
+  const { programs, currentProgramId: programId, currentProgram: program, loading: programsLoading } = useCurrentProgram();
   const [profiles, setProfiles] = useState<ProgramProfile[]>([]);
   const [enrollments, setEnrollments] = useState<ProgramEnrollment[]>([]);
   const [totalLevels, setTotalLevels] = useState(1);
@@ -33,20 +33,6 @@ export default function PersonasPage() {
   // Génération IA
   const [generating, setGenerating] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState<ProgramProfile[] | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await getScopedPrograms(admin);
-        setPrograms(list);
-        if (list.length > 0) setProgramId(list[0].id);
-        else setLoading(false);
-      } catch {
-        toast.error('Erreur de chargement');
-        setLoading(false);
-      }
-    })();
-  }, [isSuperAdmin, admin?.uid]);
 
   const load = useCallback(async (id: string) => {
     if (!id) return;
@@ -61,12 +47,14 @@ export default function PersonasPage() {
     }
   }, []);
 
-  useEffect(() => { if (programId) load(programId); }, [programId, load]);
-
-  const program = programs.find((p) => p.id === programId);
+  useEffect(() => {
+    if (programId) load(programId);
+    else if (!programsLoading) setLoading(false);
+  }, [programId, programsLoading, load]);
 
   // Persiste la liste de profils sur le programme.
   const persist = async (next: ProgramProfile[]) => {
+    if (!programId) return;
     const prog = await getProgram(programId);
     if (!prog) return;
     const { id: _id, ...rest } = prog;
@@ -78,7 +66,7 @@ export default function PersonasPage() {
   const toggleEnabled = async (p: ProgramProfile) => {
     const next = profiles.map((x) => (x.id === p.id ? { ...x, enabled: !(x.enabled !== false) } : x));
     setProfiles(next);
-    try { await persist(next); } catch { toast.error('Erreur'); load(programId); }
+    try { await persist(next); } catch { toast.error('Erreur'); if (programId) load(programId); }
   };
 
   const saveProfile = async (p: ProgramProfile) => {
@@ -108,7 +96,7 @@ export default function PersonasPage() {
 
   // Génère 3-5 personas via IA à partir du contexte du programme.
   const handleGenerate = async () => {
-    if (!program) return;
+    if (!program || !programId) return;
     setGenerating(true);
     try {
       const sourceText = await getSourceDocsText(programId).catch(() => '');
@@ -203,11 +191,6 @@ export default function PersonasPage() {
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>Gérez la bibliothèque de profils incarnés par vos joueurs</p>
         </div>
         <div className="flex items-center gap-3">
-          {isSuperAdmin && programs.length > 1 && (
-            <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)} style={{ maxWidth: 200 }}>
-              {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
           <button className="btn-secondary flex items-center gap-2" disabled title="Bientôt" style={{ fontSize: 12, opacity: 0.5 }}>
             <Download size={14} /> Importer depuis CONCREE
           </button>
@@ -309,7 +292,7 @@ export default function PersonasPage() {
         <Modal open onClose={() => setEditing(null)} title={profiles.some((x) => x.id === editing.id) ? 'Modifier le persona' : 'Nouveau persona'}>
           <ProfileForm
             initial={editing}
-            storageId={programId}
+            storageId={programId ?? ''}
             onCancel={() => setEditing(null)}
             onSave={saveProfile}
           />

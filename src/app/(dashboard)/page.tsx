@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Users, Target, UserCheck, Star, TrendingUp, TrendingDown, ExternalLink, Zap, Shield, Trophy } from 'lucide-react';
-import { getScopedPrograms, getPartners, getEnrollmentsByProgram, getSessionsByProgram } from '@/lib/firestore-service';
-import type { PartnerProgram, ProgramPartner, ProgramEnrollment, ProgramSessionDoc, EntrepreneurProfile } from '@/types';
+import { getPartners, getEnrollmentsByProgram, getSessionsByProgram } from '@/lib/firestore-service';
+import type { ProgramPartner, ProgramEnrollment, ProgramSessionDoc, EntrepreneurProfile } from '@/types';
 import { useAuth } from '@/lib/auth-context';
+import { useCurrentProgram } from '@/lib/program-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import SuperAdminHome from '@/components/dashboard/SuperAdminHome';
 
@@ -37,9 +38,8 @@ export default function DashboardPage() {
 
 function ProgramDashboard() {
   const { isSuperAdmin, admin } = useAuth();
-  const [programs, setPrograms] = useState<PartnerProgram[]>([]);
+  const { programs, currentProgramId: programId, loading: programsLoading } = useCurrentProgram();
   const [partners, setPartners] = useState<ProgramPartner[]>([]);
-  const [programId, setProgramId] = useState('');
   const [enrollments, setEnrollments] = useState<ProgramEnrollment[]>([]);
   const [, setSessions] = useState<ProgramSessionDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,18 +48,12 @@ function ProgramDashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const [list, p] = await Promise.all([
-          getScopedPrograms(admin),
-          getPartners(),
-        ]);
-        setPrograms(list);
-        setPartners(p);
-        if (list.length > 0) setProgramId(list[0].id);
-      } finally {
-        setLoading(false);
+        setPartners(await getPartners());
+      } catch {
+        // silencieux
       }
     })();
-  }, [isSuperAdmin, admin?.uid]);
+  }, []);
 
   const loadData = useCallback(async (id: string) => {
     if (!id) return;
@@ -73,7 +67,10 @@ function ProgramDashboard() {
     }
   }, []);
 
-  useEffect(() => { if (programId) loadData(programId); }, [programId, loadData]);
+  useEffect(() => {
+    if (programId) loadData(programId);
+    if (!programsLoading) setLoading(false);
+  }, [programId, programsLoading, loadData]);
 
   const program = programs.find((p) => p.id === programId);
   const partnerName = (id?: string | null) => partners.find((x) => x.id === id)?.name ?? '';
@@ -172,11 +169,6 @@ function ProgramDashboard() {
             Voici l’état de votre parcours {program?.name ?? ''}
           </p>
         </div>
-        {isSuperAdmin && programs.length > 1 && (
-          <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)} style={{ maxWidth: 220 }}>
-            {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        )}
       </div>
 
       {/* Bandeau programme */}

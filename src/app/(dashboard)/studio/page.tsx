@@ -3,9 +3,10 @@
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, Search, Star, Check, Trash2, FileText, Settings, Wand2, X, Eye } from 'lucide-react';
-import { getScopedPrograms, getProgram, saveProgram, getSourceDocsText } from '@/lib/firestore-service';
+import { getProgram, saveProgram, getSourceDocsText } from '@/lib/firestore-service';
 import type { PartnerProgram, ProgramProfile, Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import { useAuth } from '@/lib/auth-context';
+import { useCurrentProgram } from '@/lib/program-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
@@ -48,13 +49,13 @@ export default function StudioPageWrapper() {
 }
 
 function StudioPage() {
-  const { isSuperAdmin, admin } = useAuth();
+  const { isSuperAdmin } = useAuth();
+  const { programs, currentProgramId, setCurrentProgramId, loading: programsLoading } = useCurrentProgram();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [programs, setPrograms] = useState<PartnerProgram[]>([]);
-  const [programId, setProgramId] = useState('');
-  const [loading, setLoading] = useState(true);
+  const programId = currentProgramId ?? '';
+  const loading = programsLoading;
   const [saving, setSaving] = useState(false);
 
   // Données éditables du programme courant (contentPacks).
@@ -80,19 +81,15 @@ function StudioPage() {
   // Dialogue de résolution de conflit (cibles ayant déjà du contenu au niveau généré).
   const [conflict, setConflict] = useState<{ names: string[]; run: (mode: 'append' | 'replace') => void } | null>(null);
 
-  // ===== Chargement des programmes =====
+  // ===== Alignement sur le param URL ?program= (deep-link) =====
+  // Le programme courant vient du contexte global (header) ; un lien direct avec
+  // ?program=<id> aligne la sélection globale sur ce programme s'il est accessible.
   useEffect(() => {
-    (async () => {
-      try {
-        const list = await getScopedPrograms(admin);
-        setPrograms(list);
-        const fromUrl = searchParams.get('program');
-        const initial = fromUrl && list.some((p) => p.id === fromUrl) ? fromUrl : list[0]?.id ?? '';
-        setProgramId(initial);
-      } finally { setLoading(false); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperAdmin, admin?.uid]);
+    const fromUrl = searchParams.get('program');
+    if (fromUrl && programs.some((p) => p.id === fromUrl) && fromUrl !== currentProgramId) {
+      setCurrentProgramId(fromUrl);
+    }
+  }, [searchParams, programs, currentProgramId, setCurrentProgramId]);
 
   // ===== Chargement du programme sélectionné =====
   useEffect(() => {
@@ -312,16 +309,7 @@ function StudioPage() {
         <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-3">
             <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>Studio de contenu</h1>
-            {/* Changement de programme : visible seulement si plusieurs (sinon le header global suffit). */}
-            {programs.length > 1 && (
-              <select
-                value={programId}
-                onChange={(e) => { setProgramId(e.target.value); setSelectedId(null); }}
-                style={{ fontSize: 13, color: 'var(--color-text-secondary)', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, outline: 'none' }}
-              >
-                {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            )}
+            {/* Le programme courant est piloté par le sélecteur global du header. */}
           </div>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>
             Visualisez, éditez et générez les cartes du parcours avec l’assistance IA

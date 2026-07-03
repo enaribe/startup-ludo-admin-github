@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { ProgramProvider } from '@/lib/program-context';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -29,7 +30,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!admin) return null;
 
-  return <DashboardLayout>{children}</DashboardLayout>;
+  return (
+    <ProgramProvider>
+      <DashboardLayout>{children}</DashboardLayout>
+    </ProgramProvider>
+  );
 }
 
 export default function DashboardRootLayout({ children }: { children: React.ReactNode }) {

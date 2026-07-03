@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Download, Target, Search, X, Share2 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { getScopedPrograms, getLeadsByProgram, updateLeadStatus } from '@/lib/firestore-service';
-import type { PartnerProgram, ProgramEnrollment, ProgramLeadStatus } from '@/types';
-import { useAuth } from '@/lib/auth-context';
+import { getLeadsByProgram, updateLeadStatus } from '@/lib/firestore-service';
+import type { ProgramEnrollment, ProgramLeadStatus } from '@/types';
+import { useCurrentProgram } from '@/lib/program-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
@@ -15,9 +15,7 @@ import toast from 'react-hot-toast';
 type FilterKey = 'all' | 'highIntent' | 'notContacted';
 
 export default function LeadsPage() {
-  const { isSuperAdmin, admin } = useAuth();
-  const [programs, setPrograms] = useState<PartnerProgram[]>([]);
-  const [programId, setProgramId] = useState('');
+  const { programs, currentProgramId: programId, currentProgram, loading: programsLoading } = useCurrentProgram();
   const [leads, setLeads] = useState<ProgramEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -29,20 +27,6 @@ export default function LeadsPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await getScopedPrograms(admin);
-        setPrograms(list);
-        if (list.length > 0) setProgramId(list[0].id);
-        else setLoading(false);
-      } catch {
-        toast.error('Erreur de chargement');
-        setLoading(false);
-      }
-    })();
-  }, [isSuperAdmin, admin?.uid]);
 
   const loadLeads = useCallback(async (id: string) => {
     if (!id) return;
@@ -59,13 +43,13 @@ export default function LeadsPage() {
 
   useEffect(() => {
     if (programId) loadLeads(programId);
+    else if (!programsLoading) setLoading(false);
     // Reset des filtres quand on change de programme (les champs custom diffèrent).
     setFormFilters({});
     setSearch('');
     setFilter('all');
-  }, [programId, loadLeads]);
+  }, [programId, programsLoading, loadLeads]);
 
-  const currentProgram = programs.find((p) => p.id === programId);
   const programName = currentProgram?.name ?? '';
 
   // Champs du formulaire filtrables : ceux à choix fermé (valeur exacte).
@@ -132,7 +116,7 @@ export default function LeadsPage() {
       await updateLeadStatus(lead.id, status);
     } catch {
       toast.error('Erreur de mise à jour');
-      loadLeads(programId);
+      if (programId) loadLeads(programId);
     }
   };
 
@@ -217,7 +201,7 @@ export default function LeadsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `leads-${programId}.csv`;
+    a.download = `leads-${programId ?? 'export'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -239,11 +223,6 @@ export default function LeadsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {isSuperAdmin && programs.length > 1 && (
-            <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)} style={{ maxWidth: 220 }}>
-              {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
           <button className="btn-secondary flex items-center gap-2" onClick={openShare} disabled={!programId}>
             <Share2 size={16} /> Partager
           </button>
@@ -371,7 +350,7 @@ export default function LeadsPage() {
       {selectedLead && (
         <LeadDetail
           lead={selectedLead}
-          programId={programId}
+          programId={programId ?? ''}
           fieldLabels={fieldLabels}
           consentLabels={consentLabels}
           onClose={() => setSelectedLead(null)}

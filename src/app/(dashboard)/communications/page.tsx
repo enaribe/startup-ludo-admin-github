@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Send, MessageSquare, Bell, Mail, Smartphone, Users } from 'lucide-react';
-import { getScopedPrograms, getEnrollmentsByProgram } from '@/lib/firestore-service';
-import type { PartnerProgram, ProgramEnrollment } from '@/types';
-import { useAuth } from '@/lib/auth-context';
+import { getEnrollmentsByProgram } from '@/lib/firestore-service';
+import type { ProgramEnrollment } from '@/types';
+import { useCurrentProgram } from '@/lib/program-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -18,9 +18,7 @@ const CHANNELS: { key: Channel; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function CommunicationsPage() {
-  const { isSuperAdmin, admin } = useAuth();
-  const [programs, setPrograms] = useState<PartnerProgram[]>([]);
-  const [programId, setProgramId] = useState('');
+  const { programs, currentProgramId: programId, loading: programsLoading } = useCurrentProgram();
   const [enrollments, setEnrollments] = useState<ProgramEnrollment[]>([]);
   const [totalLevels, setTotalLevels] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -30,17 +28,6 @@ export default function CommunicationsPage() {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await getScopedPrograms(admin);
-        setPrograms(list);
-        if (list.length > 0) setProgramId(list[0].id);
-        else setLoading(false);
-      } catch { setLoading(false); }
-    })();
-  }, [isSuperAdmin, admin?.uid]);
 
   const load = useCallback(async (id: string) => {
     if (!id) return;
@@ -52,7 +39,10 @@ export default function CommunicationsPage() {
     } finally { setLoading(false); }
   }, [programs]);
 
-  useEffect(() => { if (programId) load(programId); }, [programId, load]);
+  useEffect(() => {
+    if (programId) load(programId);
+    else if (!programsLoading) setLoading(false);
+  }, [programId, programsLoading, load]);
 
   const audienceCount = useMemo(() => {
     switch (audience) {
@@ -84,11 +74,6 @@ export default function CommunicationsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>Communications</h1>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>Envoyez un message aux joueurs de votre parcours</p>
         </div>
-        {isSuperAdmin && programs.length > 1 && (
-          <select className="input-field" value={programId} onChange={(e) => setProgramId(e.target.value)} style={{ maxWidth: 200 }}>
-            {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        )}
       </div>
 
       <div className="glass-card p-6">
