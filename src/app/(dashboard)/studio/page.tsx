@@ -72,8 +72,15 @@ function StudioPage() {
 
   // Panneau de génération IA
   const [showGen, setShowGen] = useState(false);
-  const [mix, setMix] = useState<Record<string, number[]>>(() =>
-    Object.fromEntries(GEN_TYPES.map((t) => [t.key, [8, 7, 5, 4]])));
+  // Mix par défaut : mêmes quantités POUR CHAQUE niveau.
+  // Par niveau : 15 opportunités, 10 challenges, 10 financements, 40 quiz, 10 duels.
+  const [mix, setMix] = useState<Record<string, number[]>>(() => ({
+    opportunity: [15, 15, 15, 15],
+    challenge:   [10, 10, 10, 10],
+    funding:     [10, 10, 10, 10],
+    quiz:        [40, 40, 40, 40],
+    duel:        [10, 10, 10, 10],
+  }));
   const [generating, setGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState(0);
   // Cibles de génération : 'common' + un id par persona. Défaut : commun coché.
