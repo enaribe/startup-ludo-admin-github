@@ -59,6 +59,7 @@ const NAV_SECTIONS: NavSection[] = [
     superAdminOnly: true,
     items: [
       { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
+      { label: 'Statistiques', href: '/app-stats', icon: <BarChart3 size={18} /> },
     ],
   },
   {

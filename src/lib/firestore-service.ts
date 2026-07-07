@@ -422,6 +422,101 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
+// ===== GLOBAL STATS (super admin) =====
+
+export interface GlobalStats {
+  totalUsers: number;
+  totalGames: number;
+  totalPrograms: number;
+  totalPartners: number;
+  totalEnrollments: number;
+  formsSubmitted: number;
+  activeUsers7d: number;
+  activeUsers30d: number;
+  programSessions: number;
+  conversionRate: number; // % d'inscriptions ayant soumis le formulaire
+  /** Inscriptions par jour (30 derniers jours) pour le graphe d'évolution. */
+  enrollmentTimeline: { label: string; count: number }[];
+  /** Top programmes par nombre d'inscriptions. */
+  topPrograms: { name: string; count: number }[];
+}
+
+/**
+ * Statistiques GLOBALES de l'application (toutes structures confondues).
+ * Réservé au super admin. Counts efficaces via getCountFromServer + agrégations
+ * sur les inscriptions/sessions programme pour l'engagement et l'évolution.
+ */
+export async function getGlobalStats(): Promise<GlobalStats> {
+  const [
+    usersCount,
+    gamesCount,
+    programSessionsCount,
+    programs,
+    partners,
+    enrollmentsSnap,
+  ] = await Promise.all([
+    getCountFromServer(collection(firestore, COLLECTIONS.users)),
+    getCountFromServer(collection(firestore, COLLECTIONS.gameSessions)),
+    getCountFromServer(collection(firestore, COLLECTIONS.programSessions)),
+    getPrograms(),
+    getPartners(),
+    getDocs(collection(firestore, COLLECTIONS.programEnrollments)),
+  ]);
+
+  const enrollments = enrollmentsSnap.docs.map((d) => d.data() as ProgramEnrollment);
+  const totalEnrollments = enrollments.length;
+  const formsSubmitted = enrollments.filter((e) => e.formData != null).length;
+  const conversionRate =
+    totalEnrollments > 0 ? Math.round((formsSubmitted / totalEnrollments) * 100) : 0;
+
+  // Joueurs actifs : basés sur lastPlayedAt (dernière partie de programme jouée).
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const active = (windowDays: number) => {
+    const cutoff = now - windowDays * DAY;
+    const ids = new Set<string>();
+    enrollments.forEach((e) => {
+      if (e.lastPlayedAt != null && e.lastPlayedAt >= cutoff) ids.add(e.userId);
+    });
+    return ids.size;
+  };
+
+  // Évolution des inscriptions sur 30 jours.
+  const enrollmentTimeline: { label: string; count: number }[] = [];
+  for (let i = 29; i >= 0; i -= 1) {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - i);
+    const startMs = start.getTime();
+    const endMs = startMs + DAY;
+    const count = enrollments.filter((e) => e.enrolledAt >= startMs && e.enrolledAt < endMs).length;
+    enrollmentTimeline.push({ label: `${start.getDate()}/${start.getMonth() + 1}`, count });
+  }
+
+  // Top programmes par nombre d'inscriptions.
+  const byProgram = new Map<string, number>();
+  enrollments.forEach((e) => byProgram.set(e.programId, (byProgram.get(e.programId) ?? 0) + 1));
+  const topPrograms = programs
+    .map((p) => ({ name: p.name, count: byProgram.get(p.id) ?? 0 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return {
+    totalUsers: usersCount.data().count,
+    totalGames: gamesCount.data().count,
+    totalPrograms: programs.length,
+    totalPartners: partners.length,
+    totalEnrollments,
+    formsSubmitted,
+    activeUsers7d: active(7),
+    activeUsers30d: active(30),
+    programSessions: programSessionsCount.data().count,
+    conversionRate,
+    enrollmentTimeline,
+    topPrograms,
+  };
+}
+
 // ===== USERS (read-only for admin) =====
 
 export async function getUsers(maxCount = 50): Promise<DocumentData[]> {
