@@ -106,6 +106,8 @@ export interface EditionData {
   startupIdeas?: StartupIdea[];
   defaultProjects?: DefaultProject[];
   enabled: boolean;
+  /** Traductions des métadonnées de l'édition (nom / description). FR = racine. */
+  translations?: Record<string, { name?: string; description?: string }>;
   updatedAt?: number;
 }
 

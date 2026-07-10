@@ -42,8 +42,9 @@ Règles STRICTES :
 - Traduis "question", "options" (chaque option), "explanation", "title", "description", "name", "target", "mission".
 - Pour "options" : garde le même ordre et le même nombre d'éléments.
 - Ne traduis PAS les ids ni les "sector", ne change AUCUN nombre.
-- Réponds avec ce format JSON exact :
+- Réponds avec ce format JSON exact (n'inclus QUE les clés présentes dans le contenu fourni) :
 {
+  "edition": {"name": "...", "description": "..."},
   "quizzes": [{"id": "...", "question": "...", "options": ["...","..."], "explanation": "..."}],
   "duels": [{"id": "...", "question": "...", "options": ["...","...","..."]}],
   "fundings": [{"id": "...", "title": "...", "description": "..."}],

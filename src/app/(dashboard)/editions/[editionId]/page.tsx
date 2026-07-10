@@ -280,6 +280,21 @@ Pour les projets par défaut, chaque projet doit avoir :
   // ===== Helpers d'édition multilingue (FR = racine, EN = translations.en) =====
   const isEN = editLang === 'en';
 
+  // --- Métadonnées de l'édition : name / description ---
+  const edName = isEN ? data.translations?.en?.name ?? '' : data.name;
+  const edDescription = isEN ? data.translations?.en?.description ?? '' : data.description;
+  const setEdMeta = (field: 'name' | 'description', value: string) => {
+    if (isEN) {
+      setData((prev) => ({
+        ...prev,
+        translations: { ...(prev.translations ?? {}), en: { ...(prev.translations?.en ?? {}), [field]: value } },
+      }));
+    } else {
+      updateField(field, value);
+      if (field === 'name' && isNew) setNewId(slugify(value));
+    }
+  };
+
   // --- Quiz : question / options[] / explanation ---
   const quizQuestion = (q: Quiz) => (isEN ? q.translations?.en?.question ?? '' : q.question);
   const quizOptions = (q: Quiz): string[] => (isEN ? (q.translations?.en?.options ?? q.options.map(() => '')) : q.options);
@@ -384,6 +399,46 @@ Pour les projets par défaut, chaque projet doit avoir :
       toast.success(section
         ? `Traduction anglaise générée pour la section « ${SECTION_LABELS[section]} ».`
         : 'Traduction anglaise générée pour toute l’édition.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur de traduction');
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  // ===== Traduction des métadonnées de l'édition (onglet Général) =====
+  /** Traduit le nom et la description de l'édition vers `targetLang` (stockés dans translations). */
+  async function translateGeneral(targetLang = 'en') {
+    if (!data.name && !data.description) {
+      toast.error('Renseignez d’abord le nom et la description.');
+      return;
+    }
+    setTranslating(true);
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetLang,
+          items: { edition: { name: data.name, description: data.description } },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Traduction impossible');
+      const ed = json.translations?.edition as { name?: string; description?: string } | undefined;
+      if (!ed) throw new Error('Réponse de traduction invalide');
+      setData((prev) => ({
+        ...prev,
+        translations: {
+          ...(prev.translations ?? {}),
+          [targetLang]: {
+            ...(prev.translations?.[targetLang] ?? {}),
+            name: ed.name ?? '',
+            description: ed.description ?? '',
+          },
+        },
+      }));
+      toast.success('Traduction anglaise générée pour le nom et la description.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur de traduction');
     } finally {
@@ -693,6 +748,22 @@ Pour les projets par défaut, chaque projet doit avoir :
         {/* ===== GENERAL TAB ===== */}
         {activeTab === 'general' && (
           <div className="flex flex-col gap-5" style={{ maxWidth: 600 }}>
+            {/* Langue d'édition + traduction IA du nom / description (édition existante) */}
+            {!isNew && (
+              <div className="flex items-center justify-between" style={{ gap: 12 }}>
+                <LangTabs lang={editLang} onChange={setEditLang} />
+                <button
+                  className="btn-secondary flex items-center gap-1.5"
+                  onClick={() => translateGeneral('en')}
+                  disabled={translating}
+                  title="Génère la version anglaise du nom et de la description"
+                  style={{ fontSize: 12, padding: '6px 12px' }}
+                >
+                  <Languages size={13} />
+                  {translating ? 'Traduction…' : 'Traduire (IA)'}
+                </button>
+              </div>
+            )}
             {isNew && (
               <div>
                 <label className="label">Identifiant (slug)</label>
@@ -708,25 +779,21 @@ Pour les projets par défaut, chaque projet doit avoir :
               </div>
             )}
             <div>
-              <label className="label">Nom de l&apos;edition</label>
+              <label className="label">Nom de l&apos;edition{isEN ? ' (EN)' : ''}</label>
               <input
                 className="input-field"
-                placeholder="Edition Agriculture & AgroTech"
-                value={data.name}
-                onChange={(e) => {
-                  updateField('name', e.target.value);
-                  // Auto-generer l'ID si nouveau et pas encore modifie manuellement
-                  if (isNew) setNewId(slugify(e.target.value));
-                }}
+                placeholder={isEN ? 'Agriculture & AgroTech Edition' : 'Edition Agriculture & AgroTech'}
+                value={edName}
+                onChange={(e) => setEdMeta('name', e.target.value)}
               />
             </div>
             <div>
-              <label className="label">Description</label>
+              <label className="label">Description{isEN ? ' (EN)' : ''}</label>
               <textarea
                 className="input-field"
-                placeholder="Decrivez cette edition..."
-                value={data.description}
-                onChange={(e) => updateField('description', e.target.value)}
+                placeholder={isEN ? 'Describe this edition...' : 'Decrivez cette edition...'}
+                value={edDescription}
+                onChange={(e) => setEdMeta('description', e.target.value)}
                 rows={3}
                 style={{ resize: 'vertical' }}
               />
