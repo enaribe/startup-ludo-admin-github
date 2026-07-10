@@ -21,8 +21,7 @@ export type GenerationType =
   | 'achievements'
   | 'default_projects'
   | 'edition_projects_import'
-  | 'personas'
-  | 'program_eligibility';
+  | 'personas';
 
 interface PromptConfig {
   systemPrompt: string;
@@ -614,46 +613,6 @@ FIDELITE AUX DOCUMENTS (IMPERATIF) :
         parts.push(`\n(Aucun document fourni : reste STRICTEMENT dans la zone geographique et les secteurs du programme indiques ci-dessus. N'invente pas de lieu hors de cette zone.)`);
       }
       parts.push(`\nDemande: ${input || 'Genere 3 a 5 personas varies et coherents avec le programme.'}`);
-      return parts.join('\n');
-    },
-  },
-
-  program_eligibility: {
-    label: 'Eligibilite',
-    placeholder: 'Deduis les criteres d\'eligibilite du programme depuis ses documents',
-    description: 'Deduit les criteres d\'eligibilite (age, regions, secteurs, profils) a partir des documents du programme',
-    systemPrompt: `${BASE_SYSTEM}
-
-Tu extrais les CRITERES D'ELIGIBILITE d'un programme d'accompagnement entrepreneurial a partir de ses documents. Reponds avec un OBJET JSON (pas un tableau). Format EXACT:
-{
-  "ageMin": 18,
-  "ageMax": 35,
-  "regions": ["Dakar"],
-  "sectors": ["Agriculture"],
-  "audienceProfiles": ["Jeunes entrepreneurs en démarrage"]
-}
-REGLES STRICTES:
-- "ageMin"/"ageMax": entiers deduits des documents (tranche d'age ciblee). Si non precise, utilise 18 et 35.
-- "regions": tableau de regions, choisies EXCLUSIVEMENT dans la liste "Regions disponibles" fournie dans le contexte. N'invente AUCUNE region hors de cette liste. Si le programme couvre tout le pays ou n'en precise aucune, retourne un tableau vide [].
-- "sectors": tableau de secteurs, choisis EXCLUSIVEMENT dans la liste "Secteurs disponibles" fournie. N'invente AUCUN secteur hors liste. Vide [] si non precise.
-- "audienceProfiles": tableau de profils cibles, choisis EXCLUSIVEMENT dans la liste "Profils disponibles" fournie. Vide [] si non precise.
-- Utilise EXACTEMENT l'orthographe et la casse des valeurs des listes fournies (elles seront comparees a l'identique).
-- Base-toi UNIQUEMENT sur les documents du programme. En cas de doute, laisse un tableau vide plutot que d'inventer.
-- Retourne UNIQUEMENT l'objet JSON, sans texte ni markdown autour.`,
-    buildUserPrompt: (input, ctx) => {
-      const parts: string[] = [];
-      if (ctx?.programName) parts.push(`Programme: ${ctx.programName}`);
-      if (ctx?.objective) parts.push(`Objectif pedagogique: ${ctx.objective}`);
-      if (ctx?.availableRegions) parts.push(`Regions disponibles (choisis UNIQUEMENT dans cette liste): ${ctx.availableRegions}`);
-      if (ctx?.availableSectors) parts.push(`Secteurs disponibles (choisis UNIQUEMENT dans cette liste): ${ctx.availableSectors}`);
-      if (ctx?.availableProfiles) parts.push(`Profils disponibles (choisis UNIQUEMENT dans cette liste): ${ctx.availableProfiles}`);
-      if (ctx?.sourceText) {
-        const src = String(ctx.sourceText).slice(0, 40000);
-        parts.push(`\n=== BASE DE CONNAISSANCES (documents du programme) ===\nDeduis les criteres d'eligibilite de ce texte. C'est la SEULE source de verite.\n"""\n${src}\n"""`);
-      } else {
-        parts.push(`\n(Aucun document fourni : retourne des criteres generiques prudents — ageMin 18, ageMax 35, et des tableaux vides pour regions/sectors/audienceProfiles.)`);
-      }
-      parts.push(`\nDemande: ${input || 'Deduis les criteres d\'eligibilite du programme a partir de ses documents.'}`);
       return parts.join('\n');
     },
   },
