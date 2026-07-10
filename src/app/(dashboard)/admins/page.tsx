@@ -198,11 +198,18 @@ export default function AdminsPage() {
     }
   };
 
-  // Programmes déjà assignés à un admin (indicatif) : un programme = un seul admin.
-  const assignedProgramIds = new Set(
-    admins.flatMap((a) => a.programIds ?? (a.programId ? [a.programId] : []))
-  );
   const adminProgramIds = (a: AdminAccount): string[] => a.programIds ?? (a.programId ? [a.programId] : []);
+
+  // Un programme peut être géré par PLUSIEURS admins. On construit, pour chaque
+  // programme, la liste des noms d'admins qui le gèrent (affichage « aussi : … »).
+  const programCoAdmins = new Map<string, string[]>();
+  for (const a of admins) {
+    for (const pid of adminProgramIds(a)) {
+      const list = programCoAdmins.get(pid) ?? [];
+      list.push(a.displayName || a.email);
+      programCoAdmins.set(pid, list);
+    }
+  }
 
   if (authLoading || (canAccess && loading)) {
     return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
@@ -340,7 +347,7 @@ export default function AdminsPage() {
                 programs={programs}
                 selected={programIds}
                 onChange={setProgramIds}
-                assigned={assignedProgramIds}
+                coAdmins={programCoAdmins}
               />
             </Field>
           )}
@@ -394,8 +401,9 @@ export default function AdminsPage() {
                 programs={programs}
                 selected={editProgramIds}
                 onChange={setEditProgramIds}
-                assigned={assignedProgramIds}
+                coAdmins={programCoAdmins}
                 currentIds={editTarget ? adminProgramIds(editTarget) : []}
+                selfName={editTarget ? (editTarget.displayName || editTarget.email) : undefined}
               />
             </Field>
           )}
@@ -413,7 +421,7 @@ export default function AdminsPage() {
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
             {editRole === 'partner_admin'
               ? 'L’admin partenaire gérera tous les programmes de ce partenaire.'
-              : 'L’admin ne gérera que ce programme. L’ancien programme sera libéré.'}
+              : 'Un programme peut être géré par plusieurs admins. Décocher retire seulement cet admin ; les autres gestionnaires sont conservés.'}
           </p>
           <button className="btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? 'Enregistrement...' : 'Enregistrer'}
@@ -444,25 +452,27 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Sélection multiple de programmes par cases à cocher. */
+/** Sélection multiple de programmes par cases à cocher (multi-admin). */
 function ProgramMultiSelect({
   programs,
   selected,
   onChange,
-  assigned,
+  coAdmins,
   currentIds,
+  selfName,
 }: {
   programs: PartnerProgram[];
   selected: string[];
   onChange: (ids: string[]) => void;
-  /** Programmes déjà pris par un autre admin (indicatif). */
-  assigned: Set<string>;
-  /** Programmes déjà gérés par l'admin en cours d'édition (ne pas les marquer « déjà assigné »). */
+  /** programId → noms des admins qui le gèrent déjà (pour afficher « aussi : … »). */
+  coAdmins: Map<string, string[]>;
+  /** Programmes déjà gérés par l'admin en cours d'édition. */
   currentIds?: string[];
+  /** Nom de l'admin en cours d'édition (exclu de la liste des co-admins affichée). */
+  selfName?: string;
 }) {
   const toggle = (id: string) =>
     onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-  const current = new Set(currentIds ?? []);
 
   return (
     <div
@@ -476,7 +486,8 @@ function ProgramMultiSelect({
       )}
       {programs.map((p) => {
         const checked = selected.includes(p.id);
-        const takenByOther = assigned.has(p.id) && !current.has(p.id) && !checked;
+        // Autres admins gérant déjà ce programme (hors l'admin en cours d'édition).
+        const others = (coAdmins.get(p.id) ?? []).filter((n) => n !== selfName);
         return (
           <label
             key={p.id}
@@ -489,8 +500,10 @@ function ProgramMultiSelect({
           >
             <input type="checkbox" checked={checked} onChange={() => toggle(p.id)} />
             <span style={{ flex: 1 }}>{p.name}</span>
-            {takenByOther && (
-              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>déjà assigné</span>
+            {others.length > 0 && (
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }} title={others.join(', ')}>
+                aussi&nbsp;: {others.length > 2 ? `${others.slice(0, 2).join(', ')} +${others.length - 2}` : others.join(', ')}
+              </span>
             )}
           </label>
         );

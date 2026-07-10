@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2, Rocket, Users, Gamepad2, Plus } from 'lucide-react';
-import { getPartners, getPrograms } from '@/lib/firestore-service';
+import { getPartners, getPrograms, programOwnerIds } from '@/lib/firestore-service';
 import { useAuth } from '@/lib/auth-context';
 import type { PartnerProgram, ProgramPartner } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -31,7 +31,7 @@ export default function SuperAdminHome() {
   if (loading) return <div className="flex items-center justify-center py-20"><LoadingSpinner /></div>;
 
   const activePrograms = programs.filter((p) => p.isActive !== false).length;
-  const assigned = programs.filter((p) => p.ownerId).length;
+  const assigned = programs.filter((p) => programOwnerIds(p).length > 0).length;
 
   return (
     <div>
@@ -70,7 +70,7 @@ export default function SuperAdminHome() {
                 <div className="flex items-center gap-3">
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.isActive !== false ? '#3FAE6B' : 'var(--color-text-muted)' }} />
                   <span style={{ fontSize: 14, color: 'var(--color-text-primary)' }}>{p.name}</span>
-                  {!p.ownerId && <span style={{ fontSize: 11, color: '#F5A623' }}>· sans admin</span>}
+                  {programOwnerIds(p).length === 0 && <span style={{ fontSize: 11, color: '#F5A623' }}>· sans admin</span>}
                 </div>
                 <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{partners.find((x) => x.id === p.partnerId)?.name ?? ''}</span>
               </button>

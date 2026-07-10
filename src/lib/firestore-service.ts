@@ -123,12 +123,27 @@ export async function getProgramsByPartner(partnerId: string): Promise<PartnerPr
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
 }
 
-/** Programmes gérés par un admin (multi-tenant). */
+/** Liste des admins gérant un programme (nouveau `ownerIds` + legacy `ownerId`). */
+export function programOwnerIds(program: Pick<PartnerProgram, 'ownerIds' | 'ownerId'>): string[] {
+  const arr = Array.isArray(program.ownerIds) ? program.ownerIds : [];
+  const withLegacy = program.ownerId ? [...arr, program.ownerId] : arr;
+  return Array.from(new Set(withLegacy.map((v) => String(v).trim()).filter(Boolean)));
+}
+
+/** Programmes gérés par un admin (multi-admin).
+ *  Fusionne le nouveau modèle (`ownerIds` array-contains) et l'ancien (`ownerId` ==)
+ *  pour rester rétrocompatible avec les programmes non encore migrés. */
 export async function getProgramsByOwner(ownerId: string): Promise<PartnerProgram[]> {
-  const snap = await getDocs(
-    query(collection(firestore, COLLECTIONS.programs), where('ownerId', '==', ownerId))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PartnerProgram));
+  const col = collection(firestore, COLLECTIONS.programs);
+  const [byArray, byLegacy] = await Promise.all([
+    getDocs(query(col, where('ownerIds', 'array-contains', ownerId))),
+    getDocs(query(col, where('ownerId', '==', ownerId))),
+  ]);
+  const map = new Map<string, PartnerProgram>();
+  for (const d of [...byArray.docs, ...byLegacy.docs]) {
+    map.set(d.id, { id: d.id, ...d.data() } as PartnerProgram);
+  }
+  return Array.from(map.values());
 }
 
 /**
@@ -194,6 +209,7 @@ export async function duplicateProgram(sourceId: string): Promise<PartnerProgram
     slug: `${rest.slug || 'programme'}-copie-${suffix}`,
     name: `${rest.name} (copie)`,
     ownerId: null,
+    ownerIds: [],
     shareToken: null,
     contentPacks: clonedPacks,
     // Repart en brouillon inactif pour éviter une publication accidentelle.

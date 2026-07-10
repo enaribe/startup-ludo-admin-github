@@ -11,6 +11,8 @@ interface AuthContextValue {
   admin: AdminUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  /** Recharge les données de l'admin depuis Firestore (ex. après changement de mot de passe). */
+  refreshAdmin: () => Promise<void>;
   /** True si l'admin connecté est super_admin (accès complet). */
   isSuperAdmin: boolean;
   /** True si l'admin connecté gère tous les programmes d'un partenaire. */
@@ -27,6 +29,7 @@ const AuthContext = createContext<AuthContextValue>({
   admin: null,
   loading: true,
   logout: async () => {},
+  refreshAdmin: async () => {},
   isSuperAdmin: false,
   isPartnerAdmin: false,
   isProgramAdmin: false,
@@ -57,6 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdmin(null);
   };
 
+  const refreshAdmin = async () => {
+    const adminData = await getCurrentAdmin();
+    setAdmin(adminData);
+  };
+
   const isSuperAdmin = admin?.role === 'super_admin';
   const isPartnerAdmin = admin?.role === 'partner_admin';
   const isProgramAdmin = admin?.role === 'admin';
@@ -65,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ admin, loading, logout, isSuperAdmin, isPartnerAdmin, isProgramAdmin, scopedProgramId, scopedPartnerId }}
+      value={{ admin, loading, logout, refreshAdmin, isSuperAdmin, isPartnerAdmin, isProgramAdmin, scopedProgramId, scopedPartnerId }}
     >
       {children}
     </AuthContext.Provider>

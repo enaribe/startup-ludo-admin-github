@@ -12,6 +12,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
 import SectorSelectionModal from '@/components/ui/SectorSelectionModal';
+import SectorChecklist from '@/components/ui/SectorChecklist';
 import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { generateId } from '@/lib/utils';
@@ -759,12 +760,9 @@ Pour les projets par défaut, chaque projet doit avoir :
               </div>
             </div>
             <div>
-              <label className="label">Secteurs (separes par des virgules)</label>
-              <input
-                className="input-field"
-                placeholder="agritech, foodtech, greentech"
-                value={data.sectors.join(', ')}
-                onChange={(e) => updateField('sectors', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+              <SectorChecklist
+                value={data.sectors}
+                onChange={(sectors) => updateField('sectors', sectors)}
               />
             </div>
             <div className="flex items-center gap-3">

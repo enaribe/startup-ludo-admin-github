@@ -45,11 +45,16 @@ async function requireAdmin(req: NextRequest): Promise<Caller | null> {
   }
 }
 
-/** Vérifie que l'appelant peut gérer ce programme. */
+/** Vérifie que l'appelant peut gérer ce programme (multi-admin + rétrocompat legacy). */
 async function canManageProgram(caller: Caller, program: FirebaseFirestore.DocumentData): Promise<boolean> {
   if (caller.isSuper) return true;
   if (caller.isPartner) return !!program.partnerId && program.partnerId === caller.partnerId;
-  return program.ownerId === caller.uid;
+  const owners: string[] = Array.isArray(program.ownerIds)
+    ? program.ownerIds
+    : program.ownerId
+      ? [program.ownerId]
+      : [];
+  return owners.includes(caller.uid);
 }
 
 /** Token URL-safe (sans dépendance externe ; collision négligeable sur 24 octets). */

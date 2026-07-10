@@ -23,6 +23,8 @@ export interface AdminUser {
   programId?: string | null;
   /** Partenaire géré par cet admin (pour role === 'partner_admin'). Absent sinon. */
   partnerId?: string | null;
+  /** True tant que l'admin doit changer son mot de passe (1re connexion / reset). */
+  mustChangePassword?: boolean;
 }
 
 /** Rôles reconnus comme administrateurs autorisés à se connecter à l'admin. */
@@ -61,6 +63,7 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
     role,
     programId: (userData.programId as string | undefined) ?? null,
     partnerId: (userData.partnerId as string | undefined) ?? null,
+    mustChangePassword: userData.mustChangePassword === true,
   };
 }
 
@@ -101,6 +104,7 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
       role,
       programId: (userData.programId as string | undefined) ?? null,
       partnerId: (userData.partnerId as string | undefined) ?? null,
+      mustChangePassword: userData.mustChangePassword === true,
     };
   } catch {
     return null;

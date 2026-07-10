@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ProgramProvider } from '@/lib/program-context';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { admin, loading } = useAuth();
@@ -29,6 +30,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!admin) return null;
+
+  // 1re connexion (ou reset par un super-admin) : on bloque TOUT le dashboard
+  // tant que le mot de passe n'a pas été changé.
+  if (admin.mustChangePassword) {
+    return <ForcePasswordChange />;
+  }
 
   return (
     <ProgramProvider>

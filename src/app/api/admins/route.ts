@@ -14,6 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminAuth, getAdminFirestore } from '@/lib/firebase-admin';
 import { COLLECTIONS } from '@/lib/firebase';
 
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
       // partnerId dans les claims → exploité par les règles Firestore.
       await auth.setCustomUserClaims(uid, { admin: true, partner_admin: true, partnerId });
       await db.collection(COLLECTIONS.users).doc(uid).set(
-        { email, displayName, role: 'partner_admin', partnerId, programId: null, createdAt: Date.now(), updatedAt: Date.now() },
+        { email, displayName, role: 'partner_admin', partnerId, programId: null, mustChangePassword: true, createdAt: Date.now(), updatedAt: Date.now() },
         { merge: true }
       );
       return NextResponse.json({ uid, email, displayName, role, partnerId });
@@ -157,12 +158,15 @@ export async function POST(req: NextRequest) {
         programIds,
         programId: programIds[0], // rétrocompat lecture (anciens consommateurs)
         partnerId: null,
+        mustChangePassword: true, // 1re connexion : forcer le changement de mot de passe
         createdAt: Date.now(), updatedAt: Date.now(),
       },
       { merge: true }
     );
-    // Chaque programme reçoit cet admin comme propriétaire unique.
-    await Promise.all(programRefs.map((ref) => ref.set({ ownerId: uid, updatedAt: Date.now() }, { merge: true })));
+    // Chaque programme AJOUTE cet admin à ses gestionnaires (multi-admin).
+    await Promise.all(programRefs.map((ref) =>
+      ref.set({ ownerIds: FieldValue.arrayUnion(uid), updatedAt: Date.now() }, { merge: true })
+    ));
 
     return NextResponse.json({ uid, email, displayName, role: 'admin', programIds });
   } catch (error) {
@@ -248,27 +252,45 @@ export async function PATCH(req: NextRequest) {
       await auth.setCustomUserClaims(uid, { admin: true });
     }
 
-    // Libère les programmes retirés (présents avant, absents après).
+    // Retire cet admin des programmes qu'il ne gère plus (présents avant, absents après).
+    // On ne « libère » que CET admin : les autres gestionnaires du programme restent.
+    // On ne nettoie le legacy `ownerId` que s'il pointait précisément vers cet admin.
     const nextSet = new Set(nextRole === 'admin' ? nextProgramIds : []);
     const removed = currentProgramIds.filter((pid) => !nextSet.has(pid));
-    await Promise.all(removed.map((pid) =>
-      db.collection(COLLECTIONS.programs).doc(pid).set({ ownerId: null, updatedAt: Date.now() }, { merge: true })
-    ));
+    await Promise.all(removed.map(async (pid) => {
+      const ref = db.collection(COLLECTIONS.programs).doc(pid);
+      const snap = await ref.get();
+      const legacyOwnerId = snap.data()?.ownerId as string | undefined;
+      await ref.set(
+        {
+          ownerIds: FieldValue.arrayRemove(uid),
+          ...(legacyOwnerId === uid ? { ownerId: FieldValue.delete() } : {}),
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    }));
 
-    // Assigne les programmes cibles à cet admin.
+    // Ajoute cet admin aux programmes cibles (sans déloger les co-admins).
     if (nextRole === 'admin') {
       await Promise.all(nextProgramIds.map((pid) =>
-        db.collection(COLLECTIONS.programs).doc(pid).set({ ownerId: uid, updatedAt: Date.now() }, { merge: true })
+        db.collection(COLLECTIONS.programs).doc(pid).set(
+          { ownerIds: FieldValue.arrayUnion(uid), updatedAt: Date.now() },
+          { merge: true }
+        )
       ));
     }
 
     // Met à jour le doc utilisateur (assignations mutuellement exclusives selon le rôle).
+    // Si le mot de passe a été réinitialisé, on reforce son changement à la
+    // prochaine connexion de l'admin concerné.
     await userRef.set(
       {
         role: nextRole,
         programIds: nextRole === 'admin' ? nextProgramIds : null,
         programId: nextRole === 'admin' ? nextProgramIds[0] : null, // rétrocompat
         partnerId: nextRole === 'partner_admin' ? nextPartnerId : null,
+        ...(newPassword ? { mustChangePassword: true } : {}),
         updatedAt: Date.now(),
       },
       { merge: true }
@@ -322,9 +344,20 @@ export async function DELETE(req: NextRequest) {
       { role: 'revoked', programIds: null, programId: null, partnerId: null, updatedAt: Date.now() },
       { merge: true }
     );
-    await Promise.all(programIds.map((pid) =>
-      db.collection(COLLECTIONS.programs).doc(pid).set({ ownerId: null, updatedAt: Date.now() }, { merge: true })
-    ));
+    // Retire cet admin des gestionnaires de chaque programme (sans toucher aux co-admins).
+    await Promise.all(programIds.map(async (pid) => {
+      const ref = db.collection(COLLECTIONS.programs).doc(pid);
+      const snap = await ref.get();
+      const legacyOwnerId = snap.data()?.ownerId as string | undefined;
+      await ref.set(
+        {
+          ownerIds: FieldValue.arrayRemove(uid),
+          ...(legacyOwnerId === uid ? { ownerId: FieldValue.delete() } : {}),
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    }));
 
     return NextResponse.json({ uid, revoked: true });
   } catch (error) {

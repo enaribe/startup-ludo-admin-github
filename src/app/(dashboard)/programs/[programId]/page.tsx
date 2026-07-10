@@ -6,10 +6,10 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
 import {
   ArrowLeft, Plus, Trash2, X, Edit, Upload, GripVertical, Languages,
-  Info, Palette, Layers, Target, Users, Globe, SlidersHorizontal, FileText, ClipboardList,
+  Info, Palette, Layers, Target, Users, Globe, SlidersHorizontal, FileText, ClipboardList, Sparkles,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getProgram, saveProgram, getPartners, saveSourceDocText, deleteSourceDoc } from '@/lib/firestore-service';
+import { getProgram, saveProgram, getPartners, saveSourceDocText, deleteSourceDoc, getSourceDocsText } from '@/lib/firestore-service';
 import type {
   PartnerProgram, ProgramContentPack, ProgramPartner, ProgramLevelTier, ProgramGameMode,
   Quiz, Duel, Funding, Opportunity, ChallengeEvent,
@@ -93,6 +93,7 @@ function makeEmpty(programId: string): Omit<PartnerProgram, 'id'> {
     advancedSettings: { rule7030: true, concreeValidationRequired: true, frequencyCap: true, publicPreview: false },
     contentSource: { documents: [], objective: 'Qualification', topicsKeep: [], topicsAvoid: [] },
     ownerId: null,
+    ownerIds: [],
     isActive: true, sortOrder: 0,
   };
 }
@@ -124,6 +125,7 @@ export default function ProgramEditorPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFilter, setImportFilter] = useState<ContentTab | undefined>(undefined);
   const [translating, setTranslating] = useState(false);
+  const [generatingElig, setGeneratingElig] = useState(false);
   // Langue de consultation du contenu dans la liste du pack : 'fr' = original, 'en' = traduction
   const [contentLang, setContentLang] = useState<ContentLang>('fr');
 
@@ -492,6 +494,60 @@ export default function ProgramEditorPage() {
   const storageId = isNew ? (newId || 'new') : programId;
   const pack = contentPackIdx !== null ? data.contentPacks[contentPackIdx] : null;
 
+  /** Génère les critères d'éligibilité à partir des documents sources du programme (IA). */
+  const handleGenerateEligibility = async () => {
+    setGeneratingElig(true);
+    try {
+      const sourceText = await getSourceDocsText(storageId).catch(() => '');
+      if (!sourceText) {
+        toast.error('Aucun document source. Ajoutez des documents au programme d’abord.');
+        return;
+      }
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'program_eligibility',
+          prompt: 'Déduis les critères d’éligibilité de ce programme à partir de ses documents.',
+          context: {
+            programName: data.name,
+            objective: data.contentSource?.objective ?? '',
+            availableRegions: SENEGAL_REGIONS.join(', '),
+            availableSectors: SECTOR_OPTIONS.join(', '),
+            availableProfiles: AUDIENCE_PROFILE_OPTIONS.join(', '),
+            sourceText,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || 'Génération impossible');
+      }
+      const { data: gen } = await res.json();
+      // On ne garde que des valeurs présentes dans les listes de l'UI (sinon rien ne se coche).
+      const keepIn = (arr: unknown, allowed: string[]): string[] =>
+        Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string' && allowed.includes(v)) : [];
+
+      setData((prev) => ({
+        ...prev,
+        eligibility: {
+          ...EMPTY_ELIG,
+          ...prev.eligibility,
+          ...(typeof gen?.ageMin === 'number' ? { ageMin: gen.ageMin } : {}),
+          ...(typeof gen?.ageMax === 'number' ? { ageMax: gen.ageMax } : {}),
+          regions: keepIn(gen?.regions, SENEGAL_REGIONS),
+          sectors: keepIn(gen?.sectors, SECTOR_OPTIONS),
+          audienceProfiles: keepIn(gen?.audienceProfiles, AUDIENCE_PROFILE_OPTIONS),
+        },
+      }));
+      toast.success('Éligibilité générée à partir des documents.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Génération impossible');
+    } finally {
+      setGeneratingElig(false);
+    }
+  };
+
   return (
     <div>
       {/* Header type "Configuration du parcours" */}
@@ -784,7 +840,21 @@ export default function ProgramEditorPage() {
 
       {activeTab === 'eligibility' && (
         <div className="glass-card p-6" style={{ maxWidth: 900 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>Éligibilité</h2>
+          <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>Éligibilité</h2>
+            <button
+              className="btn-secondary flex items-center gap-2"
+              onClick={handleGenerateEligibility}
+              disabled={generatingElig}
+              title="Déduire l’éligibilité à partir des documents du programme"
+              style={{ fontSize: 13, borderColor: 'rgba(124,108,255,0.35)', color: '#9B8CFF' }}
+            >
+              <Sparkles size={15} /> {generatingElig ? 'Génération…' : 'Générer (IA)'}
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+            Déduit automatiquement l’âge, les régions, secteurs et profils cibles à partir des documents fournis (onglet Informations). Vous pouvez ensuite ajuster.
+          </p>
 
           {/* Tranche d'âge */}
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>Tranche d&apos;âge</label>

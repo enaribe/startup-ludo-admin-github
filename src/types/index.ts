@@ -431,8 +431,11 @@ export interface PartnerProgram {
   contentSource?: ProgramContentSource;
   /** Formulaire de fin de parcours configurable (form builder). */
   endForm?: ProgramEndForm;
-  /** uid de l'admin propriétaire de ce programme (multi-tenant). Vide = géré par le super admin seul. */
+  /** @deprecated uid de l'unique admin propriétaire (ancien modèle). Conservé pour
+   *  rétrocompat/lecture ; la source de vérité est désormais `ownerIds`. */
   ownerId?: string | null;
+  /** uids des admins qui gèrent ce programme (multi-admin). Vide = géré par le super admin seul. */
+  ownerIds?: string[];
   /** Token secret de partage public (lecture seule des leads). Null/absent = partage désactivé. */
   shareToken?: string | null;
   isActive: boolean;
