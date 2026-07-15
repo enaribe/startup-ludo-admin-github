@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Timestamp } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebase-admin';
 import { COLLECTIONS } from '@/lib/firebase';
 
@@ -28,12 +29,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       return NextResponse.json({ error: 'Lien expiré ou révoqué.' }, { status: 404 });
     }
 
+    const now = Date.now();
+
+    // Joueurs actifs sur TOUTE l'app (parties programme ET libres) : userStats.lastGameAt.
+    const activeSince = (windowDays: number) =>
+      db
+        .collection(COLLECTIONS.userStats)
+        .where('lastGameAt', '>=', Timestamp.fromMillis(now - windowDays * DAY))
+        .count()
+        .get();
+
     // Counts + collections nécessaires (admin SDK).
-    const [usersCount, gamesCount, sessionsCount, programsSnap, partnersSnap, enrollmentsSnap] =
+    const [usersCount, gamesCount, sessionsCount, active7dCount, active30dCount, programsSnap, partnersSnap, enrollmentsSnap] =
       await Promise.all([
         db.collection(COLLECTIONS.users).count().get(),
         db.collection(COLLECTIONS.gameSessions).count().get(),
         db.collection(COLLECTIONS.programSessions).count().get(),
+        activeSince(7),
+        activeSince(30),
         db.collection(COLLECTIONS.programs).get(),
         db.collection(COLLECTIONS.partners).get(),
         db.collection(COLLECTIONS.programEnrollments).get(),
@@ -52,16 +65,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     const formsSubmitted = enrollments.filter((e) => e.formData != null).length;
     const conversionRate =
       totalEnrollments > 0 ? Math.round((formsSubmitted / totalEnrollments) * 100) : 0;
-
-    const now = Date.now();
-    const active = (windowDays: number) => {
-      const cutoff = now - windowDays * DAY;
-      const ids = new Set<string>();
-      enrollments.forEach((e) => {
-        if (e.lastPlayedAt != null && e.lastPlayedAt >= cutoff) ids.add(e.userId);
-      });
-      return ids.size;
-    };
 
     const enrollmentTimeline: { label: string; count: number }[] = [];
     for (let i = 29; i >= 0; i -= 1) {
@@ -88,8 +91,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       totalPartners: partnersSnap.size,
       totalEnrollments,
       formsSubmitted,
-      activeUsers7d: active(7),
-      activeUsers30d: active(30),
+      activeUsers7d: active7dCount.data().count,
+      activeUsers30d: active30dCount.data().count,
       programSessions: sessionsCount.data().count,
       conversionRate,
       enrollmentTimeline,

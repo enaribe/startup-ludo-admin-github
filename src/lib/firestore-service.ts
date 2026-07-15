@@ -483,17 +483,32 @@ export interface StatsDateRange {
  *
  * Si un `range` est fourni, on calcule EN PLUS des métriques restreintes à la
  * plage (nouveaux inscrits, parties, inscriptions programme) et la timeline est
- * bornée sur la plage. Les KPI « total », les actifs 7j/30j (fenêtres glissantes)
- * et le top programmes restent globaux. Sans range, comportement historique
- * strictement inchangé (garantit la non-régression du partage public).
+ * bornée sur la plage. Les KPI « total », les actifs 7j/30j (fenêtres glissantes,
+ * toute l'app) et le top programmes restent globaux. Sans range, comportement
+ * historique strictement inchangé (garantit la non-régression du partage public).
  */
 export async function getGlobalStats(range?: StatsDateRange): Promise<GlobalStats> {
   const hasRange = !!(range?.from || range?.to);
+
+  // Joueurs actifs sur TOUTE l'app (parties programme ET libres) : basés sur
+  // userStats.lastGameAt (Timestamp, mis à jour à chaque partie). Fenêtres
+  // glissantes relatives à maintenant → non affectées par le filtre de plage.
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const activeSince = (windowDays: number) =>
+    getCountFromServer(
+      query(
+        collection(firestore, COLLECTIONS.userStats),
+        where('lastGameAt', '>=', Timestamp.fromDate(new Date(now - windowDays * DAY))),
+      ),
+    );
 
   const [
     usersCount,
     gamesCount,
     programSessionsCount,
+    active7dCount,
+    active30dCount,
     programs,
     partners,
     enrollmentsSnap,
@@ -501,6 +516,8 @@ export async function getGlobalStats(range?: StatsDateRange): Promise<GlobalStat
     getCountFromServer(collection(firestore, COLLECTIONS.users)),
     getCountFromServer(collection(firestore, COLLECTIONS.gameSessions)),
     getCountFromServer(collection(firestore, COLLECTIONS.programSessions)),
+    activeSince(7),
+    activeSince(30),
     getPrograms(),
     getPartners(),
     getDocs(collection(firestore, COLLECTIONS.programEnrollments)),
@@ -512,17 +529,8 @@ export async function getGlobalStats(range?: StatsDateRange): Promise<GlobalStat
   const conversionRate =
     totalEnrollments > 0 ? Math.round((formsSubmitted / totalEnrollments) * 100) : 0;
 
-  // Joueurs actifs : basés sur lastPlayedAt (dernière partie de programme jouée).
-  const now = Date.now();
-  const DAY = 86_400_000;
-  const active = (windowDays: number) => {
-    const cutoff = now - windowDays * DAY;
-    const ids = new Set<string>();
-    enrollments.forEach((e) => {
-      if (e.lastPlayedAt != null && e.lastPlayedAt >= cutoff) ids.add(e.userId);
-    });
-    return ids.size;
-  };
+  const activeUsers7d = active7dCount.data().count;
+  const activeUsers30d = active30dCount.data().count;
 
   // Bornes de la plage (ms). Sans borne, on ouvre à l'infini du côté concerné.
   const fromMs = range?.from ? range.from.getTime() : null;
@@ -603,8 +611,8 @@ export async function getGlobalStats(range?: StatsDateRange): Promise<GlobalStat
     totalPartners: partners.length,
     totalEnrollments,
     formsSubmitted,
-    activeUsers7d: active(7),
-    activeUsers30d: active(30),
+    activeUsers7d,
+    activeUsers30d,
     programSessions: programSessionsCount.data().count,
     conversionRate,
     enrollmentTimeline,
