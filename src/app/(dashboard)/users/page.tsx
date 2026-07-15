@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users as UsersIcon, Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users as UsersIcon, Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { getUsersWithStats, type AdminUser } from '@/lib/firestore-service';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -100,6 +100,15 @@ export default function UsersPage() {
 
   return (
     <div>
+      <button
+        onClick={() => router.push('/app-stats')}
+        className="flex items-center gap-2 mb-4"
+        style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 13 }}
+      >
+        <ArrowLeft size={16} />
+        Statistiques
+      </button>
+
       <div className="flex items-center justify-between mb-6" style={{ gap: 16, flexWrap: 'wrap' }}>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           {sorted.length.toLocaleString('fr-FR')} utilisateur{sorted.length !== 1 ? 's' : ''}
