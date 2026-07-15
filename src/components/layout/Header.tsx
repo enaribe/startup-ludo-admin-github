@@ -1,15 +1,23 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { ChevronDown, Check } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useCurrentProgram } from '@/lib/program-context';
 
+// Routes de la section « Catalogue » de la sidebar (gestion globale super-admin).
+// Le nom du programme sélectionné n'a de sens que là ; ailleurs on le masque.
+const CATALOGUE_ROUTES = ['/partners', '/programs', '/admins'];
+
 export default function Header() {
   const { admin, isSuperAdmin } = useAuth();
   const { programs, currentProgram, currentProgramId, setCurrentProgramId } = useCurrentProgram();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const inCatalogue = CATALOGUE_ROUTES.some((r) => pathname === r || pathname.startsWith(r + '/'));
 
   const canSwitch = programs.length > 1;
   const initials = (admin?.displayName ?? 'A').split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase();
@@ -33,7 +41,8 @@ export default function Header() {
       background: 'rgba(255, 255, 255, 0.9)',
       backdropFilter: 'blur(12px)',
     }}>
-      {/* Sélecteur de programme (menu si plusieurs, statique sinon) */}
+      {/* Sélecteur de programme — visible uniquement dans le Catalogue */}
+      {inCatalogue && (
       <div style={{ position: 'relative' }} ref={menuRef}>
         <button
           onClick={() => canSwitch && setOpen((v) => !v)}
@@ -88,6 +97,7 @@ export default function Header() {
           </div>
         )}
       </div>
+      )}
 
       <div className="flex items-center gap-3 ml-auto">
         {/* Profil admin */}
