@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Lightbulb, Plus, Trash2, Target, Rocket, Map, Sparkles } from 'lucide-react';
 import { getIdeationDecks, saveIdeationDeck } from '@/lib/firestore-service';
 import type { IdeationDeck, IdeationCard } from '@/types';
@@ -21,9 +22,16 @@ const CARD_TYPE_CONFIG: Record<string, { label: string; color: string; icon: Rea
 };
 
 export default function IdeationPage() {
+  const searchParams = useSearchParams();
+  // Onglet initial pilotable par l'URL (?type=sector) — permet à l'item « Secteurs »
+  // de la sidebar d'ouvrir directement le bon onglet.
+  const initialType = ((): 'target' | 'mission' | 'sector' => {
+    const t = searchParams.get('type');
+    return t === 'sector' || t === 'mission' || t === 'target' ? t : 'target';
+  })();
   const [decks, setDecks] = useState<IdeationDeck[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeType, setActiveType] = useState<'target' | 'mission' | 'sector'>('target');
+  const [activeType, setActiveType] = useState<'target' | 'mission' | 'sector'>(initialType);
   const [deleteTarget, setDeleteTarget] = useState<{ deckId: string; cardIndex: number } | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
 
@@ -67,6 +75,10 @@ export default function IdeationPage() {
   }, []);
 
   useEffect(() => { loadDecks(); }, [loadDecks]);
+
+  // Suit le query param ?type= (ex. clic sur « Secteurs » dans la sidebar alors
+  // qu'on est déjà sur la page ideation).
+  useEffect(() => { setActiveType(initialType); }, [initialType]);
 
   const deck = decks[0]; // For now, single deck
   const cards = deck?.cards ?? [];

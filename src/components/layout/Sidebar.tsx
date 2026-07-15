@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
@@ -21,6 +21,7 @@ import {
   BarChart3,
   MessageSquare,
   Settings,
+  Map,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -79,6 +80,7 @@ const NAV_SECTIONS: NavSection[] = [
       // dédiées /quiz et /duels (pages-redirections vides) ont été retirées.
       { label: 'Editions', href: '/editions', icon: <BookOpen size={18} /> },
       { label: 'Ideation', href: '/ideation', icon: <Lightbulb size={18} /> },
+      { label: 'Secteurs', href: '/ideation?type=sector', icon: <Map size={18} /> },
       { label: 'Projets par Defaut', href: '/default-projects', icon: <FolderKanban size={18} /> },
     ],
   },
@@ -140,6 +142,7 @@ const NAV_SECTIONS: NavSection[] = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { admin, logout, isSuperAdmin, isPartnerAdmin, isProgramAdmin } = useAuth();
 
   // Filtrage par rôle : un élément flaggé *Only n'est visible que pour le rôle correspondant ;
@@ -194,9 +197,24 @@ export default function Sidebar() {
             </p>
             <ul className="flex flex-col gap-1">
               {section.items.map((item) => {
-                const isActive = item.href === '/'
-                  ? pathname === '/'
-                  : pathname === item.href || pathname.startsWith(item.href + '/');
+                // Certains items ciblent le même chemin avec un query param distinct
+                // (ex. /ideation vs /ideation?type=sector) : on sépare path et query
+                // pour un état actif exact et mutuellement exclusif.
+                const [itemPath, itemQuery] = item.href.split('?');
+                const isActive = itemPath === '/'
+                  ? pathname === '/' && !itemQuery
+                  : (() => {
+                      const pathMatch = pathname === itemPath || pathname.startsWith(itemPath + '/');
+                      if (!pathMatch) return false;
+                      // Si l'item porte un query (?type=sector), il n'est actif que si ce
+                      // param correspond ; sinon (Ideation nu) il n'est actif que si le
+                      // param discriminant est absent.
+                      if (itemQuery) {
+                        const [key, value] = itemQuery.split('=');
+                        return searchParams.get(key) === value;
+                      }
+                      return itemPath !== '/ideation' || !searchParams.get('type');
+                    })();
                 return (
                   <li key={item.href} style={{ position: 'relative' }}>
                     {/* Liseré doré débordant à gauche pour l'item actif */}
