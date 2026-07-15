@@ -61,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
       { label: 'Statistiques', href: '/app-stats', icon: <BarChart3 size={18} /> },
+      { label: 'Utilisateurs', href: '/users', icon: <Users size={18} /> },
     ],
   },
   {

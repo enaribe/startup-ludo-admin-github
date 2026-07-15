@@ -7,12 +7,17 @@ import { getGlobalStats, type GlobalStats } from '@/lib/firestore-service';
 import { useAuth } from '@/lib/auth-context';
 import { auth } from '@/lib/firebase';
 import StatsView from '@/components/dashboard/StatsView';
+import DateRangePicker from '@/components/ui/DateRangePicker';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 export default function AppStatsPage() {
   const { isSuperAdmin, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Filtre par plage de dates (null = global).
+  const [range, setRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
 
   // Partage
   const [shareOpen, setShareOpen] = useState(false);
@@ -20,16 +25,28 @@ export default function AppStatsPage() {
   const [shareLoading, setShareLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const fromMs = range.from?.getTime();
+  const toMs = range.to?.getTime();
+
   useEffect(() => {
     if (!isSuperAdmin) { setLoading(false); return; }
+    let cancelled = false;
+    setRefreshing(true);
     (async () => {
       try {
-        setStats(await getGlobalStats());
+        const arg = fromMs || toMs
+          ? { from: range.from ?? undefined, to: range.to ?? undefined }
+          : undefined;
+        const result = await getGlobalStats(arg);
+        if (!cancelled) setStats(result);
       } finally {
-        setLoading(false);
+        if (!cancelled) { setLoading(false); setRefreshing(false); }
       }
     })();
-  }, [isSuperAdmin]);
+    return () => { cancelled = true; };
+    // range.from/to via leurs ms primitifs pour éviter une dépendance sur la référence Date.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin, fromMs, toMs]);
 
   const authHeader = async (): Promise<HeadersInit> => {
     const token = await auth.currentUser?.getIdToken();
@@ -103,12 +120,34 @@ export default function AppStatsPage() {
             Vue globale de Startup Ludo — tous partenaires et programmes confondus.
           </p>
         </div>
-        <button className="btn-secondary" onClick={openShare} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <Share2 size={16} /> Partager
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <DateRangePicker from={range.from} to={range.to} onChange={setRange} />
+          <button className="btn-secondary" onClick={openShare} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Share2 size={16} /> Partager
+          </button>
+        </div>
       </div>
 
-      <StatsView stats={stats} />
+      {stats.rangeMetrics && (
+        <div
+          className="glass-card p-4"
+          style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap', fontSize: 13, color: 'var(--color-text)' }}
+        >
+          <span style={{ color: 'var(--color-text-muted)' }}>
+            Période
+            {stats.rangeMetrics.fromMs ? ` du ${new Date(stats.rangeMetrics.fromMs).toLocaleDateString('fr-FR')}` : ''}
+            {stats.rangeMetrics.toMs ? ` au ${new Date(stats.rangeMetrics.toMs).toLocaleDateString('fr-FR')}` : ''}
+            {' :'}
+          </span>
+          <span><strong>{stats.rangeMetrics.newUsers.toLocaleString('fr-FR')}</strong> nouveaux joueurs</span>
+          <span><strong>{stats.rangeMetrics.games.toLocaleString('fr-FR')}</strong> parties</span>
+          <span><strong>{stats.rangeMetrics.enrollments.toLocaleString('fr-FR')}</strong> inscriptions programme</span>
+        </div>
+      )}
+
+      <div style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s', pointerEvents: refreshing ? 'none' : undefined }}>
+        <StatsView stats={stats} interactive />
+      </div>
 
       {/* Modal de partage */}
       {shareOpen && (

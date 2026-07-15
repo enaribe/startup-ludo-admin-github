@@ -17,6 +17,7 @@ import {
   limit,
   getCountFromServer,
   serverTimestamp,
+  Timestamp,
   type DocumentData,
 } from 'firebase/firestore';
 import { firestore, COLLECTIONS } from './firebase';
@@ -455,14 +456,40 @@ export interface GlobalStats {
   enrollmentTimeline: { label: string; count: number }[];
   /** Top programmes par nombre d'inscriptions. */
   topPrograms: { name: string; count: number }[];
+  /**
+   * Métriques restreintes à la plage de dates demandée (présent uniquement si un
+   * range est fourni). Les KPI « total » ci-dessus restent globaux.
+   */
+  rangeMetrics?: {
+    newUsers: number;    // users.createdAt ∈ [from, to]
+    games: number;       // gameSessions.createdAt ∈ [from, to]
+    enrollments: number; // programEnrollments.enrolledAt ∈ [from, to]
+    /** Bornes appliquées (pour l'affichage), en ms epoch. */
+    fromMs: number | null;
+    toMs: number | null;
+  };
+}
+
+/** Plage de dates optionnelle pour restreindre certaines métriques. */
+export interface StatsDateRange {
+  from?: Date;
+  to?: Date;
 }
 
 /**
  * Statistiques GLOBALES de l'application (toutes structures confondues).
  * Réservé au super admin. Counts efficaces via getCountFromServer + agrégations
  * sur les inscriptions/sessions programme pour l'engagement et l'évolution.
+ *
+ * Si un `range` est fourni, on calcule EN PLUS des métriques restreintes à la
+ * plage (nouveaux inscrits, parties, inscriptions programme) et la timeline est
+ * bornée sur la plage. Les KPI « total », les actifs 7j/30j (fenêtres glissantes)
+ * et le top programmes restent globaux. Sans range, comportement historique
+ * strictement inchangé (garantit la non-régression du partage public).
  */
-export async function getGlobalStats(): Promise<GlobalStats> {
+export async function getGlobalStats(range?: StatsDateRange): Promise<GlobalStats> {
+  const hasRange = !!(range?.from || range?.to);
+
   const [
     usersCount,
     gamesCount,
@@ -497,16 +524,40 @@ export async function getGlobalStats(): Promise<GlobalStats> {
     return ids.size;
   };
 
-  // Évolution des inscriptions sur 30 jours.
+  // Bornes de la plage (ms). Sans borne, on ouvre à l'infini du côté concerné.
+  const fromMs = range?.from ? range.from.getTime() : null;
+  const toMs = range?.to ? range.to.getTime() : null;
+  const inRange = (ms: number) =>
+    (fromMs === null || ms >= fromMs) && (toMs === null || ms <= toMs);
+
+  // Évolution des inscriptions. Sans range : 30 derniers jours (historique).
+  // Avec range : bornée sur [from, to], par jour si la plage ≤ 60 jours, sinon
+  // agrégée par semaine pour éviter un nombre de barres démesuré.
   const enrollmentTimeline: { label: string; count: number }[] = [];
-  for (let i = 29; i >= 0; i -= 1) {
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - i);
-    const startMs = start.getTime();
-    const endMs = startMs + DAY;
-    const count = enrollments.filter((e) => e.enrolledAt >= startMs && e.enrolledAt < endMs).length;
-    enrollmentTimeline.push({ label: `${start.getDate()}/${start.getMonth() + 1}`, count });
+  if (!hasRange) {
+    for (let i = 29; i >= 0; i -= 1) {
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - i);
+      const startMs = start.getTime();
+      const endMs = startMs + DAY;
+      const count = enrollments.filter((e) => e.enrolledAt >= startMs && e.enrolledAt < endMs).length;
+      enrollmentTimeline.push({ label: `${start.getDate()}/${start.getMonth() + 1}`, count });
+    }
+  } else {
+    const startDay = new Date(fromMs ?? now);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date(toMs ?? now);
+    endDay.setHours(0, 0, 0, 0);
+    const spanDays = Math.max(1, Math.round((endDay.getTime() - startDay.getTime()) / DAY) + 1);
+    const bucketDays = spanDays <= 60 ? 1 : 7;
+    for (let cursor = startDay.getTime(); cursor <= endDay.getTime(); cursor += bucketDays * DAY) {
+      const bucketStart = cursor;
+      const bucketEnd = cursor + bucketDays * DAY;
+      const count = enrollments.filter((e) => e.enrolledAt >= bucketStart && e.enrolledAt < bucketEnd).length;
+      const d = new Date(bucketStart);
+      enrollmentTimeline.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, count });
+    }
   }
 
   // Top programmes par nombre d'inscriptions.
@@ -516,6 +567,34 @@ export async function getGlobalStats(): Promise<GlobalStats> {
     .map((p) => ({ name: p.name, count: byProgram.get(p.id) ?? 0 }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
+
+  // Métriques restreintes à la plage (calcul additionnel uniquement si demandé).
+  let rangeMetrics: GlobalStats['rangeMetrics'];
+  if (hasRange) {
+    // users.createdAt et gameSessions.createdAt sont des Timestamp : on filtre côté
+    // serveur via getCountFromServer sur une query bornée.
+    // NB : quelques comptes ADMIN écrivent createdAt en number(ms) ; ils ne sont
+    // pas comparables à un Timestamp Firestore et seront donc exclus du count
+    // filtré — négligeable pour un KPI « nouveaux joueurs ».
+    const dateWheres = [
+      ...(range?.from ? [where('createdAt', '>=', Timestamp.fromDate(range.from))] : []),
+      ...(range?.to ? [where('createdAt', '<=', Timestamp.fromDate(range.to))] : []),
+    ];
+    const [newUsersCount, gamesInRangeCount] = await Promise.all([
+      getCountFromServer(query(collection(firestore, COLLECTIONS.users), ...dateWheres)),
+      getCountFromServer(query(collection(firestore, COLLECTIONS.gameSessions), ...dateWheres)),
+    ]);
+    // programEnrollments.enrolledAt est un number(ms) : filtrage en mémoire (docs
+    // déjà chargés ci-dessus).
+    const enrollmentsInRange = enrollments.filter((e) => inRange(e.enrolledAt)).length;
+    rangeMetrics = {
+      newUsers: newUsersCount.data().count,
+      games: gamesInRangeCount.data().count,
+      enrollments: enrollmentsInRange,
+      fromMs,
+      toMs,
+    };
+  }
 
   return {
     totalUsers: usersCount.data().count,
@@ -530,15 +609,68 @@ export async function getGlobalStats(): Promise<GlobalStats> {
     conversionRate,
     enrollmentTimeline,
     topPrograms,
+    ...(rangeMetrics ? { rangeMetrics } : {}),
   };
 }
 
 // ===== USERS (read-only for admin) =====
 
-export async function getUsers(maxCount = 50): Promise<DocumentData[]> {
-  const q = query(collection(firestore, COLLECTIONS.users), limit(maxCount));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+/** Utilisateur enrichi de ses stats de jeu, pour la liste admin. */
+export interface AdminUser {
+  id: string;               // uid (= doc id)
+  displayName: string;
+  email: string;
+  createdAt: number | null; // ms epoch, normalisé (voir getUsersWithStats)
+  level: number;
+  xp: number;
+  totalGames: number;
+  gamesWon: number;
+}
+
+/** Normalise un champ date hétérogène (Timestamp | {seconds} | number ms) en ms. */
+function toMillis(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return value;
+  if (value instanceof Timestamp) return value.toMillis();
+  if (typeof value === 'object' && value !== null && 'seconds' in value) {
+    const s = (value as { seconds: number }).seconds;
+    return typeof s === 'number' ? s * 1000 : null;
+  }
+  return null;
+}
+
+/**
+ * Liste des utilisateurs joints à leurs stats de jeu (collection userStats,
+ * même doc id = uid). Bornée à `maxCount` documents, triés par inscription
+ * décroissante. Au-delà de cette borne, passer à une pagination serveur
+ * (startAfter) — hors périmètre actuel.
+ */
+export async function getUsersWithStats(maxCount = 500): Promise<AdminUser[]> {
+  // On charge les users récents en priorité. orderBy('createdAt') écarte les rares
+  // docs sans createdAt trié (comptes admin en number) — acceptable ici.
+  const usersSnap = await getDocs(
+    query(collection(firestore, COLLECTIONS.users), orderBy('createdAt', 'desc'), limit(maxCount)),
+  );
+
+  // Une seule lecture batch de userStats, indexée par uid (évite N getDoc).
+  const statsSnap = await getDocs(collection(firestore, COLLECTIONS.userStats));
+  const statsById = new Map<string, DocumentData>();
+  statsSnap.docs.forEach((d) => statsById.set(d.id, d.data()));
+
+  return usersSnap.docs.map((d) => {
+    const u = d.data();
+    const s = statsById.get(d.id) ?? {};
+    return {
+      id: d.id,
+      displayName: (u.displayName as string) || 'Sans nom',
+      email: (u.email as string) || '—',
+      createdAt: toMillis(u.createdAt),
+      level: (s.level as number) ?? (u.level as number) ?? 0,
+      xp: (s.xp as number) ?? (u.xp as number) ?? 0,
+      totalGames: (s.totalGames as number) ?? 0,
+      gamesWon: (s.gamesWon as number) ?? 0,
+    };
+  });
 }
 
 export async function getUserStats(userId: string): Promise<DocumentData | null> {
