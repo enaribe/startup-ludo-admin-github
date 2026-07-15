@@ -32,7 +32,7 @@ export default function IdeationPage() {
   const [decks, setDecks] = useState<IdeationDeck[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeType, setActiveType] = useState<'target' | 'mission' | 'sector'>(initialType);
-  const [deleteTarget, setDeleteTarget] = useState<{ deckId: string; cardIndex: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ deckId: string; cardId: string } | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
 
   const AI_TYPE_MAP: Record<string, GenerationType> = {
@@ -83,6 +83,19 @@ export default function IdeationPage() {
   const deck = decks[0]; // For now, single deck
   const cards = deck?.cards ?? [];
   const filteredCards = cards.filter((c) => c.type === activeType);
+  // Les secteurs sont listés par ordre alphabétique ; les autres types gardent
+  // leur ordre d'insertion. (Édition/suppression reposent sur l'id, pas l'index,
+  // donc le tri d'affichage n'affecte pas la logique.)
+  const displayedCards =
+    activeType === 'sector'
+      ? [...filteredCards].sort((a, b) => {
+          // Les cartes vides (fraîchement ajoutées) restent en bas, pas en tête.
+          const ae = a.text.trim() === '';
+          const be = b.text.trim() === '';
+          if (ae !== be) return ae ? 1 : -1;
+          return a.text.localeCompare(b.text, 'fr', { sensitivity: 'base' });
+        })
+      : filteredCards;
 
   // Sauvegarde automatique du deck a chaque modification.
   const persistDeck = useCallback(
@@ -104,21 +117,15 @@ export default function IdeationPage() {
     setDecks([updated]);
   };
 
-  const updateCard = (index: number, field: keyof IdeationCard, value: string) => {
+  const updateCard = (cardId: string, field: keyof IdeationCard, value: string) => {
     if (!deck) return;
-    const globalIndex = cards.findIndex((c, i) => c.type === activeType && cards.slice(0, i + 1).filter((x) => x.type === activeType).length === index + 1);
-    if (globalIndex === -1) return;
-    const updated = { ...deck, cards: [...deck.cards] };
-    updated.cards[globalIndex] = { ...updated.cards[globalIndex], [field]: value } as IdeationCard;
+    const updated = { ...deck, cards: deck.cards.map((c) => (c.id === cardId ? { ...c, [field]: value } : c)) };
     setDecks([updated]);
   };
 
   const removeCard = () => {
     if (!deck || !deleteTarget) return;
-    const typeCards = cards.filter((c) => c.type === activeType);
-    const cardToRemove = typeCards[deleteTarget.cardIndex];
-    if (!cardToRemove) return;
-    const updated = { ...deck, cards: deck.cards.filter((c) => c.id !== cardToRemove.id) };
+    const updated = { ...deck, cards: deck.cards.filter((c) => c.id !== deleteTarget.cardId) };
     setDecks([updated]);
     setDeleteTarget(null);
   };
@@ -188,20 +195,20 @@ export default function IdeationPage() {
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredCards.map((card, i) => {
+            {displayedCards.map((card, i) => {
               const cfg = CARD_TYPE_CONFIG[card.type];
               return (
                 <div key={card.id} className="p-3 rounded-lg" style={{ background: 'var(--color-surface)', border: `1px solid ${cfg?.color}20` }}>
                   <div className="flex items-start justify-between mb-2">
                     <span style={{ fontSize: 10, fontWeight: 600, color: cfg?.color }}>#{i + 1}</span>
-                    <button onClick={() => setDeleteTarget({ deckId: deck!.id, cardIndex: i })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}>
+                    <button onClick={() => setDeleteTarget({ deckId: deck!.id, cardId: card.id })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F44336' }}>
                       <Trash2 size={12} />
                     </button>
                   </div>
                   <textarea
                     className="input-field"
                     value={card.text}
-                    onChange={(e) => updateCard(i, 'text', e.target.value)}
+                    onChange={(e) => updateCard(card.id, 'text', e.target.value)}
                     placeholder="Texte de la carte..."
                     rows={2}
                     style={{ fontSize: 12, resize: 'vertical' }}
