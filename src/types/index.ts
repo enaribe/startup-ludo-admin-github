@@ -177,6 +177,8 @@ export interface ProgramPartner {
   shortName: string;
   description: string;
   logoUrl?: string | null;
+  /** Logo secondaire affiché en haut à gauche de la carte partenaire de l'accueil (ex. co-partenaire). */
+  secondaryLogoUrl?: string | null;
   /** Image de fond de la carte partenaire sur l'accueil (visuel vertical avec bouton PARTICIPER). */
   bannerUrl?: string | null;
   /** PNG détouré (fond transparent) affiché à droite du header de l'écran partenaire, par-dessus le dégradé. */
@@ -184,6 +186,22 @@ export interface ProgramPartner {
   primaryColor: string;
   secondaryColor: string;
   isActive: boolean;
+  updatedAt?: number;
+}
+
+/**
+ * Configuration de version de l'app mobile (document Firestore `appConfig/version`).
+ * Pilote le popup de mise à jour obligatoire côté mobile.
+ */
+export interface AppVersionConfig {
+  /** Version minimale supportée (ex: "2.2.0"). En dessous → mise à jour obligatoire. */
+  minSupportedVersion: string;
+  /** Lien Play Store (Android). */
+  androidStoreUrl?: string;
+  /** Lien App Store (iOS). */
+  iosStoreUrl?: string;
+  /** Message optionnel affiché dans le popup (remplace le texte par défaut). */
+  message?: string;
   updatedAt?: number;
 }
 

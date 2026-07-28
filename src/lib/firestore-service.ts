@@ -36,6 +36,7 @@ import type {
   ProgressionConfig,
   BoardConfig,
   DashboardStats,
+  AppVersionConfig,
 } from '@/types';
 
 // ===== EDITIONS =====
@@ -685,4 +686,125 @@ export async function getUserStats(userId: string): Promise<DocumentData | null>
   const snap = await getDoc(doc(firestore, COLLECTIONS.userStats, userId));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() };
+}
+
+// ===== APP CONFIG (version minimale de l'app mobile) =====
+// Document unique `appConfig/version` lu par le mobile au démarrage :
+// si la version installée < minSupportedVersion → popup de mise à jour obligatoire.
+
+const APP_VERSION_DOC_ID = 'version';
+
+export async function getAppVersionConfig(): Promise<AppVersionConfig | null> {
+  const snap = await getDoc(doc(firestore, COLLECTIONS.appConfig, APP_VERSION_DOC_ID));
+  if (!snap.exists()) return null;
+  return snap.data() as AppVersionConfig;
+}
+
+export async function saveAppVersionConfig(data: Omit<AppVersionConfig, 'updatedAt'>): Promise<void> {
+  await setDoc(doc(firestore, COLLECTIONS.appConfig, APP_VERSION_DOC_ID), {
+    ...data,
+    updatedAt: Date.now(),
+  });
+}
+
+// ===== SITE VITRINE : PRÉCOMMANDES & MESSAGES DE CONTACT =====
+// Documents créés par le site startupludo web (création publique via les rules),
+// gérés ici : suivi de statut, suppression.
+
+export type PreorderStatus = 'new' | 'contacted' | 'confirmed' | 'delivered' | 'cancelled';
+
+export interface Preorder {
+  id: string;
+  product: string; // 'classique' | 'kids' | 'xxl'
+  name: string;
+  email: string;
+  phone?: string;
+  quantity?: number;
+  city?: string;
+  organization?: string;
+  role?: string;
+  orgType?: string;
+  format?: string;
+  message?: string;
+  status: PreorderStatus;
+  createdAt: number | null;
+}
+
+export type ContactStatus = 'new' | 'read' | 'answered';
+
+export interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+  status: ContactStatus;
+  createdAt: number | null;
+}
+
+export async function getPreorders(): Promise<Preorder[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.preorders), orderBy('createdAt', 'desc')),
+  );
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      product: (data.product as string) || '—',
+      name: (data.name as string) || '—',
+      email: (data.email as string) || '—',
+      phone: data.phone as string | undefined,
+      quantity: data.quantity as number | undefined,
+      city: data.city as string | undefined,
+      organization: data.organization as string | undefined,
+      role: data.role as string | undefined,
+      orgType: data.orgType as string | undefined,
+      format: data.format as string | undefined,
+      message: data.message as string | undefined,
+      status: ((data.status as string) || 'new') as PreorderStatus,
+      createdAt: toMillis(data.createdAt),
+    };
+  });
+}
+
+export async function updatePreorderStatus(preorderId: string, status: PreorderStatus): Promise<void> {
+  await updateDoc(doc(firestore, COLLECTIONS.preorders, preorderId), {
+    status,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deletePreorder(preorderId: string): Promise<void> {
+  await deleteDoc(doc(firestore, COLLECTIONS.preorders, preorderId));
+}
+
+export async function getContactMessages(): Promise<ContactMessage[]> {
+  const snap = await getDocs(
+    query(collection(firestore, COLLECTIONS.contactMessages), orderBy('createdAt', 'desc')),
+  );
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: (data.name as string) || '—',
+      email: (data.email as string) || '—',
+      phone: data.phone as string | undefined,
+      subject: data.subject as string | undefined,
+      message: (data.message as string) || '',
+      status: ((data.status as string) || 'new') as ContactStatus,
+      createdAt: toMillis(data.createdAt),
+    };
+  });
+}
+
+export async function updateContactMessageStatus(messageId: string, status: ContactStatus): Promise<void> {
+  await updateDoc(doc(firestore, COLLECTIONS.contactMessages, messageId), {
+    status,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteContactMessage(messageId: string): Promise<void> {
+  await deleteDoc(doc(firestore, COLLECTIONS.contactMessages, messageId));
 }

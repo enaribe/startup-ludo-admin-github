@@ -15,6 +15,7 @@ const EMPTY: Omit<ProgramPartner, 'id'> = {
   shortName: '',
   description: '',
   logoUrl: '',
+  secondaryLogoUrl: '',
   bannerUrl: '',
   heroImageUrl: '',
   primaryColor: '#FFB347',
@@ -139,10 +140,19 @@ export default function PartnerEditorPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <ImageUploadField
-            label="Logo (En partenariat avec)"
+            label="Logo principal (carte d'accueil, en haut à droite)"
             value={data.logoUrl || ''}
             onChange={(url) => update('logoUrl', url)}
             storagePath={`partners/${storageId}/logo`}
+            aspectRatio="square"
+            disabled={isNew && !newId.trim()}
+            disabledHint="Renseignez d'abord l'ID du partenaire."
+          />
+          <ImageUploadField
+            label="Logo secondaire (carte d'accueil, en haut à gauche)"
+            value={data.secondaryLogoUrl || ''}
+            onChange={(url) => update('secondaryLogoUrl', url)}
+            storagePath={`partners/${storageId}/secondary-logo`}
             aspectRatio="square"
             disabled={isNew && !newId.trim()}
             disabledHint="Renseignez d'abord l'ID du partenaire."

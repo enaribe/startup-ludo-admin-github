@@ -16,6 +16,8 @@ import {
   ClipboardList,
   UserCheck,
   UserCircle,
+  ShoppingCart,
+  Mail,
   Layers3,
   Sparkles,
   BarChart3,
@@ -62,6 +64,17 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
       { label: 'Statistiques', href: '/app-stats', icon: <BarChart3 size={18} /> },
       { label: 'Utilisateurs', href: '/users', icon: <Users size={18} /> },
+      // Paramètres globaux : version minimale de l'app mobile (mise à jour obligatoire), etc.
+      { label: 'Paramètres', href: '/settings', icon: <Settings size={18} /> },
+    ],
+  },
+  {
+    // Précommandes et messages envoyés depuis le site vitrine startupludo web
+    title: 'Site web',
+    superAdminOnly: true,
+    items: [
+      { label: 'Commandes', href: '/orders', icon: <ShoppingCart size={18} /> },
+      { label: 'Messages', href: '/messages', icon: <Mail size={18} /> },
     ],
   },
   {

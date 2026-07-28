@@ -1,9 +1,106 @@
 'use client';
 
-import { useState } from 'react';
-import { Building, Globe, Bell, Palette } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Building, Globe, Bell, Palette, Smartphone } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { getAppVersionConfig, saveAppVersionConfig } from '@/lib/firestore-service';
 import toast from 'react-hot-toast';
+
+/**
+ * Carte « Application mobile » — version minimale requise (mise à jour obligatoire).
+ * Écrit le document Firestore `appConfig/version` lu par l'app mobile au démarrage.
+ * Réservée aux super admins.
+ */
+function AppVersionCard() {
+  const [minVersion, setMinVersion] = useState('');
+  const [androidUrl, setAndroidUrl] = useState('');
+  const [iosUrl, setIosUrl] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const config = await getAppVersionConfig();
+        if (config) {
+          setMinVersion(config.minSupportedVersion || '');
+          setAndroidUrl(config.androidStoreUrl || '');
+          setIosUrl(config.iosStoreUrl || '');
+          setMessage(config.message || '');
+        }
+      } catch {
+        toast.error('Impossible de charger la config de version');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    const version = minVersion.trim();
+    if (!/^\d+(\.\d+){0,2}$/.test(version)) {
+      toast.error('Version invalide (format attendu : 2.2.0)');
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveAppVersionConfig({
+        minSupportedVersion: version,
+        androidStoreUrl: androidUrl.trim(),
+        iosStoreUrl: iosUrl.trim(),
+        message: message.trim(),
+      });
+      toast.success('Config de version enregistrée');
+    } catch {
+      toast.error('Erreur lors de l’enregistrement');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="glass-card p-6 mb-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Smartphone size={16} color="#E5533C" />
+        <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>Application mobile — mise à jour obligatoire</h2>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+        Les joueurs dont la version installée est inférieure à la version minimale verront un popup bloquant les invitant à mettre à jour.
+      </p>
+
+      {loading ? (
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Chargement…</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 5 }}>Version minimale requise</label>
+              <input className="input-field" value={minVersion} onChange={(e) => setMinVersion(e.target.value)} placeholder="2.2.0" />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 5 }}>Lien Play Store (Android)</label>
+              <input className="input-field" value={androidUrl} onChange={(e) => setAndroidUrl(e.target.value)} placeholder="https://play.google.com/store/apps/details?id=com.startupludo.app" />
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 5 }}>Lien App Store (iOS)</label>
+              <input className="input-field" value={iosUrl} onChange={(e) => setIosUrl(e.target.value)} placeholder="https://apps.apple.com/app/..." />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 5 }}>Message personnalisé (optionnel)</label>
+              <input className="input-field" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Texte affiché dans le popup" />
+            </div>
+          </div>
+          <button className="btn-primary mt-4" onClick={handleSave} disabled={saving}>
+            {saving ? 'Enregistrement...' : 'Enregistrer la version'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -51,6 +148,9 @@ export default function SettingsPage() {
           <input className="input-field" value={admin?.email ?? ''} disabled readOnly style={{ opacity: 0.6 }} />
         </div>
       </div>
+
+      {/* Application mobile — version minimale (super admin uniquement) */}
+      {isSuperAdmin && <AppVersionCard />}
 
       {/* Préférences */}
       <div className="glass-card p-6 mb-4">

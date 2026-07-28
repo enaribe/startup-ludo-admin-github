@@ -62,4 +62,9 @@ export const COLLECTIONS = {
   defaultProjects: 'defaultProjects',
   progression: 'progression',
   boardConfig: 'boardConfig',
+  // Config applicative (version minimale de l'app mobile, liens stores)
+  appConfig: 'appConfig',
+  // Site vitrine (startupludo web) : précommandes et messages de contact
+  preorders: 'preorders',
+  contactMessages: 'contactMessages',
 } as const;
