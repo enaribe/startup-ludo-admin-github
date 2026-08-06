@@ -91,6 +91,44 @@ export interface StartupIdea {
 }
 
 // EditionData — matches mobile Edition interface + admin extras (sectors, enabled)
+/**
+ * Carte d'événement sponsor (opportunité ou financement) injectée en partie
+ * côté mobile (~25 % de chance sur une case opportunité/financement).
+ */
+export interface SponsorEventCard {
+  id: string;
+  /** Texte affiché dans la carte. */
+  text: string;
+  /** Jetons gagnés (défaut : 2 pour une opportunité, 4 pour un financement). */
+  tokens?: number;
+  /** Logo affiché dans la carte (peut différer du visuel de l'édition, ex. DER, Orange Bank). */
+  logoUrl?: string;
+  /** Lien externe de l'opportunité réelle — permet au joueur de la sauvegarder et de l'ouvrir depuis son profil. */
+  linkUrl?: string;
+}
+
+/**
+ * Sponsoring d'une édition : quand `enabled`, le mobile affiche un popup
+ * sponsor au choix de l'édition (badge « Sponsorisé », visuel, lien).
+ */
+export interface EditionSponsor {
+  enabled: boolean;
+  /** Nom du sponsor affiché dans le texte (ex. "Mastercard Foundation"). */
+  name: string;
+  /** Visuel plein cadre du popup (affiche/photo de la thématique). */
+  imageUrl: string;
+  /** Logo du sponsor affiché dans l'encart « En partenariat avec » (optionnel). */
+  logoUrl?: string;
+  /** Lien « en savoir plus » (optionnel). */
+  linkUrl?: string;
+  /** Description longue affichée sur l'écran « en savoir plus » (optionnel). */
+  description?: string;
+  /** Opportunités sponsor injectées en partie. */
+  opportunities?: SponsorEventCard[];
+  /** Financements sponsor injectés en partie. */
+  fundings?: SponsorEventCard[];
+}
+
 export interface EditionData {
   id: EditionId;
   name: string;
@@ -108,6 +146,8 @@ export interface EditionData {
   enabled: boolean;
   /** Traductions des métadonnées de l'édition (nom / description). FR = racine. */
   translations?: Record<string, { name?: string; description?: string }>;
+  /** Sponsoring de l'édition (popup côté mobile). */
+  sponsor?: EditionSponsor | null;
   updatedAt?: number;
 }
 

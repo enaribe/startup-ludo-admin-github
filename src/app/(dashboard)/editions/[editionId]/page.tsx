@@ -9,6 +9,8 @@ import {
 import { getEdition, saveEdition } from '@/lib/firestore-service';
 import type { EditionData, Quiz, Duel, DuelOption, Funding, Opportunity, ChallengeEvent, DefaultProject } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import ImageUploadField from '@/components/ui/ImageUploadField';
+import SponsorCardListEditor from '@/components/ui/SponsorCardListEditor';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
 import SectorSelectionModal from '@/components/ui/SectorSelectionModal';
@@ -245,6 +247,11 @@ Pour les projets par défaut, chaque projet doit avoir :
   const updateField = <K extends keyof typeof data>(key: K, value: (typeof data)[K]) => {
     setData((prev) => ({ ...prev, [key]: value }));
   };
+
+  // Sponsoring de l'édition (popup côté mobile) — valeurs par défaut si absent.
+  const sponsor = data.sponsor ?? { enabled: false, name: '', imageUrl: '', logoUrl: '', linkUrl: '' };
+  const updateSponsor = (patch: Partial<typeof sponsor>) =>
+    updateField('sponsor', { ...sponsor, ...patch });
 
   // Persiste tout edit en attente avant de quitter la page.
   const handleNavigate = (path: string) => {
@@ -848,6 +855,107 @@ Pour les projets par défaut, chaque projet doit avoir :
                   style={{ left: data.enabled ? 22 : 2 }}
                 />
               </button>
+            </div>
+
+            {/* ===== Sponsoring (popup côté mobile) ===== */}
+            <div style={{ borderTop: '1px solid var(--color-card-border)', paddingTop: 18 }}>
+              <div className="flex items-center gap-3">
+                <label className="label" style={{ marginBottom: 0 }}>Édition sponsorisée</label>
+                <button
+                  onClick={() => updateSponsor({ enabled: !sponsor.enabled })}
+                  className="relative w-10 h-5 rounded-full transition-colors"
+                  style={{
+                    background: sponsor.enabled ? '#4CAF50' : 'var(--color-surface-variant)',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                    style={{ left: sponsor.enabled ? 22 : 2 }}
+                  />
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                Affiche un popup au choix de l&apos;édition : badge « Sponsorisé », visuel,
+                texte « Cette thématique est sponsorisée par… » et bouton JOUER.
+              </p>
+
+              {sponsor.enabled && (
+                <div className="flex flex-col gap-4" style={{ marginTop: 14 }}>
+                  <div>
+                    <label className="label">Nom du sponsor</label>
+                    <input
+                      className="input-field"
+                      placeholder="Mastercard Foundation"
+                      value={sponsor.name}
+                      onChange={(e) => updateSponsor({ name: e.target.value })}
+                    />
+                  </div>
+                  <ImageUploadField
+                    label="Visuel du popup (image plein cadre — format portrait conseillé)"
+                    value={sponsor.imageUrl || ''}
+                    onChange={(url) => updateSponsor({ imageUrl: url })}
+                    storagePath={`editions/${isNew ? newId.trim() : editionId}/sponsor`}
+                    aspectRatio="banner"
+                    disabled={isNew && !newId.trim()}
+                    disabledHint="Renseignez d'abord l'identifiant de l'édition."
+                  />
+                  <ImageUploadField
+                    label="Logo du sponsor (encart « En partenariat avec » — optionnel)"
+                    value={sponsor.logoUrl || ''}
+                    onChange={(url) => updateSponsor({ logoUrl: url })}
+                    storagePath={`editions/${isNew ? newId.trim() : editionId}/sponsor-logo`}
+                    aspectRatio="square"
+                    disabled={isNew && !newId.trim()}
+                    disabledHint="Renseignez d'abord l'identifiant de l'édition."
+                  />
+                  <div>
+                    <label className="label">Lien « en savoir plus » (optionnel)</label>
+                    <input
+                      className="input-field"
+                      placeholder="https://www.mastercardfdn.org/..."
+                      value={sponsor.linkUrl || ''}
+                      onChange={(e) => updateSponsor({ linkUrl: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Description (écran « en savoir plus » — optionnel)</label>
+                    <textarea
+                      className="input-field"
+                      rows={5}
+                      placeholder="Présentation du sponsor et de la thématique, affichée quand le joueur appuie sur EN SAVOIR PLUS…"
+                      value={sponsor.description || ''}
+                      onChange={(e) => updateSponsor({ description: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Cartes d'événements sponsor injectées en partie (~25 % de chance
+                      sur les cases opportunité/financement côté mobile) */}
+                  <div style={{ borderTop: '1px dashed var(--color-card-border)', paddingTop: 14 }}>
+                    <SponsorCardListEditor
+                      title="Opportunités sponsor"
+                      hint="Tirées à la place d'une opportunité classique (~1 fois sur 4). Logo propre à chaque carte (ex. DER)."
+                      cards={sponsor.opportunities ?? []}
+                      onChange={(cards) => updateSponsor({ opportunities: cards })}
+                      storagePathBase={`editions/${isNew ? newId.trim() : editionId}/sponsor-opp`}
+                      defaultTokens={2}
+                      disabled={isNew && !newId.trim()}
+                      disabledHint="Renseignez d'abord l'identifiant de l'édition."
+                    />
+                  </div>
+                  <SponsorCardListEditor
+                    title="Financements sponsor"
+                    hint="Tirés à la place d'un financement classique (~1 fois sur 4). Logo propre à chaque carte (ex. Orange Bank)."
+                    cards={sponsor.fundings ?? []}
+                    onChange={(cards) => updateSponsor({ fundings: cards })}
+                    storagePathBase={`editions/${isNew ? newId.trim() : editionId}/sponsor-fund`}
+                    defaultTokens={4}
+                    disabled={isNew && !newId.trim()}
+                    disabledHint="Renseignez d'abord l'identifiant de l'édition."
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}

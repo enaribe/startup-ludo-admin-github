@@ -40,7 +40,15 @@ export default function SectorChecklist({ value, onChange }: SectorChecklistProp
       const deck = json.decks?.[0];
       if (!deck) throw new Error('Aucun deck trouve');
       const sectorCards: SectorCard[] = deck.cards.filter((c: { type: string }) => c.type === 'sector');
-      setSectors(sectorCards);
+      // Dédoublonnage par texte : le deck peut contenir des cartes aux ids/textes
+      // dupliqués (imports successifs) — on stocke `text`, donc un seul par texte.
+      const seen = new Set<string>();
+      const uniqueSectors = sectorCards.filter((c) => {
+        if (seen.has(c.text)) return false;
+        seen.add(c.text);
+        return true;
+      });
+      setSectors(uniqueSectors);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur reseau');
     } finally {
@@ -103,11 +111,12 @@ export default function SectorChecklist({ value, onChange }: SectorChecklistProp
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-72 overflow-y-auto p-1">
-          {sectors.map((sector) => {
+          {sectors.map((sector, index) => {
             const isSelected = value.includes(sector.text);
             return (
               <button
-                key={sector.id}
+                // Clé composite : les ids du deck ne sont pas garantis uniques (« card_3 » en double)
+                key={`${sector.id}_${index}`}
                 type="button"
                 onClick={() => toggle(sector.text)}
                 className="p-3 rounded-lg transition-all text-left"
