@@ -70,6 +70,14 @@ interface SponsorCardWizardProps {
   kind: SponsorCardKind;
   /** Base du chemin Storage pour le logo. */
   storagePathBase: string;
+  /**
+   * Logo du sponsor au niveau de l'édition (encart « En partenariat avec »),
+   * pré-rempli sur toute NOUVELLE carte : c'est presque toujours le même logo,
+   * le ressaisir à chaque carte était une corvée. Il reste modifiable ou
+   * effaçable carte par carte ; une carte EXISTANTE garde son propre logo,
+   * même vide — ce choix a déjà été fait, on ne le réécrit pas.
+   */
+  defaultLogoUrl?: string;
   /** Objectif de vues courant de l'édition (partagé par toutes les cartes). */
   viewsGoal: number;
   /** Nombre de cartes déjà présentes, par type — sert à l'estimation. */
@@ -92,6 +100,7 @@ export default function SponsorCardWizard({
   card,
   kind: kindInitial,
   storagePathBase,
+  defaultLogoUrl,
   viewsGoal: viewsGoalInitial,
   nbOpportunites,
   nbFinancements,
@@ -106,7 +115,7 @@ export default function SponsorCardWizard({
   const [etape, setEtape] = useState(isEdition ? 1 : 0);
   const [kind, setKind] = useState<SponsorCardKind>(kindInitial);
   const [brouillon, setBrouillon] = useState<SponsorEventCard>(
-    () => card ?? { id: nouvelId(), text: '', tokens: JETONS_PAR_TYPE[kindInitial], logoUrl: '', linkUrl: '' }
+    () => card ?? { id: nouvelId(), text: '', tokens: JETONS_PAR_TYPE[kindInitial], logoUrl: defaultLogoUrl ?? '', linkUrl: '' }
   );
   const [viewsGoal, setViewsGoal] = useState(viewsGoalInitial || 10_000);
 
@@ -155,6 +164,7 @@ export default function SponsorCardWizard({
             brouillon={brouillon}
             onChange={(patch) => setBrouillon((prev) => ({ ...prev, ...patch }))}
             storagePath={`${storagePathBase}-${brouillon.id}`}
+            logoPreRempli={!isEdition && !!defaultLogoUrl && brouillon.logoUrl === defaultLogoUrl}
           />
         )}
 
@@ -386,10 +396,13 @@ function EtapeContenu({
   brouillon,
   onChange,
   storagePath,
+  logoPreRempli,
 }: {
   brouillon: SponsorEventCard;
   onChange: (patch: Partial<SponsorEventCard>) => void;
   storagePath: string;
+  /** Le logo affiché est celui de l'organisation, posé d'office (création). */
+  logoPreRempli: boolean;
 }) {
   const longueur = brouillon.text.length;
   const tropLong = longueur > LONGUEUR_CONSEILLEE;
@@ -435,13 +448,21 @@ function EtapeContenu({
         )}
       </div>
 
-      <ImageUploadField
-        label="Logo affiché sur la carte (optionnel)"
-        value={brouillon.logoUrl || ''}
-        onChange={(url) => onChange({ logoUrl: url })}
-        storagePath={storagePath}
-        aspectRatio="square"
-      />
+      <div>
+        <ImageUploadField
+          label="Logo affiché sur la carte (optionnel)"
+          value={brouillon.logoUrl || ''}
+          onChange={(url) => onChange({ logoUrl: url })}
+          storagePath={storagePath}
+          aspectRatio="square"
+        />
+        {logoPreRempli && (
+          <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            Le logo de votre organisation a été pré-rempli — remplacez-le ou retirez-le si
+            cette carte en demande un autre.
+          </p>
+        )}
+      </div>
 
       <div>
         <label className="label">Lien de l’opportunité (optionnel)</label>

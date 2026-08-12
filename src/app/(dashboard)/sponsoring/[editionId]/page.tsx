@@ -278,6 +278,7 @@ export default function SponsoringEditorPage() {
           card={wizard.mode === 'edit' ? wizard.card : null}
           kind={wizard.kind}
           storagePathBase={`editions/${editionId}/sponsor-${wizard.kind === 'opportunity' ? 'opp' : 'fund'}`}
+          defaultLogoUrl={sponsor.logoUrl}
           viewsGoal={sponsor.viewsGoal ?? 0}
           nbOpportunites={nbOpportunitesJouables}
           nbFinancements={nbFinancementsJouables}
