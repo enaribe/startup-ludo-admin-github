@@ -1,0 +1,13 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+const key = readdirSync('.').find(f => /firebase-adminsdk.*\.json$/.test(f));
+initializeApp({ credential: cert(JSON.parse(readFileSync(key, 'utf8'))) });
+const email = process.argv[2];
+const u = await getAuth().getUserByEmail(email);
+console.log('CLAIMS  :', JSON.stringify(u.customClaims));
+const d = await getFirestore().collection('users').doc(u.uid).get();
+const x = d.data() ?? {};
+console.log('DOC users:', JSON.stringify({ role: x.role, establishmentId: x.establishmentId, teachingClassIds: x.teachingClassIds }));
+process.exit(0);

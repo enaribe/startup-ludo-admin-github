@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, Download, Pencil, Trash2, User, Sparkles } from 'lucide-react';
 import { getProgram, saveProgram, getEnrollmentsByProgram, getSourceDocsText } from '@/lib/firestore-service';
 import { generateId } from '@/lib/utils';
+import { appelerGeneration } from '@/lib/ai-client';
 import type { ProgramProfile, ProgramEnrollment } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import { useCurrentProgram } from '@/lib/program-context';
@@ -100,23 +101,19 @@ export default function PersonasPage() {
     setGenerating(true);
     try {
       const sourceText = await getSourceDocsText(programId).catch(() => '');
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'personas',
-          prompt: 'Génère 3 à 5 personas variés et cohérents avec ce programme.',
-          context: {
-            programName: program.name,
-            objective: program.contentSource?.objective ?? '',
-            sectors: [program.audience?.sector, ...(program.eligibility?.sectors ?? []), ...(program.tags ?? [])]
-              .filter(Boolean).join(', '),
-            // Zone géographique : les personas doivent y être situés (anti « lieux hors zone »).
-            region: [...(program.audience?.locations ?? []), ...(program.eligibility?.regions ?? [])]
-              .filter(Boolean).join(', '),
-            sourceText,
-          },
-        }),
+      const res = await appelerGeneration({
+        type: 'personas',
+        prompt: 'Génère 3 à 5 personas variés et cohérents avec ce programme.',
+        context: {
+          programName: program.name,
+          objective: program.contentSource?.objective ?? '',
+          sectors: [program.audience?.sector, ...(program.eligibility?.sectors ?? []), ...(program.tags ?? [])]
+            .filter(Boolean).join(', '),
+          // Zone géographique : les personas doivent y être situés (anti « lieux hors zone »).
+          region: [...(program.audience?.locations ?? []), ...(program.eligibility?.regions ?? [])]
+            .filter(Boolean).join(', '),
+          sourceText,
+        },
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Génération impossible');

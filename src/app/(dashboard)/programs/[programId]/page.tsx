@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getProgram, saveProgram, getPartners, saveSourceDocText, deleteSourceDoc } from '@/lib/firestore-service';
+import { appelerExtraction } from '@/lib/ai-client';
 import type {
   PartnerProgram, ProgramContentPack, ProgramPartner, ProgramLevelTier, ProgramGameMode,
   Quiz, Duel, Funding, Opportunity, ChallengeEvent,
@@ -267,9 +268,7 @@ export default function ProgramEditorPage() {
 
       // 2) Extraction du texte côté serveur.
       setUploadProgress(92);
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/extract', { method: 'POST', body: fd });
+      const res = await appelerExtraction(file);
       const extracted = await res.json();
       if (!res.ok) throw new Error(extracted.error || 'Extraction impossible');
 

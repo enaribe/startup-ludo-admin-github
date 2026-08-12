@@ -21,9 +21,11 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { firestore, COLLECTIONS } from './firebase';
+import type { AdminRole } from './auth';
 import type {
   EditionData,
   EditionId,
+  EditionSponsor,
   ChallengeProgram,
   ProgramPartner,
   PartnerProgram,
@@ -52,9 +54,38 @@ export async function getEdition(editionId: string): Promise<EditionData | null>
   return { id: snap.id as EditionId, ...snap.data() } as EditionData;
 }
 
+/**
+ * Charge uniquement les éditions dont les ids sont fournis (périmètre d'un
+ * compte sponsor). On lit document par document plutôt que la collection
+ * entière : un sponsor n'a pas — et ne doit pas avoir — le droit de lister
+ * `editions`. Les ids introuvables sont ignorés silencieusement (édition
+ * supprimée depuis l'assignation du compte).
+ */
+export async function getEditionsByIds(editionIds: string[]): Promise<EditionData[]> {
+  if (editionIds.length === 0) return [];
+  const results = await Promise.all(editionIds.map((id) => getEdition(id)));
+  return results.filter((edition): edition is EditionData => edition !== null);
+}
+
 export async function saveEdition(editionId: string, data: Omit<EditionData, 'id'>): Promise<void> {
   await setDoc(doc(firestore, COLLECTIONS.editions, editionId), {
     ...data,
+    updatedAt: Date.now(),
+  });
+}
+
+/**
+ * Met à jour UNIQUEMENT le champ `sponsor` d'une édition.
+ *
+ * Pourquoi ne pas réutiliser `saveEdition` ? Celle-ci fait un `setDoc` complet :
+ * elle réécrit tout le document à partir de l'état chargé en mémoire. Depuis
+ * l'espace sponsor (où un super admin peut éditer le contenu de l'édition en
+ * parallèle), on veut une écriture chirurgicale qui ne peut en aucun cas
+ * écraser quizzes / duels / fundings / opportunities / challenges.
+ */
+export async function saveEditionSponsor(editionId: string, sponsor: EditionSponsor): Promise<void> {
+  await updateDoc(doc(firestore, COLLECTIONS.editions, editionId), {
+    sponsor,
     updatedAt: Date.now(),
   });
 }
@@ -153,13 +184,22 @@ export async function getProgramsByOwner(ownerId: string): Promise<PartnerProgra
  *  - super_admin   → tous les programmes
  *  - partner_admin → tous les programmes de son partenaire
  *  - admin         → uniquement les programmes dont il est propriétaire (ownerId)
+ *  - sponsor       → aucun (son périmètre porte sur des éditions, pas des programmes)
+ *  - rôles scolaires (establishment_admin, teacher) → aucun : leur périmètre est
+ *    un établissement et des classes, jamais un programme partenaire.
+ *
+ * Le type du paramètre s'appuie sur `AdminRole` : tout nouveau rôle devra donc
+ * être arbitré ici explicitement plutôt que de retomber silencieusement sur la
+ * branche « propriétaire ».
  */
 export async function getScopedPrograms(admin: {
-  role: 'admin' | 'super_admin' | 'partner_admin';
+  role: AdminRole;
   uid: string;
   partnerId?: string | null;
 } | null): Promise<PartnerProgram[]> {
   if (!admin) return [];
+  if (admin.role === 'sponsor') return [];
+  if (admin.role === 'establishment_admin' || admin.role === 'teacher') return [];
   if (admin.role === 'super_admin') return getPrograms();
   if (admin.role === 'partner_admin') return admin.partnerId ? getProgramsByPartner(admin.partnerId) : [];
   return getProgramsByOwner(admin.uid);

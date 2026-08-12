@@ -14,6 +14,7 @@ import type {
   Quiz, Duel, Funding, Opportunity, ChallengeEvent,
   ProgramContentPack, ProgramLevelTier, PartnerProgram,
 } from '@/types';
+import { appelerGeneration } from '@/lib/ai-client';
 
 export interface GeneratedContent {
   quizzes: Quiz[];
@@ -162,18 +163,14 @@ export async function generateLevelContent(
     return { levelIndex, levelTier: tier, levelLabel: label, content: { ...EMPTY } };
   }
 
-  const res = await fetch('/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'sublevel_content_import',
-      prompt: buildPrompt(brief, label, mix),
-      context: {
-        subLevelTitle: label,
-        levelTitle: label,
-        programName: brief.programName || '',
-      },
-    }),
+  const res = await appelerGeneration({
+    type: 'sublevel_content_import',
+    prompt: buildPrompt(brief, label, mix),
+    context: {
+      subLevelTitle: label,
+      levelTitle: label,
+      programName: brief.programName || '',
+    },
   });
 
   const json = await res.json();

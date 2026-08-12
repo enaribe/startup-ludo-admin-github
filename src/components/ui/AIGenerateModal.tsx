@@ -5,6 +5,7 @@ import { Sparkles, Loader2, AlertCircle, Check } from 'lucide-react';
 import Modal from './Modal';
 import type { GenerationType } from '@/lib/ai-prompts';
 import { PROMPTS } from '@/lib/ai-prompts';
+import { appelerGeneration } from '@/lib/ai-client';
 
 interface AIGenerateModalProps {
   open: boolean;
@@ -49,11 +50,7 @@ export default function AIGenerateModal({ open, onClose, type, context, onGenera
     setPreview(null);
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, prompt: promptText.trim(), context }),
-      });
+      const res = await appelerGeneration({ type, prompt: promptText.trim(), context });
 
       const json = await res.json();
 
@@ -77,11 +74,7 @@ export default function AIGenerateModal({ open, onClose, type, context, onGenera
     setPreview(null);
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, prompt: prompt.trim(), context }),
-      });
+      const res = await appelerGeneration({ type, prompt: prompt.trim(), context });
 
       const json = await res.json();
 

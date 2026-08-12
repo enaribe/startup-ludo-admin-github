@@ -127,6 +127,33 @@ export interface EditionSponsor {
   opportunities?: SponsorEventCard[];
   /** Financements sponsor injectés en partie. */
   fundings?: SponsorEventCard[];
+
+  // ===== Sponsoring payant (facturé au volume de vues) =====
+  // `viewsGoal` et `paused` sont le contrat PARTAGÉ avec le mobile : le jeu les
+  // lit pour arrêter le tirage des cartes. Les champs suivants sont purement
+  // administratifs (devis / facturation) et ignorés par le jeu.
+
+  /** Volume de vues acheté par le sponsor ; au-delà, les cartes ne sont plus tirées. */
+  viewsGoal?: number;
+  /** Diffusion suspendue (manuellement ou budget épuisé). */
+  paused?: boolean;
+  /**
+   * Prix facturé par vue, en FCFA. Stocké sur l'édition plutôt que déduit d'une
+   * constante globale : une grille négociée avec un partenaire doit rester
+   * vraie même si le tarif public change ensuite — sinon une facture émise
+   * hier ne serait plus reproductible aujourd'hui.
+   */
+  pricePerView?: number;
+  /**
+   * Plafond de dépense en FCFA, calculé à la validation (`viewsGoal ×
+   * pricePerView`). Conservé tel quel : c'est le montant contractuel engagé,
+   * indépendant d'un éventuel recalcul ultérieur.
+   */
+  budgetCap?: number;
+  /** Début souhaité de la diffusion (timestamp ms) — informatif, non appliqué par le jeu. */
+  startDate?: number;
+  /** Fin souhaitée de la diffusion (timestamp ms) — informatif, non appliqué par le jeu. */
+  endDate?: number;
 }
 
 export interface EditionData {
@@ -610,4 +637,331 @@ export interface DashboardStats {
   totalGames: number;
   totalChallengeEnrollments: number;
   editionsCount: number;
+}
+
+// ===== Mode Classe =====
+// Modèle exact de SPEC-MODE-CLASSE §2.1. Les collections concernées sont
+// `establishments`, `classes` et la sous-collection `classes/{id}/learners`.
+
+/** Niveau d'enseignement d'un établissement ou d'une classe. */
+export type SchoolLevel = 'college' | 'lycee' | 'universite' | 'formation';
+
+/** Libellés d'affichage des niveaux, dans l'ordre attendu à l'écran. */
+export const SCHOOL_LEVEL_LABELS: Record<SchoolLevel, string> = {
+  college: 'Collège',
+  lycee: 'Lycée',
+  universite: 'Université',
+  formation: 'Formation',
+};
+
+/** Liste ordonnée des niveaux, pour les sélecteurs et les filtres. */
+export const SCHOOL_LEVELS: SchoolLevel[] = ['college', 'lycee', 'universite', 'formation'];
+
+/**
+ * Établissement scolaire client (collection `establishments`).
+ * Un document par établissement ; c'est le périmètre d'un `establishment_admin`.
+ */
+export interface Establishment {
+  /** Identifiant du document (ex. `ism-dakar`). */
+  id: string;
+  /** Raison sociale affichée partout (ex. « ISM Dakar »). */
+  name: string;
+  /** Niveau d'enseignement dominant de l'établissement. */
+  level: SchoolLevel;
+  /** Ville du site principal. */
+  city: string;
+  /** Pays du site principal. */
+  country: string;
+  /** Code de licence commercial (ex. « EST-ISM-2026 »). */
+  licenseCode: string;
+  /**
+   * Fin de validité de la licence, en millisecondes epoch.
+   * ⚠️ APPLIQUÉ au lot 4 : au-delà, le lancement d'une séance est bloqué.
+   */
+  licenseValidUntil?: number | null;
+  /** Quota de comptes enseignants. 0 = illimité. */
+  maxTeachers: number;
+  /** Quota d'élèves, tous niveaux confondus. 0 = illimité. */
+  maxLearners: number;
+  /** False = établissement suspendu (impayé, fin de contrat). */
+  isActive: boolean;
+  /** Date de création, en millisecondes epoch. */
+  createdAt?: number;
+  /** Date de dernière modification, en millisecondes epoch. */
+  updatedAt?: number;
+}
+
+/**
+ * Classe d'un établissement (collection `classes`).
+ * Une classe consomme les programmes ; ce n'est PAS un `PartnerProgram`
+ * (cf. SPEC §2.3).
+ */
+export interface SchoolClass {
+  /** Identifiant du document (ex. `tle-s2`). */
+  id: string;
+  /** Établissement propriétaire — borne du périmètre, jamais modifiable. */
+  establishmentId: string;
+  /** Nom affiché de la classe (ex. « Terminale S2 »). */
+  name: string;
+  /** Niveau d'enseignement de la classe. */
+  level: SchoolLevel;
+  /**
+   * Enseignants affectés (uid des comptes).
+   * Relation inverse de `AdminUser.teachingClassIds` — les deux doivent rester
+   * cohérentes ; l'écriture est faite par `/api/admins` au lot 3.
+   */
+  teacherIds: string[];
+  /**
+   * Nombre d'élèves actifs, dénormalisé pour l'affichage en grille (évite de
+   * lire la sous-collection `learners` de chaque classe).
+   */
+  learnerCount: number;
+  /**
+   * Code de rattachement à 6 caractères, `null` quand la fenêtre est fermée.
+   * ⚠️ LOT 4 : déclaré ici pour figer le modèle, non utilisé par le lot 2.
+   */
+  joinCode?: string | null;
+  /**
+   * Expiration de la fenêtre de rattachement, en millisecondes epoch.
+   * ⚠️ LOT 4 : déclaré ici pour figer le modèle, non utilisé par le lot 2.
+   */
+  joinCodeExpiresAt?: number | null;
+  /** Date de création, en millisecondes epoch. */
+  createdAt?: number;
+  /** Date de dernière modification, en millisecondes epoch. */
+  updatedAt?: number;
+}
+
+/**
+ * Agrégat de maîtrise d'une notion pour un élève : réponses justes sur total.
+ * Alimenté en fin de séance (lot 6).
+ */
+export interface LearnerCategoryMastery {
+  /** Nombre de réponses correctes cumulées sur cette catégorie. */
+  correct: number;
+  /** Nombre total de questions posées sur cette catégorie. */
+  total: number;
+}
+
+/**
+ * Élève d'une classe (sous-collection `classes/{classId}/learners`).
+ *
+ * ⚠️ Un élève n'est JAMAIS supprimé : un retrait pose `isActive: false` et
+ * libère `linkedUid`. Sans quoi les séances passées et le bilan de classe
+ * deviendraient faux (cf. SPEC « Mouvements d'élèves »).
+ */
+export interface Learner {
+  /** Identifiant du document dans la sous-collection. */
+  id: string;
+  /** Prénom de l'élève. */
+  firstName: string;
+  /** Nom de famille de l'élève. */
+  lastName: string;
+  /** Numéro d'élève de l'établissement, optionnel. */
+  externalId?: string;
+  /**
+   * Compte de l'élève (uid Firebase), posé au rattachement et permanent.
+   * `null` tant que l'élève n'a pas lié son compte, ou après un retrait.
+   */
+  linkedUid?: string | null;
+  /** Date du rattachement du compte, en millisecondes epoch. */
+  linkedAt?: number | null;
+  /** False = l'élève a quitté la classe ; on garde l'historique. */
+  isActive: boolean;
+  /** Nombre de séances auxquelles l'élève a participé (agrégat, écrit au lot 7). */
+  totalSessions?: number;
+  /** Dernière activité de l'élève, en millisecondes epoch (agrégat, écrit au lot 7). */
+  lastPlayedAt?: number | null;
+  /** Maîtrise cumulée par catégorie de quiz (agrégat, écrit au lot 7). */
+  masteryByCategory?: Record<string, LearnerCategoryMastery>;
+  /**
+   * Séances DÉJÀ intégrées au cumul (lot 7) — le garde-fou de l'idempotence.
+   *
+   * Sans ce marqueur, cliquer deux fois « Terminer la séance » (ou relancer un
+   * recalcul) additionnerait deux fois les mêmes réponses, et la fiche annuelle
+   * de l'élève afficherait un effectif de questions supérieur au nombre réel.
+   *
+   * Il vit sur le document du learner, et non dans une sous-collection, pour
+   * être écrit dans la MÊME opération que `masteryByCategory` : une panne entre
+   * les deux écritures laisserait sinon un cumul non marqué (donc doublé au
+   * prochain clic) ou un marqueur sans cumul (séance définitivement perdue).
+   *
+   * Volume : ~30 identifiants sur une année scolaire, quelques centaines
+   * d'octets — très loin de la limite Firestore de 1 Mo par document.
+   */
+  countedSessionIds?: string[];
+  /** Date de création, en millisecondes epoch. */
+  createdAt?: number;
+  /** Date de dernière modification, en millisecondes epoch. */
+  updatedAt?: number;
+}
+
+/**
+ * État d'une séance de classe.
+ *  - `scheduled` : créée et programmée, pas encore ouverte aux élèves ;
+ *  - `running`   : en cours — c'est le SEUL état où l'élève voit la séance et
+ *                  peut y écrire (cf. règles Firestore `classSessions`) ;
+ *  - `ended`     : terminée, base du rapport de séance (lot 6).
+ */
+export type ClassSessionStatus = 'scheduled' | 'running' | 'ended';
+
+/**
+ * Séance de classe (collection `classSessions`) — modèle exact de SPEC §2.1.
+ *
+ * ⚠️ PAS DE CHAMP `code`, et c'est structurant : le code à 6 caractères vit sur
+ * la CLASSE (`joinCode` / `joinCodeExpiresAt`, lot 4a) et ne sert qu'au
+ * rattachement d'un compte élève à son nom, une fois dans l'année. Les élèves
+ * déjà rattachés voient la séance depuis leur profil, sans rien saisir.
+ * Confondre les deux ferait ressaisir un code à chaque séance et rendrait le
+ * code permanent — donc partageable hors de la classe (cf. SPEC §1).
+ *
+ * Une séance n'est PAS une `programSession` : cette dernière est une trace
+ * individuelle a posteriori qui alimente les analytics commerciales, y injecter
+ * du scolaire polluerait le funnel de conversion (SPEC §2.3).
+ */
+export interface ClassSession {
+  /** Identifiant du document. */
+  id: string;
+  /** Établissement propriétaire — borne de lecture du directeur. */
+  establishmentId: string;
+  /** Classe visée. Doit appartenir au claim `classIds` de l'enseignant. */
+  classId: string;
+  /** Enseignant qui a créé la séance (uid) — seul habilité à la modifier. */
+  teacherId: string;
+  /** État de la séance. */
+  status: ClassSessionStatus;
+  /** Édition dont le contenu est imposé à tous les élèves de la séance. */
+  editionId: string;
+  /** Programme partenaire d'origine du contenu, si la séance en réutilise un. */
+  programId?: string;
+  /** Pack de contenu retenu à l'intérieur du programme, le cas échéant. */
+  contentPackId?: string;
+  /** Index du niveau ciblé dans le programme (0 = Niv.1), le cas échéant. */
+  levelIndex?: number;
+  /** Durée prévue de la séance, en minutes (20 à 45, cf. SPEC §3.2). */
+  durationMinutes: number;
+  /** Date/heure programmée, en millisecondes epoch. Absent = lancement immédiat. */
+  scheduledAt?: number;
+  /** Début effectif, en millisecondes epoch (posé au passage en `running`). */
+  startedAt?: number;
+  /** Fin effective, en millisecondes epoch (posée au passage en `ended`). */
+  endedAt?: number;
+  /** URLs des documents de cours joints (Storage). */
+  attachmentUrls: string[];
+  /** Date de création, en millisecondes epoch. */
+  createdAt?: number;
+  /**
+   * Titre donné par l'enseignant, pour retrouver la séance dans son historique
+   * et la réutiliser. Hors SPEC §2.1 mais sans lui, la voie « réutiliser une
+   * séance déjà générée » du wizard n'affiche qu'une liste de dates.
+   */
+  title?: string;
+  /**
+   * True si le contenu de la séance a été généré par l'IA depuis le cours de
+   * l'enseignant. Sert de filtre à la voie (b) du wizard, et signale au rapport
+   * (lot 6) que les catégories proviennent de la liste fermée du prompt.
+   */
+  hasGeneratedContent?: boolean;
+  /** Date de dernière modification, en millisecondes epoch. */
+  updatedAt?: number;
+}
+
+/**
+ * Contenu pédagogique d'une séance, généré par l'IA depuis le cours déposé.
+ *
+ * STOCKÉ EN SOUS-DOCUMENT `classSessions/{id}/content/generated`, jamais dans le
+ * document de séance : un pack complet (quiz + duels + financements +
+ * opportunités + défis) approche vite la limite Firestore de 1 Mo par document,
+ * et la séance elle-même est lue à chaque affichage de liste. Même raisonnement
+ * que `programs/{id}/sourceDocs` pour le texte source.
+ */
+export interface ClassSessionContent {
+  /** Quiz — porteurs de `category` et `difficulty`, base du rapport du lot 6. */
+  quizzes: Quiz[];
+  /** Duels (3 options pondérées 30/20/10). */
+  duels: Duel[];
+  /** Financements (jetons positifs). */
+  fundings: Funding[];
+  /** Opportunités (jetons positifs). */
+  opportunities: Opportunity[];
+  /** Défis (jetons négatifs). */
+  challengeEvents: ChallengeEvent[];
+  /** Date de génération, en millisecondes epoch. */
+  generatedAt?: number;
+  /** Date de la dernière correction par l'enseignant, en millisecondes epoch. */
+  reviewedAt?: number;
+}
+
+/**
+ * État d'un élève dans une séance, écrit par le MOBILE au fil de la partie.
+ *
+ * `abandoned` existe côté mobile (`terminerSeance({ abandoned: true })`) : il
+ * doit être typé ici même si le suivi le présente comme « terminé », sinon un
+ * document légitime tomberait dans une branche `never` à la lecture.
+ */
+export type ClassParticipantStatus = 'joined' | 'playing' | 'finished' | 'abandoned';
+
+/** Position de l'élève sur le plateau, remontée sous throttle (~10 s). */
+export interface ClassParticipantProgress {
+  /** Case atteinte sur le circuit. */
+  cellIndex: number;
+  /** Jetons détenus — c'est aussi la base du score. */
+  tokens: number;
+  /** Nombre de cartes jouées depuis le début de la partie. */
+  cardsPlayed: number;
+}
+
+/**
+ * Une réponse de quiz — LA donnée du rapport pédagogique.
+ *
+ * Poussée par le mobile avec `arrayUnion` : le tableau est additif et sans
+ * doublon, mais son ORDRE n'est pas garanti et un même `quizId` peut apparaître
+ * deux fois s'il a été joué avec deux résultats différents. L'agrégation ne
+ * suppose donc ni ordre ni unicité.
+ */
+export interface ClassParticipantAnswer {
+  /** Identifiant du quiz joué. */
+  quizId: string;
+  /** Catégorie du quiz — la « notion » agrégée par le rapport. */
+  category: string;
+  /** True si l'élève a répondu juste. */
+  correct: boolean;
+  /** Instant de la réponse, en millisecondes epoch (posé côté élève). */
+  answeredAt: number;
+}
+
+/**
+ * Participation d'un élève à une séance
+ * (`classSessions/{sessionId}/participants/{learnerId}`).
+ *
+ * ⚠️ TOUS LES CHAMPS SAUF `learnerId` SONT OPTIONNELS, et ce n'est pas de la
+ * prudence excessive : le document est construit par écritures `merge`
+ * successives depuis le mobile, dont chacune peut se perdre ou arriver hors
+ * ligne. Un élève qui rejoint puis quitte l'application sans jouer laisse un
+ * document sans `progress`, sans `score` et sans `answers`. Le rapport doit
+ * l'afficher, pas planter dessus.
+ *
+ * `displayName` n'est écrit que si le mobile le fournit : le back-office ne s'y
+ * fie jamais seul et retombe sur la liste `learners` de la classe, qui est la
+ * source nominative de référence.
+ */
+export interface ClassSessionParticipant {
+  /** Identifiant du learner — égal à l'id du document. */
+  learnerId: string;
+  /** Nom recopié par le mobile, souvent absent. */
+  displayName?: string;
+  /** Entrée en séance, en millisecondes epoch. */
+  joinedAt?: number;
+  /** Dernière écriture reçue, en millisecondes epoch. */
+  lastSeenAt?: number;
+  /** État de la participation. */
+  status?: ClassParticipantStatus;
+  /** Position sur le plateau. */
+  progress?: ClassParticipantProgress;
+  /** Score de l'élève (jetons). */
+  score?: number;
+  /** Réponses aux quiz, poussées une par une en `arrayUnion`. */
+  answers?: ClassParticipantAnswer[];
+  /** Fin de partie, en millisecondes epoch. */
+  finishedAt?: number;
 }

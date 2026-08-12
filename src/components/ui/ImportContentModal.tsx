@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Upload, Sparkles, Check, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Quiz, Duel, Funding, Opportunity, ChallengeEvent } from '@/types';
 import { generateId } from '@/lib/utils';
+import { appelerGeneration } from '@/lib/ai-client';
 
 export interface ImportedContent {
   quizzes: Quiz[];
@@ -141,19 +142,15 @@ export default function ImportContentModal({
     setPreview(null);
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'sublevel_content_import',
-          prompt: rawText,
-          context: {
-            subLevelTitle: subLevelTitle || '',
-            levelTitle: levelTitle || '',
-            programName: programName || '',
-            importFilter: importFilter || '',
-          },
-        }),
+      const res = await appelerGeneration({
+        type: 'sublevel_content_import',
+        prompt: rawText,
+        context: {
+          subLevelTitle: subLevelTitle || '',
+          levelTitle: levelTitle || '',
+          programName: programName || '',
+          importFilter: importFilter || '',
+        },
       });
 
       const json = await res.json();

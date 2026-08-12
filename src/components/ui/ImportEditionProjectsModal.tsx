@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Upload, Sparkles, Check, AlertCircle } from 'lucide-react';
 import type { DefaultProject } from '@/types';
 import { generateId } from '@/lib/utils';
+import { appelerGeneration } from '@/lib/ai-client';
 
 interface ImportEditionProjectsModalProps {
   editionName?: string;
@@ -71,17 +72,13 @@ export default function ImportEditionProjectsModal({
     setPreview(null);
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'edition_projects_import',
-          prompt: rawText,
-          context: {
-            editionName: editionName || '',
-            sectors: sectors.length ? sectors.join(', ') : '',
-          },
-        }),
+      const res = await appelerGeneration({
+        type: 'edition_projects_import',
+        prompt: rawText,
+        context: {
+          editionName: editionName || '',
+          sectors: sectors.length ? sectors.join(', ') : '',
+        },
       });
 
       const json = await res.json();

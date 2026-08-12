@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PROMPTS, type GenerationType } from '@/lib/ai-prompts';
+import { exigerAuteurDeContenu } from '@/lib/api-auth';
 
 /**
  * POST /api/generate
+ * Header requis : `Authorization: Bearer <idToken>`
  * Body: { type: GenerationType, prompt: string, context?: Record<string, unknown> }
  * Returns: { data: any } — the parsed JSON from the AI
  *
  * Supports OpenAI (gpt-4o-mini) or Anthropic (Claude) depending on which key is set.
+ *
+ * ⚠️ SÉCURITÉ — cette route était ouverte à tout le monde alors qu'elle dépense
+ * directement le quota OpenAI/Anthropic (jusqu'à 16 384 tokens de sortie par
+ * appel). Le contrôle vit dans `api-auth.ts` et il est fait AVANT de lire le
+ * corps, donc avant tout appel au fournisseur.
  */
 export async function POST(request: NextRequest) {
+  const auth = await exigerAuteurDeContenu(request);
+  if ('reponse' in auth) return auth.reponse;
+
   try {
     const body = await request.json();
     const { type, prompt, context } = body as {

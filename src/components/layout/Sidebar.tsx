@@ -24,6 +24,10 @@ import {
   MessageSquare,
   Settings,
   Map,
+  Handshake,
+  School,
+  GraduationCap,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -42,6 +46,12 @@ interface NavItem {
   programAdminOnly?: boolean;
   /** Réservé à l'admin de partenaire. */
   partnerAdminOnly?: boolean;
+  /** Réservé au compte sponsor. */
+  sponsorOnly?: boolean;
+  /** Réservé à l'admin d'établissement (Mode Classe). */
+  establishmentOnly?: boolean;
+  /** Réservé à l'enseignant (Mode Classe). */
+  teacherOnly?: boolean;
 }
 
 interface NavSection {
@@ -52,6 +62,12 @@ interface NavSection {
   programAdminOnly?: boolean;
   /** Toute la section est réservée à l'admin de partenaire. */
   partnerAdminOnly?: boolean;
+  /** Toute la section est réservée au compte sponsor. */
+  sponsorOnly?: boolean;
+  /** Toute la section est réservée à l'admin d'établissement (Mode Classe). */
+  establishmentOnly?: boolean;
+  /** Toute la section est réservée à l'enseignant (Mode Classe). */
+  teacherOnly?: boolean;
   items: NavItem[];
 }
 
@@ -83,6 +99,11 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Partenaires', href: '/partners', icon: <Building2 size={18} /> },
       { label: 'Programmes', href: '/programs', icon: <Rocket size={18} /> },
+      // Parc des établissements clients (Mode Classe, lot 6) : création d'un
+      // établissement ET de son compte de direction. `superAdminOnly` est déjà
+      // porté par la section ; on le répète sur l'item pour que le filtrage
+      // reste juste si l'entrée est un jour déplacée dans une autre section.
+      { label: 'Établissements', href: '/etablissements', icon: <School size={18} />, superAdminOnly: true },
       { label: 'Admins', href: '/admins', icon: <Users size={18} /> },
     ],
   },
@@ -152,25 +173,95 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Communications', href: '/communications', icon: <MessageSquare size={18} /> },
     ],
   },
+  // ===== SPONSOR : gestion de SON sponsoring sur les éditions qui lui sont assignées =====
+  // Périmètre volontairement minimal : un sponsor est un partenaire externe, il
+  // ne doit voir AUCUNE autre section du back-office.
+  {
+    title: 'Sponsoring',
+    sponsorOnly: true,
+    items: [
+      { label: 'Mes éditions', href: '/sponsoring', icon: <Handshake size={18} /> },
+    ],
+  },
+  // ===== MODE CLASSE — ADMIN D'ÉTABLISSEMENT : pilotage de SON établissement =====
+  // Périmètre fermé, comme le sponsor : aucune autre section du back-office ne
+  // doit apparaître. Les écrans ciblés arrivent aux lots 2 et 3.
+  {
+    title: 'Mon établissement',
+    establishmentOnly: true,
+    items: [
+      { label: 'Tableau de bord', href: '/etablissement', icon: <LayoutDashboard size={18} /> },
+      { label: 'Classes', href: '/classes', icon: <School size={18} /> },
+      { label: 'Enseignants', href: '/enseignants', icon: <Users size={18} /> },
+      // Le directeur lit les séances de son établissement (lot 4b). `/seances`
+      // figurait déjà dans ESTABLISHMENT_ROUTES du layout : sans cette entrée,
+      // la route lui était ouverte mais inatteignable.
+      { label: 'Séances', href: '/seances', icon: <CalendarDays size={18} /> },
+    ],
+  },
+  // ===== MODE CLASSE — ENSEIGNANT : uniquement SES classes et SES séances =====
+  {
+    title: 'Ma classe',
+    teacherOnly: true,
+    items: [
+      { label: 'Mes classes', href: '/classes', icon: <GraduationCap size={18} /> },
+      { label: 'Séances', href: '/seances', icon: <CalendarDays size={18} /> },
+    ],
+  },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { admin, logout, isSuperAdmin, isPartnerAdmin, isProgramAdmin } = useAuth();
+  const { admin, logout, isSuperAdmin, isPartnerAdmin, isProgramAdmin, isSponsor, isEstablishmentAdmin, isTeacher } = useAuth();
 
   // Filtrage par rôle : un élément flaggé *Only n'est visible que pour le rôle correspondant ;
-  // un élément sans flag est visible par tous.
-  const allowed = (flags: { superAdminOnly?: boolean; partnerAdminOnly?: boolean; programAdminOnly?: boolean }) => {
+  // un élément sans flag est visible par tous — SAUF pour les rôles à périmètre
+  // FERMÉ PAR DÉFAUT (sponsor, admin d'établissement, enseignant), qui ne voient
+  // QUE ce qui leur est explicitement destiné. Conséquence voulue : toute section
+  // ajoutée plus tard sans flag reste invisible pour eux — l'oubli est sûr.
+  const allowed = (flags: {
+    superAdminOnly?: boolean;
+    partnerAdminOnly?: boolean;
+    programAdminOnly?: boolean;
+    sponsorOnly?: boolean;
+    establishmentOnly?: boolean;
+    teacherOnly?: boolean;
+  }) => {
+    if (flags.sponsorOnly) return isSponsor;
+    if (flags.establishmentOnly) return isEstablishmentAdmin;
+    if (flags.teacherOnly) return isTeacher;
+    if (isSponsor || isEstablishmentAdmin || isTeacher) return false;
     if (flags.superAdminOnly) return isSuperAdmin;
     if (flags.partnerAdminOnly) return isPartnerAdmin;
     if (flags.programAdminOnly) return isProgramAdmin;
     return true;
   };
 
+  // Les items HÉRITENT des drapeaux de leur section.
+  //
+  // Sans cet héritage, un item sans drapeau propre placé dans une section
+  // `establishmentOnly` / `teacherOnly` / `sponsorOnly` retombait sur la règle
+  // « fermé par défaut » de `allowed()` (`if (isSponsor || isEstablishmentAdmin
+  // || isTeacher) return false`) et disparaissait. La section se retrouvait sans
+  // aucun item, donc supprimée par le `.filter` final : la barre latérale
+  // s'affichait entièrement vide pour un directeur ou un enseignant, alors même
+  // que ses écrans étaient accessibles en tapant l'URL.
   const sections = NAV_SECTIONS
     .filter((section) => allowed(section))
-    .map((section) => ({ ...section, items: section.items.filter((item) => allowed(item)) }))
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        allowed({
+          superAdminOnly: item.superAdminOnly ?? section.superAdminOnly,
+          partnerAdminOnly: item.partnerAdminOnly ?? section.partnerAdminOnly,
+          programAdminOnly: item.programAdminOnly ?? section.programAdminOnly,
+          sponsorOnly: item.sponsorOnly ?? section.sponsorOnly,
+          establishmentOnly: item.establishmentOnly ?? section.establishmentOnly,
+          teacherOnly: item.teacherOnly ?? section.teacherOnly,
+        })
+      ),
+    }))
     .filter((section) => section.items.length > 0);
 
   return (
@@ -307,7 +398,11 @@ export default function Sidebar() {
                 {admin.displayName}
               </p>
               <p className="truncate" style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-                {admin.role === 'super_admin' ? 'Super Admin' : 'Admin'}
+                {admin.role === 'super_admin' ? 'Super Admin'
+                  : admin.role === 'sponsor' ? 'Sponsor'
+                    : admin.role === 'establishment_admin' ? 'Établissement'
+                      : admin.role === 'teacher' ? 'Enseignant'
+                        : 'Admin'}
               </p>
             </div>
           </div>

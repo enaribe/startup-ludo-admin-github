@@ -1,0 +1,12 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+const key = readdirSync('.').find(f => /firebase-adminsdk.*\.json$/.test(f));
+initializeApp({ credential: cert(JSON.parse(readFileSync(key, 'utf8'))) });
+const db = getFirestore();
+const e = await db.collection('establishments').doc('ism-dakar').get();
+console.log('établissement ism-dakar :', e.exists ? '✅ existe — ' + e.data().name : '❌ ABSENT');
+const c = await db.collection('classes').where('establishmentId','==','ism-dakar').get();
+console.log('classes de cet établissement :', c.size);
+c.forEach(d => console.log('   -', d.id, d.data().name));
+process.exit(0);

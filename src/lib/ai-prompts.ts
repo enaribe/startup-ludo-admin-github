@@ -21,7 +21,37 @@ export type GenerationType =
   | 'achievements'
   | 'default_projects'
   | 'edition_projects_import'
-  | 'personas';
+  | 'personas'
+  /** Mode Classe : contenu d'une séance, généré depuis le cours de l'enseignant. */
+  | 'class_session_content';
+
+/**
+ * Liste FERMÉE des catégories de quiz.
+ *
+ * C'est le point qui rend le rapport pédagogique du lot 6 exploitable. L'audit
+ * du contenu existant a relevé 32 catégories libres, dont 8 à une seule question
+ * sur l'édition Classique : impossible d'afficher « Marketing : 54 % » devant une
+ * direction sur cette base. En imposant la liste au prompt, le contenu généré
+ * s'agrège proprement par notion, et le niveau N1–N4 redevient dérivable.
+ *
+ * Exportée pour que l'aperçu éditable du wizard propose EXACTEMENT ces valeurs :
+ * si l'enseignant peut corriger une catégorie en texte libre, le foisonnement
+ * revient par la porte de service.
+ */
+export const CATEGORIES_QUIZ = [
+  'business-model',
+  'financement',
+  'marketing',
+  'legal',
+  'management',
+  'tech',
+  'pitch',
+  'strategie',
+  'aspects-techniques',
+] as const;
+
+/** Une catégorie de quiz appartenant à la liste fermée. */
+export type CategorieQuiz = (typeof CATEGORIES_QUIZ)[number];
 
 interface PromptConfig {
   systemPrompt: string;
@@ -613,6 +643,102 @@ FIDELITE AUX DOCUMENTS (IMPERATIF) :
         parts.push(`\n(Aucun document fourni : reste STRICTEMENT dans la zone geographique et les secteurs du programme indiques ci-dessus. N'invente pas de lieu hors de cette zone.)`);
       }
       parts.push(`\nDemande: ${input || 'Genere 3 a 5 personas varies et coherents avec le programme.'}`);
+      return parts.join('\n');
+    },
+  },
+
+  /**
+   * Mode Classe — contenu d'une séance à partir du COURS DE L'ENSEIGNANT.
+   *
+   * POURQUOI UN TYPE DÉDIÉ plutôt que `sublevel_content_import` : ce dernier
+   * *extrait* du contenu déjà rédigé sous forme de quiz (« Ne rajoute PAS de
+   * contenu inventé si le texte n'en contient pas »). Un cours de professeur
+   * n'est pas un questionnaire : c'est un support pédagogique en prose, dont il
+   * faut *dériver* des questions. Le réutiliser tel quel produirait un pack vide
+   * sur un cours normal.
+   *
+   * Ce qui est repris à l'identique, et ne doit pas être dégradé :
+   *   - la liste FERMÉE de catégories (`CATEGORIES_QUIZ`) — condition du rapport
+   *     par notion du lot 6 ;
+   *   - la `difficulty` générée — condition du niveau N1–N4.
+   */
+  class_session_content: {
+    label: 'Contenu de séance',
+    placeholder: 'Consignes complémentaires (optionnel) : notions à privilégier, points à éviter…',
+    description: 'Génère le contenu de jeu d’une séance à partir du cours déposé par l’enseignant',
+    systemPrompt: `${BASE_SYSTEM}
+
+Tu recois le COURS d'un enseignant (support pedagogique en prose : chapitre, polycopie, notes). Ta tache est d'en DERIVER du contenu de jeu, pas d'y chercher des quiz deja ecrits : un cours n'en contient generalement aucun.
+
+Retourne un objet JSON de cette forme exacte:
+
+{
+  "quizzes": [
+    { "id": "quiz_1", "question": "...", "options": ["A","B","C"], "correctAnswer": 0, "category": "financement", "difficulty": "facile|moyen|difficile", "explanation": "..." }
+  ],
+  "duels": [
+    { "id": "duel_1", "question": "...", "options": [{"text": "Meilleure reponse", "points": 30}, {"text": "Bonne reponse", "points": 20}, {"text": "Reponse acceptable", "points": 10}], "category": "strategie" }
+  ],
+  "fundings": [
+    { "id": "fund_1", "title": "...", "description": "...", "tokens": 3, "source": "..." }
+  ],
+  "opportunities": [
+    { "id": "opp_1", "title": "...", "description": "...", "tokens": 3 }
+  ],
+  "challengeEvents": [
+    { "id": "chal_1", "title": "...", "description": "...", "tokens": -3 }
+  ]
+}
+
+FIDELITE AU COURS (IMPERATIF) :
+- Chaque question doit porter sur une notion REELLEMENT presente dans le cours fourni. C'est l'argument pedagogique du produit : l'eleve revise SON cours, pas un cours generique.
+- N'invente aucune definition, aucun chiffre, aucune date absente du cours.
+- Si le cours est trop court pour le nombre demande, produis MOINS d'elements plutot que d'inventer.
+- L'explication d'un quiz doit renvoyer a ce que dit le cours.
+
+CATEGORIES (LISTE FERMEE, AUCUNE AUTRE VALEUR) :
+- "category" pour les quiz ET les duels vaut EXACTEMENT l'une de : ${CATEGORIES_QUIZ.join(', ')}
+- Si une notion du cours ne rentre dans aucune, choisis la plus proche. N'invente JAMAIS une categorie nouvelle : les statistiques de fin de seance sont agregees sur ces valeurs.
+
+DIFFICULTE (OBLIGATOIRE) :
+- "difficulty" est obligatoire sur CHAQUE quiz et vaut "facile", "moyen" ou "difficile".
+- Repartis les trois niveaux : une seance ne doit etre ni triviale ni decourageante.
+
+AUTRES REGLES :
+- Exactement 3 options par quiz ; "correctAnswer" est l'INDEX (0, 1 ou 2) de la bonne reponse.
+- Pour les duels, toutes les options sont defendables mais valent 30 / 20 / 10 points ; melange leur ordre.
+- Les fundings et opportunities ont des tokens POSITIFS (1 a 10), les challengeEvents des tokens NEGATIFS (-1 a -5).
+- Ces evenements doivent illustrer des situations du cours, pas des generalites.`,
+    buildUserPrompt: (input, ctx) => {
+      const parts: string[] = [];
+      parts.push('=== CONTEXTE DE LA SEANCE ===');
+      if (ctx?.className) parts.push(`Classe: ${ctx.className}`);
+      if (ctx?.schoolLevel) parts.push(`Niveau d'enseignement: ${ctx.schoolLevel}`);
+      if (ctx?.durationMinutes) parts.push(`Duree de la seance: ${ctx.durationMinutes} minutes`);
+      if (ctx?.sessionTitle) parts.push(`Intitule de la seance: ${ctx.sessionTitle}`);
+
+      // Quantités explicites : sans elles le modèle produit « environ 5 quiz »,
+      // ce qui rend la durée de séance imprévisible pour l'enseignant.
+      const mix = (ctx?.mix ?? {}) as Record<string, number>;
+      parts.push('\n=== QUANTITES A PRODUIRE ===');
+      parts.push(`- ${mix.quiz ?? 8} quiz`);
+      parts.push(`- ${mix.duel ?? 3} duels`);
+      parts.push(`- ${mix.funding ?? 3} financements`);
+      parts.push(`- ${mix.opportunity ?? 3} opportunites`);
+      parts.push(`- ${mix.challenge ?? 3} defis`);
+
+      const source = String(ctx?.sourceText ?? '').slice(0, 60000);
+      if (source) {
+        parts.push(
+          `\n=== COURS DE L'ENSEIGNANT (SEULE SOURCE DE VERITE) ===\n"""\n${source}\n"""`
+        );
+      } else {
+        parts.push(
+          "\n(Aucun cours fourni : produis un contenu generaliste d'initiation a l'entrepreneuriat, adapte au niveau indique.)"
+        );
+      }
+
+      if (input.trim()) parts.push(`\n=== CONSIGNES DE L'ENSEIGNANT ===\n${input.trim()}`);
       return parts.join('\n');
     },
   },

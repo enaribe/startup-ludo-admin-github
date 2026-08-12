@@ -2,13 +2,21 @@
  * Extraction de texte d'un document source.
  *
  *  POST /api/extract  (multipart/form-data, champ "file")
+ *    Header requis : `Authorization: Bearer <idToken>`
  *    → { text: string, charCount: number, pages: number }
  *
  * Formats supportés : PDF, DOCX, MD / TXT.
  * Runtime Node.js obligatoire (pdf-parse / mammoth ne fonctionnent pas en edge).
+ *
+ * ⚠️ SÉCURITÉ — cette route était ouverte à tout le monde. Elle accepte des
+ * fichiers de 25 Mo et les parse côté serveur (pdf-parse) : sans authentification,
+ * c'est un déni de service à coût nul pour l'attaquant. Le contrôle vit dans
+ * `api-auth.ts` et il est fait AVANT `req.formData()`, pour ne même pas lire le
+ * corps d'une requête non authentifiée.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { exigerAuteurDeContenu } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 // L'extraction d'un gros PDF peut prendre plusieurs secondes.
@@ -17,6 +25,9 @@ export const maxDuration = 60;
 const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
+  const auth = await exigerAuteurDeContenu(req);
+  if ('reponse' in auth) return auth.reponse;
+
   try {
     const form = await req.formData();
     const file = form.get('file');

@@ -11,7 +11,7 @@ import { useCurrentProgram } from '@/lib/program-context';
 const CATALOGUE_ROUTES = ['/partners', '/programs', '/admins'];
 
 export default function Header() {
-  const { admin, isSuperAdmin } = useAuth();
+  const { admin, isSuperAdmin, isSponsor, isEstablishmentAdmin, isTeacher } = useAuth();
   const { programs, currentProgram, currentProgramId, setCurrentProgramId } = useCurrentProgram();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -107,7 +107,11 @@ export default function Header() {
           </div>
           <div style={{ lineHeight: 1.2 }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{admin?.displayName ?? 'Admin'}</p>
-            <p style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{isSuperAdmin ? 'Super Admin' : 'Admin'}</p>
+            <p style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{isSuperAdmin ? 'Super Admin'
+              : isSponsor ? 'Sponsor'
+                : isEstablishmentAdmin ? 'Établissement'
+                  : isTeacher ? 'Enseignant'
+                    : 'Admin'}</p>
           </div>
         </div>
       </div>
