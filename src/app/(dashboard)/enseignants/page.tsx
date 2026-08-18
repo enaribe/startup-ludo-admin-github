@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
@@ -45,6 +46,7 @@ import { auth } from '@/lib/firebase';
 import { getClasses, getEstablishment } from '@/lib/school-service';
 import type { Establishment, SchoolClass } from '@/types';
 import { useAuth } from '@/lib/auth-context';
+import { auth as authClient, firestore, COLLECTIONS } from '@/lib/firebase';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -87,6 +89,10 @@ function joursRestants(echeance: number | null | undefined): number | null {
 
 export default function EnseignantsPage() {
   const router = useRouter();
+  // ── Inscription libre (plans I3/I4) : code partageable + demandes. ──
+  const [joinCode, setJoinCode] = useState<string>('');
+  const [demandes, setDemandes] = useState<Array<{ uid: string; displayName: string; email: string }>>([]);
+  const [decisionEnCours, setDecisionEnCours] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const {
     isSuperAdmin,
@@ -135,6 +141,73 @@ export default function EnseignantsPage() {
   useEffect(() => {
     if (!authLoading && !peutAcceder) router.replace('/classes');
   }, [authLoading, peutAcceder, router]);
+
+  const chargerInscription = useCallback(async () => {
+    if (!scopedEstablishmentId) return;
+    try {
+      const etabSnap = await getDoc(doc(firestore, COLLECTIONS.establishments, scopedEstablishmentId));
+      setJoinCode((etabSnap.data()?.teacherJoinCode as string) ?? '');
+      const demandesSnap = await getDocs(
+        query(
+          collection(firestore, COLLECTIONS.signupRequests),
+          where('establishmentId', '==', scopedEstablishmentId),
+          where('status', '==', 'pending')
+        )
+      );
+      setDemandes(
+        demandesSnap.docs.map((d) => ({
+          uid: d.id,
+          displayName: (d.data().displayName as string) ?? '',
+          email: (d.data().email as string) ?? '',
+        }))
+      );
+    } catch {
+      // Enrichissement : son échec ne bloque jamais la liste des enseignants.
+    }
+  }, [scopedEstablishmentId]);
+
+  useEffect(() => {
+    void chargerInscription();
+  }, [chargerInscription]);
+
+  /** (Re)génère le code partageable — l'ancien cesse aussitôt de fonctionner. */
+  const regenererCode = async () => {
+    if (!scopedEstablishmentId) return;
+    const nouveau = `PROF-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    await updateDoc(doc(firestore, COLLECTIONS.establishments, scopedEstablishmentId), {
+      teacherJoinCode: nouveau,
+      updatedAt: Date.now(),
+    });
+    setJoinCode(nouveau);
+    toast.success('Code régénéré — partagez-le à vos enseignants.');
+  };
+
+  /** Active (claims posés côté serveur) ou refuse une demande d'inscription. */
+  const deciderDemande = async (uid: string, decision: 'approve' | 'reject') => {
+    setDecisionEnCours(uid);
+    try {
+      const token = await authClient.currentUser?.getIdToken();
+      const res = await fetch('/api/inscription/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          uid,
+          decision,
+          motif: decision === 'reject' ? 'Demande refusée par la direction.' : undefined,
+          classIds: [],
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok || json.error) throw new Error(json.error || 'Décision impossible.');
+      toast.success(decision === 'approve' ? 'Compte activé — affectez-lui ses classes.' : 'Demande refusée.');
+      await chargerInscription();
+      await charger();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Décision impossible.');
+    } finally {
+      setDecisionEnCours(null);
+    }
+  };
 
   const charger = useCallback(async () => {
     setLoading(true);
@@ -371,6 +444,49 @@ export default function EnseignantsPage() {
             <Plus size={16} /> Créer un compte
           </button>
         </div>
+      </div>
+
+      {/* ═══ Inscription libre : code partageable + demandes (I3/I4) ═══ */}
+      <div className="glass-card p-4 mb-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Inscription des enseignants
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Partagez ce code : vos enseignants s'inscrivent eux-mêmes (« Créer un compte » sur la
+              page de connexion) et leur demande apparaît ci-dessous.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', background: 'var(--color-surface)', borderRadius: 8, padding: '6px 12px' }}>
+              {joinCode || '— aucun code —'}
+            </span>
+            <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => void regenererCode()}>
+              {joinCode ? 'Régénérer' : 'Générer'}
+            </button>
+          </div>
+        </div>
+        {demandes.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {demandes.map((dm) => (
+              <div key={dm.uid} className="flex items-center justify-between gap-3" style={{ border: '1px solid var(--color-card-border)', borderRadius: 10, padding: '8px 12px' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{dm.displayName || dm.email}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>{dm.email} · en attente de validation</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button className="btn-primary" style={{ fontSize: 12 }} disabled={decisionEnCours === dm.uid} onClick={() => void deciderDemande(dm.uid, 'approve')}>
+                    Activer
+                  </button>
+                  <button className="btn-secondary" style={{ fontSize: 12 }} disabled={decisionEnCours === dm.uid} onClick={() => void deciderDemande(dm.uid, 'reject')}>
+                    Refuser
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Licence expirée / quota atteint : on l'explique, on ne laisse pas

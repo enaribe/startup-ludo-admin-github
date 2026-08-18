@@ -49,6 +49,20 @@ export default function SuiviSeance({
   const termines = lignes.filter((l) => l.etat === 'termine');
   const progressionMax = Math.max(1, ...lignes.map((l) => l.cellIndex));
 
+  // Flux « ce qui se passe en ce moment » : les derniers événements remontés
+  // par les téléphones (portés par les documents déjà écoutés — zéro coût).
+  const flux = lignes
+    .filter((l) => l.lastEvent)
+    .sort((a, b) => (b.lastEvent?.at ?? 0) - (a.lastEvent?.at ?? 0))
+    .slice(0, 6);
+
+  // Classement live : score puis case atteinte.
+  const classement = [...lignes]
+    .filter((l) => l.etat !== 'absent')
+    .sort((a, b) => b.score - a.score || b.cellIndex - a.cellIndex);
+
+  const [podium, setPodium] = useState(false);
+
   return (
     <section className="glass-card">
       <div
@@ -83,6 +97,13 @@ export default function SuiviSeance({
           </p>
         </div>
 
+        <button
+          className="btn-secondary flex items-center gap-2"
+          style={{ fontSize: 12.5 }}
+          onClick={() => setPodium(true)}
+        >
+          Projeter le classement
+        </button>
         {onTerminer && (
           <button
             className="btn-secondary flex items-center gap-2"
@@ -115,6 +136,83 @@ export default function SuiviSeance({
             />
           ))}
         </ul>
+      )}
+      {/* ═══ Flux + classement (lot M4) ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-5 pb-5">
+        <div>
+          <h3 style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', margin: '14px 0 8px' }}>
+            Ce qui se passe en ce moment
+          </h3>
+          {flux.length === 0 ? (
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Les événements apparaîtront dès les premières réponses.
+            </p>
+          ) : (
+            flux.map((l) => (
+              <div key={l.learnerId} className="flex items-center gap-2" style={{ padding: '5px 0', fontSize: 12.5 }}>
+                <span
+                  style={{
+                    width: 8, height: 8, borderRadius: 4, flexShrink: 0,
+                    background: l.lastEvent?.kind === 'quiz_ok' ? 'var(--color-success)' : '#E67E22',
+                  }}
+                />
+                <strong style={{ color: 'var(--color-text-primary)' }}>{l.nom}</strong>
+                <span style={{ color: 'var(--color-text-muted)' }}>
+                  {l.lastEvent?.kind === 'quiz_ok' ? 'réussit un quiz' : 'retente un quiz'}
+                  {l.lastEvent?.label ? ` · ${l.lastEvent.label}` : ''}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+        <div>
+          <h3 style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', margin: '14px 0 8px' }}>
+            Classement en direct
+          </h3>
+          {classement.slice(0, 8).map((l, i) => (
+            <div key={l.learnerId} className="flex items-center justify-between gap-2" style={{ padding: '4px 0', fontSize: 12.5 }}>
+              <span className="flex items-center gap-2">
+                <span
+                  style={{
+                    width: 20, height: 20, borderRadius: 10, fontSize: 10.5, fontWeight: 800,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    background: i === 0 ? '#F5A623' : i < 3 ? 'rgba(245,166,35,0.35)' : 'rgba(15,28,46,0.08)',
+                    color: i < 3 ? '#0F1C2E' : 'var(--color-text-muted)',
+                  }}
+                >
+                  {i + 1}
+                </span>
+                <span style={{ color: 'var(--color-text-primary)', fontWeight: i < 3 ? 700 : 400 }}>{l.nom}</span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>case {l.cellIndex}</span>
+              </span>
+              <strong style={{ color: 'var(--color-text-primary)' }}>{l.score} pts</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ═══ Podium plein écran (Échap ou clic pour sortir) ═══ */}
+      {podium && (
+        <div
+          onClick={() => setPodium(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100, background: '#0F1C2E',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', gap: 10,
+          }}
+        >
+          <div style={{ color: '#F5A623', fontWeight: 900, fontSize: 34, letterSpacing: 1 }}>CLASSEMENT</div>
+          {classement.slice(0, 5).map((l, i) => (
+            <div key={l.learnerId} className="flex items-center gap-4" style={{ fontSize: i < 3 ? 26 : 18, color: '#FFF' }}>
+              <span style={{ width: 40, textAlign: 'right', color: i === 0 ? '#F5A623' : i === 1 ? '#C0C8D4' : i === 2 ? '#C88A4B' : 'rgba(255,255,255,0.5)', fontWeight: 900 }}>
+                {i + 1}
+              </span>
+              <span style={{ fontWeight: i < 3 ? 800 : 400 }}>{l.nom}</span>
+              <span style={{ color: 'rgba(255,255,255,0.6)' }}>{l.score} pts</span>
+            </div>
+          ))}
+          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 16 }}>Cliquez pour revenir</div>
+        </div>
       )}
     </section>
   );

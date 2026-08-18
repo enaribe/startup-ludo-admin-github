@@ -19,13 +19,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Handshake, Coins, Star, ChevronRight, ImageOff } from 'lucide-react';
+import { BarChart3, Handshake, Coins, Star, ChevronRight, ImageOff } from 'lucide-react';
 import { getEditions, getEditionsByIds } from '@/lib/firestore-service';
 import type { EditionData } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import toast from 'react-hot-toast';
+
+/** Base de navigation : /annonceur/cartes sous l'Espace Annonceur, /sponsoring sinon. */
+function baseSponsoring(): string {
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/annonceur')) {
+    return '/annonceur/cartes';
+  }
+  return '/sponsoring';
+}
 
 export default function SponsoringListPage() {
   const { isSuperAdmin, isSponsor, scopedEditionIds, loading: authLoading } = useAuth();
@@ -71,12 +79,23 @@ export default function SponsoringListPage() {
             joueurs pendant la partie.
           </p>
         </div>
-        {editions.length > 0 && (
-          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-            <span className="badge badge-success">{sponsoredCount} active{sponsoredCount !== 1 ? 's' : ''}</span>
-            <span className="badge badge-info">{editions.length} au total</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          {editions.length > 0 && (
+            <>
+              <span className="badge badge-success">{sponsoredCount} active{sponsoredCount !== 1 ? 's' : ''}</span>
+              <span className="badge badge-info">{editions.length} au total</span>
+            </>
+          )}
+          {/* Pont vers l'Espace Annonceur (lot 3) : la mesure vit là-bas,
+              la gestion des cartes reste ici. */}
+          <Link
+            href="/annonceur"
+            className="btn-primary flex items-center gap-2"
+            style={{ fontSize: 13, textDecoration: 'none' }}
+          >
+            <BarChart3 size={14} /> Tableaux de bord d’impact
+          </Link>
+        </div>
       </div>
 
       {editions.length === 0 ? (
@@ -109,7 +128,7 @@ function EditionCard({ edition }: { edition: EditionData }) {
   const fundings = (sponsor?.fundings ?? []).filter((c) => c.text.trim()).length;
 
   return (
-    <Link href={`/sponsoring/${edition.id}`} style={{ textDecoration: 'none', display: 'block' }}>
+    <Link href={`${baseSponsoring()}/${edition.id}`} style={{ textDecoration: 'none', display: 'block' }}>
       <div
         className="glass-card"
         style={{ overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column', transition: 'box-shadow 0.2s' }}

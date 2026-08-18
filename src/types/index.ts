@@ -91,6 +91,128 @@ export interface StartupIdea {
 }
 
 // EditionData — matches mobile Edition interface + admin extras (sectors, enabled)
+// ═══════════════════════════════════════════════════════════════════════════
+// ESPACE ANNONCEUR — MODÈLE CAMPAGNES (lot 4)
+//
+// Une CAMPAGNE (« mise en visibilité ») est l'objet que l'annonceur crée en
+// self-service : soit une CARTE co-brandée diffusée dans TOUTES les parties
+// (elle ne vit plus dans une édition), soit l'habillage exclusif d'une ÉDITION
+// réservée mois par mois. Cycle de vie :
+//   draft → in_review → active | rejected, puis active → paused | ended.
+// Le sponsor n'écrit que draft ⇄ in_review ; active/rejected/ended sont posés
+// par la modération CONCREE (Admin SDK), qui publie aussi le FEED lu par le
+// mobile — le jeu ne lit jamais cette collection.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type CampaignFormat = 'card' | 'edition';
+export type CampaignStatus = 'draft' | 'in_review' | 'active' | 'paused' | 'rejected' | 'ended';
+/** Bandeau de la carte, déterminé par l'objectif choisi à l'étape 1. */
+export type CampaignCardKind = 'financement' | 'opportunite' | 'evenement';
+/** Objectif métier de l'étape 1 (4 cartes cliquables de la maquette). */
+export type CampaignObjectif =
+  | 'offre_financement'
+  | 'appel_candidatures'
+  | 'programme_accompagnement'
+  | 'evenement_formation';
+
+export interface CampaignCardVerso {
+  /** Description détaillée du dispositif. */
+  description: string;
+  /** Montant ou avantage (ex. « jusqu'à 1 500 000 FCFA »). */
+  avantage?: string;
+  /** Critères d'éligibilité. */
+  criteres?: string;
+  /** Date limite de candidature (AAAA-MM-JJ) — le retrait auto s'y adosse. */
+  dateLimite?: string;
+}
+
+export interface CampaignCardCta {
+  type: 'candidature' | 'formulaire' | 'site' | 'video';
+  url: string;
+  /** Libellé du bouton du verso (34 caractères max). */
+  libelle: string;
+}
+
+export interface CampaignCard {
+  kind: CampaignCardKind;
+  objectif: CampaignObjectif;
+  /** Nom de la structure affiché sur la carte. */
+  structure: string;
+  logoUrl?: string;
+  /** Message recto (~120 caractères), écrit comme un événement du jeu. */
+  rectoText: string;
+  verso: CampaignCardVerso;
+  cta: CampaignCardCta;
+}
+
+export interface CampaignEditionSkin {
+  editionId: string;
+  structure: string;
+  logoUrl?: string;
+  /** Photo plein cadre 4:5 de l'écran sponsor. */
+  photoUrl?: string;
+  /** Texte court (90 caractères max). */
+  shortText: string;
+  linkUrl?: string;
+  /** Type de destination du « en savoir plus » — consultatif, affiché au récapitulatif. */
+  linkType?: 'candidature' | 'formulaire' | 'site' | 'video';
+}
+
+export interface CampaignTargeting {
+  /** Secteurs visés (slugs) — vide = tous. */
+  sectors: string[];
+  /** Régions visées (ids PLAYER_REGIONS) — vide = tout le monde. */
+  regions: string[];
+  /** Contextes de diffusion : cases opportunité / financement. Vide = selon le type. */
+  contexts: string[];
+  /** Zone choisie à l'étape ciblage (le mobile ne lit que `regions`, dérivé). */
+  zone?: 'tous' | 'regions' | 'diaspora';
+  /** Tranche d'âge visée ('toutes' par défaut) — consultatif en v1. */
+  ageRange?: string;
+  /** Situations visées (etudiant / entrepreneur / porteur) — consultatif en v1. */
+  situations?: string[];
+}
+
+export interface Campaign {
+  id: string;
+  /** Compte annonceur propriétaire — la frontière de lecture des règles. */
+  ownerUid: string;
+  ownerEmail?: string;
+  format: CampaignFormat;
+  status: CampaignStatus;
+  card?: CampaignCard;
+  editionSkin?: CampaignEditionSkin;
+  targeting: CampaignTargeting;
+  /** Objectif de personnes touchées (vues). */
+  viewsGoal: number;
+  /** Plafond budgétaire en FCFA — la diffusion s'arrête d'elle-même. */
+  budgetCapFcfa: number;
+  /** Grille figée à la soumission (une facture émise doit rester reproductible). */
+  pricing: { perView: number; perClick: number; grid: 'standard' | 'edition' | 'premium' };
+  /** Période de diffusion (cartes) — null = en continu. */
+  period?: { startAt: number | null; endAt: number | null };
+  /** Mois réservés (AAAA-MM) — éditions uniquement, posés par la transaction serveur. */
+  reservationMonths?: string[];
+  /** Consentement aux règles de contenu (étape 5). */
+  consentAt?: number;
+  submittedAt?: number;
+  review?: { reviewedAt?: number; motifRefus?: string };
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Réservation d'exclusivité : un document par édition × mois, écrit par le seul Admin SDK. */
+export interface EditionReservation {
+  editionId: string;
+  /** AAAA-MM. */
+  month: string;
+  campaignId: string;
+  ownerUid: string;
+  /** Nom de la structure — affiché sur le calendrier (« Réservée par X jusqu'au… »). */
+  structure: string;
+  createdAt: number;
+}
+
 /**
  * Carte d'événement sponsor (opportunité ou financement) injectée en partie
  * côté mobile (~25 % de chance sur une case opportunité/financement).
@@ -848,6 +970,12 @@ export interface ClassSession {
   endedAt?: number;
   /** URLs des documents de cours joints (Storage). */
   attachmentUrls: string[];
+  /**
+   * Prolongement après la session (spec v2.1 §4.2) : un quiz que les élèves
+   * font à leur rythme sur l'app, avant la date limite. Le taux de complétion
+   * remonte au rapport. Absent = pas de prolongement.
+   */
+  prolongement?: { actif: boolean; dateLimite?: string };
   /** Date de création, en millisecondes epoch. */
   createdAt?: number;
   /**
@@ -956,6 +1084,11 @@ export interface ClassSessionParticipant {
   lastSeenAt?: number;
   /** État de la participation. */
   status?: ClassParticipantStatus;
+  /**
+   * Dernier événement notable (flux « ce qui se passe », lot M4). Écrit par le
+   * mobile dans la MÊME écriture que la réponse de quiz — aucun débit ajouté.
+   */
+  lastEvent?: { kind: 'quiz_ok' | 'quiz_ko'; label?: string; at: number };
   /** Position sur le plateau. */
   progress?: ClassParticipantProgress;
   /** Score de l'élève (jetons). */

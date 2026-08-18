@@ -57,7 +57,9 @@ import {
 import {
   deposerCours,
   genererContenuSeance,
+  genererContenuSupplementaire,
   mixPourDuree,
+  type MixSeance,
 } from '@/lib/class-session-generation';
 import { generateId } from '@/lib/utils';
 import {
@@ -71,8 +73,22 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import WizardStepper from '@/components/school/WizardStepper';
 import ApercuContenuSeance from '@/components/school/ApercuContenuSeance';
+import AjoutContenuSeance from '@/components/school/AjoutContenuSeance';
 
 const ETAPES = ['La séance', 'La classe', 'Récapitulatif'] as const;
+
+/**
+ * Séances prêtes à l'emploi (spec v2.1, voie A) : un clic préconfigure titre,
+ * édition support, durée et difficulté — l'enseignant peut lancer dès l'étape 2.
+ * Difficulté EN CLAIR (arbitrage D2) : Débutant / Intermédiaire / Avancé.
+ */
+const SEANCES_PRETES = [
+  { id: 'decouvrir', titre: "Découvrir l'entrepreneuriat", duree: 30, difficulte: 'Débutant', editionId: 'classic', note: 'idéale en première séance' },
+  { id: 'marche', titre: "L'étude de marché", duree: 30, difficulte: 'Intermédiaire', editionId: 'classic', note: 'édition au choix' },
+  { id: 'bp', titre: 'Le business plan', duree: 40, difficulte: 'Avancé', editionId: 'classic', note: 'séance double conseillée' },
+  { id: 'marketing', titre: 'Marketing et clients', duree: 30, difficulte: 'Intermédiaire', editionId: 'classic', note: '' },
+  { id: 'finances', titre: 'Finances et trésorerie', duree: 35, difficulte: 'Avancé', editionId: 'fintech', note: '' },
+] as const;
 
 /** Voie choisie à l'étape 1 pour définir le contenu de la séance. */
 type VoieContenu = 'generation' | 'reutilisation' | 'edition';
@@ -99,6 +115,14 @@ export default function NouvelleSeancePage() {
   const [contenu, setContenu] = useState<ClassSessionContent | null>(null);
   const [enExtraction, setEnExtraction] = useState(false);
   const [enGeneration, setEnGeneration] = useState(false);
+  /**
+   * Quantités à générer, PAR TYPE — c'est l'enseignant qui décide, la durée ne
+   * sert que de point de départ (≈ 1 quiz / 3 min). Décision produit : un mix
+   * imposé produisait des paquets trop courts, et les cartes revenaient en
+   * boucle dans les parties longues.
+   */
+  const [mix, setMix] = useState<MixSeance>(() => mixPourDuree(DUREE_SEANCE_DEFAUT));
+  const [enAjout, setEnAjout] = useState(false);
 
   /**
    * Identifiant de la séance, tiré DÈS LE MONTAGE et non à la validation.
@@ -113,6 +137,13 @@ export default function NouvelleSeancePage() {
   // ===== Étape 2 : la classe =====
   const [classId, setClassId] = useState('');
   const [duree, setDuree] = useState(DUREE_SEANCE_DEFAUT);
+  // Prolongement : activé par défaut (spec §4.2), date limite J+7 par défaut.
+  const [prolongement, setProlongement] = useState(true);
+  const [prolongementDate, setProlongementDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  });
 
   // ===== Étape 3 : lancement =====
   const [programmer, setProgrammer] = useState(false);
@@ -179,7 +210,7 @@ export default function NouvelleSeancePage() {
     }
     setEnGeneration(true);
     try {
-      const genere = await genererContenuSeance(sessionId, consignes, mixPourDuree(duree), {
+      const genere = await genererContenuSeance(sessionId, consignes, mix, {
         className: classeChoisie?.name,
         schoolLevel: classeChoisie ? SCHOOL_LEVEL_LABELS[classeChoisie.level] : undefined,
         durationMinutes: duree,
@@ -198,7 +229,43 @@ export default function NouvelleSeancePage() {
     } finally {
       setEnGeneration(false);
     }
-  }, [coursDeposes.length, sessionId, consignes, duree, classeChoisie, titre]);
+  }, [coursDeposes.length, sessionId, consignes, mix, duree, classeChoisie, titre]);
+
+  // ===== Voie (a) : ajout de contenu APRÈS génération =====
+  const ajouterContenu = useCallback(
+    async (mixAjout: MixSeance) => {
+      if (!contenu) return;
+      setEnAjout(true);
+      try {
+        const fusionne = await genererContenuSupplementaire(
+          sessionId,
+          consignes,
+          mixAjout,
+          {
+            className: classeChoisie?.name,
+            schoolLevel: classeChoisie ? SCHOOL_LEVEL_LABELS[classeChoisie.level] : undefined,
+            durationMinutes: duree,
+            sessionTitle: titre,
+          },
+          contenu
+        );
+        const ajoutees = compterCartes(fusionne) - compterCartes(contenu);
+        if (ajoutees === 0) {
+          toast.error('Aucune carte exploitable générée. Précisez vos consignes et réessayez.');
+          return;
+        }
+        setContenu(fusionne);
+        await saveSessionContent(sessionId, fusionne);
+        toast.success(`${ajoutees} carte${ajoutees > 1 ? 's' : ''} ajoutée${ajoutees > 1 ? 's' : ''}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Génération impossible';
+        toast.error(message);
+      } finally {
+        setEnAjout(false);
+      }
+    },
+    [contenu, sessionId, consignes, duree, classeChoisie, titre]
+  );
 
   // ===== Voie (b) : réutilisation d'une séance déjà générée =====
   const reutiliser = useCallback(
@@ -266,6 +333,9 @@ export default function NouvelleSeancePage() {
           title: titre.trim() || `Séance du ${new Date().toLocaleDateString('fr-FR')}`,
           hasGeneratedContent: voie !== 'edition',
           ...(scheduledAt ? { scheduledAt } : {}),
+          ...(prolongement
+            ? { prolongement: { actif: true, dateLimite: prolongementDate } }
+            : {}),
           ...(seanceSource?.programId ? { programId: seanceSource.programId } : {}),
           ...(seanceSource?.contentPackId ? { contentPackId: seanceSource.contentPackId } : {}),
           ...(seanceSource?.levelIndex !== undefined ? { levelIndex: seanceSource.levelIndex } : {}),
@@ -340,6 +410,7 @@ export default function NouvelleSeancePage() {
           onVoie={setVoie}
           titre={titre}
           onTitre={setTitre}
+          onSeancePrete={(d) => setDuree(bornerDuree(d))}
           editions={editions}
           editionId={editionId}
           onEdition={setEditionId}
@@ -351,8 +422,12 @@ export default function NouvelleSeancePage() {
           coursDeposes={coursDeposes}
           onDeposer={deposer}
           enExtraction={enExtraction}
+          mix={mix}
+          onMix={setMix}
           onGenerer={generer}
           enGeneration={enGeneration}
+          onAjouter={ajouterContenu}
+          enAjout={enAjout}
           contenu={contenu}
           onContenu={majContenu}
         />
@@ -365,6 +440,10 @@ export default function NouvelleSeancePage() {
           onClasse={setClassId}
           duree={duree}
           onDuree={setDuree}
+          prolongement={prolongement}
+          onProlongement={setProlongement}
+          prolongementDate={prolongementDate}
+          onProlongementDate={setProlongementDate}
         />
       )}
 
@@ -438,6 +517,7 @@ function EtapeSeance({
   onVoie,
   titre,
   onTitre,
+  onSeancePrete,
   editions,
   editionId,
   onEdition,
@@ -449,8 +529,12 @@ function EtapeSeance({
   coursDeposes,
   onDeposer,
   enExtraction,
+  mix,
+  onMix,
   onGenerer,
   enGeneration,
+  onAjouter,
+  enAjout,
   contenu,
   onContenu,
 }: {
@@ -458,6 +542,8 @@ function EtapeSeance({
   onVoie: (v: VoieContenu) => void;
   titre: string;
   onTitre: (v: string) => void;
+  /** Une séance prête à l'emploi impose aussi sa durée (étape 2 pré-remplie). */
+  onSeancePrete: (duree: number) => void;
   editions: EditionData[];
   editionId: string;
   onEdition: (v: string) => void;
@@ -469,8 +555,12 @@ function EtapeSeance({
   coursDeposes: { nom: string; caracteres: number }[];
   onDeposer: (f: File) => void;
   enExtraction: boolean;
+  mix: MixSeance;
+  onMix: (m: MixSeance) => void;
   onGenerer: () => void;
   enGeneration: boolean;
+  onAjouter: (m: MixSeance) => void | Promise<void>;
+  enAjout: boolean;
   contenu: ClassSessionContent | null;
   onContenu: (c: ClassSessionContent) => void;
 }) {
@@ -487,6 +577,49 @@ function EtapeSeance({
           onChange={(e) => onTitre(e.target.value)}
         />
       </label>
+
+      {/* ═══ Séances prêtes à l'emploi (lot M3) — zéro préparation ═══ */}
+      <div className="glass-card p-4 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Séance prête à l'emploi
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#2E7D32', background: 'rgba(46,160,67,0.1)', borderRadius: 10, padding: '3px 10px' }}>
+            ✓ Aligné sur le curriculum — choisissez, lancez
+          </span>
+        </div>
+        {SEANCES_PRETES.map((sp) => {
+          const actif = voie === 'edition' && titre === sp.titre;
+          return (
+            <button
+              key={sp.id}
+              type="button"
+              onClick={() => {
+                onVoie('edition');
+                onTitre(sp.titre);
+                onEdition(sp.editionId);
+                onSeancePrete(sp.duree);
+              }}
+              className="flex items-center justify-between gap-3"
+              style={{
+                textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                background: actif ? 'var(--color-success-light)' : '#FFFFFF',
+              }}
+            >
+              <span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', display: 'block' }}>{sp.titre}</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                  {sp.duree} min · {sp.difficulte}{sp.note ? ` · ${sp.note}` : ''}
+                </span>
+              </span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4A5A70', background: 'rgba(15,28,46,0.06)', borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
+                {sp.difficulte}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Les trois voies. La génération est mise en avant : c'est elle qui
           produit un contenu propre à l'établissement, donc l'argument de vente. */}
@@ -579,6 +712,18 @@ function EtapeSeance({
             />
           </label>
 
+          <div className="flex flex-col gap-2">
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              3. Le contenu à générer
+            </span>
+            <MixContenu mix={mix} onMix={onMix} />
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Repère : ≈ 1 quiz toutes les 3 minutes de jeu. Seuls les quiz alimentent le rapport
+              de notions maîtrisées — et plus le paquet est fourni, moins les cartes reviennent en
+              partie.
+            </p>
+          </div>
+
           <button
             type="button"
             className="btn-primary flex items-center gap-2"
@@ -659,10 +804,52 @@ function EtapeSeance({
 
       {/* ===== Aperçu éditable — dès qu'un contenu existe ===== */}
       {contenu && voie !== 'edition' && (
-        <div className="glass-card p-4">
+        <div className="glass-card p-4 flex flex-col gap-4">
           <ApercuContenuSeance contenu={contenu} onChange={onContenu} />
+          {/* L'ajout n'a de sens que sur la voie génération : il repart du
+              cours déposé sous CETTE séance. Une séance réutilisée n'en a pas. */}
+          {voie === 'generation' && (
+            <AjoutContenuSeance onAjouter={onAjouter} enCours={enAjout || enGeneration} />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Quantités par type — cinq compteurs sur une ligne.
+ *
+ * Bornes larges (0–20) : c'est l'enseignant qui connaît sa séance. Le seul
+ * garde-fou dur est le zéro négatif ; un mix « tout à zéro » est refusé par le
+ * bouton Générer en aval (aucune carte → `compterCartes` = 0 → erreur claire).
+ */
+function MixContenu({ mix, onMix }: { mix: MixSeance; onMix: (m: MixSeance) => void }) {
+  const champs: Array<{ cle: keyof MixSeance; libelle: string }> = [
+    { cle: 'quiz', libelle: 'Quiz' },
+    { cle: 'duel', libelle: 'Duels' },
+    { cle: 'opportunity', libelle: 'Opportunités' },
+    { cle: 'funding', libelle: 'Financements' },
+    { cle: 'challenge', libelle: 'Défis' },
+  ];
+  const borner = (n: number) => Math.min(20, Math.max(0, Math.round(n) || 0));
+
+  return (
+    <div className="flex items-end gap-3 flex-wrap">
+      {champs.map(({ cle, libelle }) => (
+        <label key={cle} className="flex flex-col gap-1">
+          <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>{libelle}</span>
+          <input
+            className="input-field"
+            type="number"
+            min={0}
+            max={20}
+            value={mix[cle]}
+            onChange={(e) => onMix({ ...mix, [cle]: borner(Number(e.target.value)) })}
+            style={{ width: 76 }}
+          />
+        </label>
+      ))}
     </div>
   );
 }
@@ -720,12 +907,20 @@ function EtapeClasse({
   onClasse,
   duree,
   onDuree,
+  prolongement,
+  onProlongement,
+  prolongementDate,
+  onProlongementDate,
 }: {
   classes: SchoolClass[];
   classId: string;
   onClasse: (v: string) => void;
   duree: number;
   onDuree: (v: number) => void;
+  prolongement: boolean;
+  onProlongement: (v: boolean) => void;
+  prolongementDate: string;
+  onProlongementDate: (v: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -789,6 +984,39 @@ function EtapeClasse({
           Chaque élève joue <strong>individuellement</strong> sur son téléphone, avec le contenu
           que vous avez choisi.
         </p>
+      </div>
+
+      {/* ═══ Prolongement après la session (lot M3, spec §4.2) ═══ */}
+      <div className="glass-card p-4 flex flex-col gap-3">
+        <label className="flex items-start gap-3" style={{ cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={prolongement}
+            onChange={(e) => onProlongement(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', display: 'block' }}>
+              Prolongement après la session
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Un quiz que les apprenants font à leur rythme sur l'app, avec date limite — le taux
+              de complétion apparaît dans le rapport.
+            </span>
+          </span>
+        </label>
+        {prolongement && (
+          <div className="flex items-center gap-3">
+            <label className="label" style={{ marginBottom: 0 }}>À rendre avant le</label>
+            <input
+              className="input-field"
+              type="date"
+              value={prolongementDate}
+              onChange={(e) => onProlongementDate(e.target.value)}
+              style={{ width: 170 }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

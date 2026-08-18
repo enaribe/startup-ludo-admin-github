@@ -86,6 +86,14 @@ type CibleWizard =
   | { mode: 'create'; kind: SponsorCardKind }
   | { mode: 'edit'; kind: SponsorCardKind; card: SponsorEventCard };
 
+/** Base de navigation : /annonceur/cartes sous l'Espace Annonceur, /sponsoring sinon. */
+function baseSponsoring(): string {
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/annonceur')) {
+    return '/annonceur/cartes';
+  }
+  return '/sponsoring';
+}
+
 export default function SponsoringEditorPage() {
   const params = useParams();
   const editionId = params.editionId as string;
@@ -296,7 +304,7 @@ export default function SponsoringEditorPage() {
       <div className="flex items-start justify-between mb-6 gap-4">
         <div className="flex items-start gap-3">
           <Link
-            href="/sponsoring"
+            href={baseSponsoring()}
             onClick={() => { void flush(); }}
             className="flex items-center justify-center"
             style={{
@@ -678,7 +686,7 @@ function AccessDenied({ title, message }: { title: string; message: string }) {
       </div>
       <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>{title}</h2>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', lineHeight: 1.6, marginBottom: 20 }}>{message}</p>
-      <Link href="/sponsoring" className="btn-secondary" style={{ fontSize: 13, textDecoration: 'none' }}>
+      <Link href={baseSponsoring()} className="btn-secondary" style={{ fontSize: 13, textDecoration: 'none' }}>
         Retour à mes éditions
       </Link>
     </div>

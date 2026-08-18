@@ -28,6 +28,7 @@ import {
   School,
   GraduationCap,
   CalendarDays,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -104,6 +105,8 @@ const NAV_SECTIONS: NavSection[] = [
       // porté par la section ; on le répète sur l'item pour que le filtrage
       // reste juste si l'entrée est un jour déplacée dans une autre section.
       { label: 'Établissements', href: '/etablissements', icon: <School size={18} />, superAdminOnly: true },
+      // File de validation des campagnes annonceurs (Espace Annonceur, lot 5).
+      { label: 'Modération annonceurs', href: '/moderation', icon: <ShieldCheck size={18} />, superAdminOnly: true },
       { label: 'Admins', href: '/admins', icon: <Users size={18} /> },
     ],
   },

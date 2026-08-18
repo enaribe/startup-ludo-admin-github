@@ -22,6 +22,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -260,9 +261,21 @@ export async function endSession(sessionId: string): Promise<void> {
  */
 export async function updateSession(
   sessionId: string,
-  patch: Partial<Omit<ClassSession, 'id' | 'establishmentId' | 'classId' | 'teacherId'>>
+  patch: Partial<Omit<ClassSession, 'id' | 'establishmentId' | 'classId' | 'teacherId' | 'scheduledAt'>> & {
+    /**
+     * `null` EFFACE la programmation (la séance repasse en lancement manuel) —
+     * `undefined` ne touche à rien. La distinction compte : `sansIndefinis`
+     * retire les `undefined`, un `null` naïf resterait stocké et « Programmée
+     * pour » afficherait une date invalide.
+     */
+    scheduledAt?: number | null;
+  }
 ): Promise<void> {
-  const données = sansIndefinis({ ...patch, updatedAt: Date.now() });
+  const { scheduledAt, ...reste } = patch;
+  const données: Record<string, unknown> = sansIndefinis({ ...reste, updatedAt: Date.now() });
+  if (scheduledAt !== undefined) {
+    données.scheduledAt = scheduledAt === null ? deleteField() : scheduledAt;
+  }
   await updateDoc(doc(firestore, COLLECTIONS.classSessions, sessionId), données);
 }
 

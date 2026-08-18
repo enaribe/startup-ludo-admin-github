@@ -71,6 +71,14 @@ export const COLLECTIONS = {
   // L'admin est en lecture seule sur cette collection : un compteur de
   // facturation ne doit jamais être modifiable depuis le back-office.
   sponsorMetrics: 'sponsorMetrics',
+  // Espace Annonceur (lot 4) — campagnes, exclusivité d'édition, feed mobile.
+  campaigns: 'campaigns',
+  editionReservations: 'editionReservations',
+  sponsorFeed: 'sponsorFeed',
+  sponsorReports: 'sponsorReports',
+  advertisers: 'advertisers',
+  signupRequests: 'signupRequests',
+  invoices: 'invoices',
   // ===== Mode Classe =====
   // Établissements clients, leurs classes, et les élèves de chaque classe.
   // Les élèves vivent en SOUS-COLLECTION de la classe : leur identité relève de

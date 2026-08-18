@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ProgramProvider } from '@/lib/program-context';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import EcoleLayout from '@/components/layout/EcoleLayout';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
 
@@ -28,21 +29,20 @@ function isWithin(pathname: string, roots: readonly string[]): boolean {
  * tous les clients) n'y figure pas et ne doit jamais y figurer : c'est un écran
  * super admin, dont l'API est de toute façon fermée aux autres rôles.
  */
-const ESTABLISHMENT_ROUTES = ['/etablissement', '/classes', '/enseignants', '/seances'] as const;
+const ESTABLISHMENT_ROUTES = ['/tableau-de-bord', '/rapports', '/etablissement', '/classes', '/enseignants', '/seances', '/communaute', '/aide-ecole'] as const;
 /** Routes ouvertes à un enseignant : ses classes et ses séances, rien d'autre. */
-const TEACHER_ROUTES = ['/classes', '/seances'] as const;
+const TEACHER_ROUTES = ['/tableau-de-bord', '/rapports', '/classes', '/seances', '/communaute', '/aide-ecole'] as const;
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { admin, loading, isSponsor, isEstablishmentAdmin, isTeacher } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  // Un sponsor n'a QUE l'espace /sponsoring : toute autre route du dashboard
-  // (à commencer par le tableau de bord `/`, qui charge des données auxquelles
-  // il n'a pas droit) est redirigée. On garde ce contrôle au niveau du layout
-  // plutôt que dans chaque page : une seule règle couvre toutes les routes,
-  // présentes et futures.
-  const sponsorOutOfScope = isSponsor && !pathname.startsWith('/sponsoring');
+  // Un sponsor ne voit plus JAMAIS le chrome du dashboard : tout son espace vit
+  // sous /annonceur (lots 3-7), y compris la gestion des cartes re-logée sous
+  // /annonceur/cartes. Un vieux favori /sponsoring/... est redirigé vers son
+  // équivalent exact — même page, nouveau toit.
+  const sponsorOutOfScope = isSponsor;
 
   // Même principe pour les rôles scolaires : périmètre fermé, listé explicitement.
   // Toute route ajoutée plus tard hors de ces listes leur est donc refusée par
@@ -56,13 +56,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!admin) {
       router.replace('/login');
     } else if (sponsorOutOfScope) {
-      router.replace('/sponsoring');
+      // Vieux favori /sponsoring/... → même page sous le nouveau toit ;
+      // toute autre route → l'accueil de l'Espace Annonceur.
+      router.replace(
+        pathname.startsWith('/sponsoring')
+          ? `/annonceur/cartes${pathname.slice('/sponsoring'.length)}`
+          : '/annonceur'
+      );
     } else if (establishmentOutOfScope) {
-      router.replace('/etablissement');
+      router.replace('/tableau-de-bord');
     } else if (teacherOutOfScope) {
-      router.replace('/classes');
+      router.replace('/tableau-de-bord');
     }
-  }, [admin, loading, sponsorOutOfScope, establishmentOutOfScope, teacherOutOfScope, router]);
+  }, [admin, loading, sponsorOutOfScope, establishmentOutOfScope, teacherOutOfScope, pathname, router]);
 
   if (loading) {
     return (
@@ -87,6 +93,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // hors périmètre (elle déclencherait des lectures Firestore auxquelles le
   // compte n'a pas droit).
   if (outOfScope) return null;
+
+  // Rôles scolaires : le chrome Mode Classe (lot M1, spec v2.1) — mêmes URLs,
+  // autre toit. Le reste du back-office garde le chrome classique.
+  if (isEstablishmentAdmin || isTeacher) {
+    return (
+      <ProgramProvider>
+        <EcoleLayout>{children}</EcoleLayout>
+      </ProgramProvider>
+    );
+  }
 
   return (
     <ProgramProvider>

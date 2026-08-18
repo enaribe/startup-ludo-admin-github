@@ -19,7 +19,10 @@
  * ce composant ne calcule rien, il met en forme.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { doc, getDoc } from 'firebase/firestore';
+import { firestore, COLLECTIONS } from '@/lib/firebase';
 import { AlertCircle, Award, Clock, Download, Layers, Lightbulb, Users } from 'lucide-react';
 import {
   SEUIL_QUESTIONS_NOTION,
@@ -31,7 +34,8 @@ import {
   type NiveauNotion,
   type NotionAgregee,
 } from '@/lib/class-report-service';
-import type { ClassSession, ClassSessionParticipant, Learner } from '@/types';
+import type { ClassSession, ClassSessionContent, ClassSessionParticipant, Learner } from '@/types';
+import { genererRapportSessionPdf, telechargerPdf } from '@/lib/rapport-session-pdf';
 
 interface RapportSeanceProps {
   /** Séance terminée, pour ses horodatages et son titre. */
@@ -44,6 +48,8 @@ interface RapportSeanceProps {
   lignes: LigneSuivi[];
   /** Nom de la classe, pour le nom du fichier exporté. */
   nomClasse: string;
+  /** Contenu de la séance (questions) — sert à nommer la carte la plus manquée. */
+  contenu?: ClassSessionContent | null;
 }
 
 export default function RapportSeance({
@@ -52,12 +58,22 @@ export default function RapportSeance({
   participants,
   lignes,
   nomClasse,
+  contenu,
 }: RapportSeanceProps) {
   const indicateurs = useMemo(
     () => calculerIndicateurs(eleves, participants, seance),
     [eleves, participants, seance]
   );
   const notions = useMemo(() => agregerNotions(participants), [participants]);
+
+  // Nom de l'enseignant — sous-titre de l'en-tête (users/ est en lecture publique).
+  const [nomProf, setNomProf] = useState('');
+  useEffect(() => {
+    if (!seance.teacherId) return;
+    getDoc(doc(firestore, COLLECTIONS.users, seance.teacherId))
+      .then((snap) => setNomProf((snap.data()?.displayName as string) ?? ''))
+      .catch(() => {});
+  }, [seance.teacherId]);
   const suggestion = useMemo(() => suggestionSeanceSuivante(notions), [notions]);
 
   /** Export CSV du détail par élève — patron maison, sans dépendance. */
@@ -74,50 +90,188 @@ export default function RapportSeance({
     URL.revokeObjectURL(url);
   };
 
+  /** Export PDF du rapport (lot M5) — la pièce de renouvellement de licence. */
+  const exporterPdf = async () => {
+    const octets = await genererRapportSessionPdf({
+      titreSeance: seance.title || 'Séance',
+      nomClasse,
+      date: new Date(seance.endedAt ?? seance.startedAt ?? Date.now()).toLocaleDateString('fr-FR'),
+      participation: { actifs: indicateurs.nbParticipants, effectif: indicateurs.effectifClasse },
+      scoreMoyenPct: indicateurs.tauxGlobal,
+      notions: [
+        ...notions.notions.map((n) => ({
+          libelle: n.libelle,
+          tauxPct: n.total > 0 ? Math.round((n.correct / n.total) * 100) : null,
+        })),
+        ...notions.sousEchantillonnees.map((n) => ({ libelle: n.libelle, tauxPct: null })),
+      ],
+      ...(seance.prolongement?.actif
+        ? {
+            prolongement: {
+              dateLimite: seance.prolongement.dateLimite,
+              faits: 0, // instrumentation mobile à venir (lot M3 mobile)
+              total: indicateurs.effectifClasse,
+            },
+          }
+        : {}),
+      apprenants: lignes
+        .filter((l) => l.etat !== 'absent')
+        .map((l) => ({
+          nom: l.nom,
+          score: l.score,
+          correctes: l.nbCorrectes,
+          total: l.nbReponses,
+        })),
+    });
+    telechargerPdf(octets, `rapport-${slug(nomClasse)}-${dateFichier(seance.endedAt ?? seance.startedAt)}.pdf`);
+  };
+
+  // ── Tuiles maquette (14/08) : tout est calculé depuis les données réelles ──
+  const participantsActifs = lignes.filter((l) => l.etat !== 'absent');
+  const progressionMoyenne = participantsActifs.length
+    ? Math.round(participantsActifs.reduce((somme, l) => somme + l.cellIndex, 0) / participantsActifs.length)
+    : null;
+  const cartesParJoueur = participantsActifs.length
+    ? Math.round(indicateurs.cartesJouees / participantsActifs.length)
+    : null;
+
+  /**
+   * « La carte qui a fait hésiter » : la question la PLUS MANQUÉE de la séance,
+   * parmi celles répondues au moins 3 fois (même seuil que les notions — un
+   * échec sur 1 réponse ne dit rien). Le TEMPS de réflexion n'est pas affiché :
+   * le mobile ne le mesure pas encore, et on n'invente pas un chiffre.
+   */
+  const carteLaPlusManquee = useMemo(() => {
+    const parQuiz = new Map<string, { total: number; manquees: number }>();
+    for (const participant of participants) {
+      for (const reponse of participant.answers ?? []) {
+        if (!reponse.quizId) continue;
+        const compteur = parQuiz.get(reponse.quizId) ?? { total: 0, manquees: 0 };
+        compteur.total += 1;
+        if (reponse.correct !== true) compteur.manquees += 1;
+        parQuiz.set(reponse.quizId, compteur);
+      }
+    }
+    let pire: { quizId: string; total: number; manquees: number } | null = null;
+    for (const [quizId, compteur] of parQuiz) {
+      if (compteur.total < 3 || compteur.manquees === 0) continue;
+      if (!pire || compteur.manquees / compteur.total > pire.manquees / pire.total) {
+        pire = { quizId, ...compteur };
+      }
+    }
+    if (!pire) return null;
+    const question = contenu?.quizzes.find((q) => q.id === pire.quizId)?.question;
+    return question ? { question, total: pire.total, manquees: pire.manquees } : null;
+  }, [participants, contenu]);
+
   const aucuneReponse = indicateurs.nbReponses === 0;
 
   return (
     <div className="flex flex-col gap-4">
+      {/* ═══ EN-TÊTE (maquette du 17/08) ═══ */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--color-text-primary)' }}>
+            Rapport de session
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+            {seance.title || 'Séance'} · {nomClasse}
+            {seance.endedAt || seance.startedAt
+              ? ` · ${new Date(seance.endedAt ?? seance.startedAt ?? 0).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`
+              : ''}
+          </p>
+          {nomProf && (
+            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>{nomProf}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <Link
+            href={`/classes/${seance.classId}`}
+            className="flex items-center gap-2"
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', border: '1px solid var(--color-card-border)', borderRadius: 10, padding: '9px 15px', background: '#FFF', textDecoration: 'none' }}
+          >
+            <Award size={14} /> Générer les certificats
+          </Link>
+          <button
+            type="button"
+            onClick={() => void exporterPdf()}
+            className="flex items-center gap-2"
+            style={{ fontSize: 13, fontWeight: 700, color: '#0F1C2E', background: '#F5A623', border: 'none', borderRadius: 10, padding: '10px 16px', cursor: 'pointer' }}
+          >
+            <Download size={14} /> Partager le rapport (PDF)
+          </button>
+        </div>
+      </div>
+
+      {/* ═══ BANDEAU D'OUVERTURE (maquette) ═══ */}
+      <section
+        className="flex items-center gap-4 flex-wrap"
+        style={{ background: '#0F1C2E', borderRadius: 16, padding: '18px 22px' }}
+      >
+        <span style={{ fontSize: 34, fontWeight: 800, color: '#FFFFFF', lineHeight: 1 }}>
+          {indicateurs.nbParticipants}
+        </span>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, flex: 1, minWidth: 260 }}>
+          <strong style={{ color: '#FFFFFF' }}>
+            apprenant{indicateurs.nbParticipants > 1 ? 's ont' : ' a'} participé activement
+          </strong>{' '}
+          à cette séance — chacun sur son propre plateau, à son rythme.
+          {indicateurs.tauxGlobal !== null && (
+            <> Score moyen : <strong style={{ color: '#FFFFFF' }}>{indicateurs.tauxGlobal} %</strong>.</>
+          )}{' '}
+          Le rapport PDF sert de pièce pour le renouvellement de la licence de l’établissement.
+        </p>
+      </section>
+
       {/* ═══ INDICATEURS ═══ */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Indicateur
           icone={<Users size={16} />}
           libelle="Participation"
-          valeur={`${indicateurs.nbParticipants} / ${indicateurs.effectifClasse}`}
-          detail={`élève${indicateurs.effectifClasse > 1 ? 's' : ''} de la classe`}
+          valeur={
+            indicateurs.effectifClasse > 0
+              ? `${Math.round((indicateurs.nbParticipants / indicateurs.effectifClasse) * 100)} %`
+              : '—'
+          }
+          detail={`${indicateurs.nbParticipants} apprenant${indicateurs.nbParticipants > 1 ? 's' : ''} sur ${indicateurs.effectifClasse}`}
         />
         <Indicateur
           icone={<Award size={16} />}
           libelle="Score moyen"
           valeur={indicateurs.nbParticipants > 0 ? String(indicateurs.scoreMoyen) : '—'}
-          detail="sur les élèves ayant joué"
-        />
-        <Indicateur
-          icone={<Clock size={16} />}
-          libelle="Durée réelle"
-          valeur={
-            indicateurs.dureeReelleMinutes !== null ? `${indicateurs.dureeReelleMinutes} min` : '—'
-          }
-          detail={`${seance.durationMinutes} min prévues`}
+          detail="Sur les quiz réellement joués"
         />
         <Indicateur
           icone={<Layers size={16} />}
           libelle="Cartes jouées"
-          valeur={String(indicateurs.cartesJouees)}
+          valeur={cartesParJoueur !== null ? `${cartesParJoueur} / joueur` : '—'}
+          detail={`${indicateurs.cartesJouees} au total · quiz, opportunités, financements`}
+        />
+        <Indicateur
+          icone={<Clock size={16} />}
+          libelle="Progression moyenne"
+          valeur={progressionMoyenne !== null ? `${progressionMoyenne} cases` : '—'}
           detail={
-            indicateurs.nbReponses > 0
-              ? `${indicateurs.nbReponses} réponse${indicateurs.nbReponses > 1 ? 's' : ''} au quiz`
-              : 'aucune réponse au quiz'
+            indicateurs.dureeReelleMinutes !== null
+              ? `Chacun s'est arrêté où il en était · ${indicateurs.dureeReelleMinutes} min de jeu`
+              : "Chacun s'est arrêté où il en était"
           }
         />
       </section>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 flex flex-col gap-4">
       {/* ═══ NOTIONS MAÎTRISÉES — le cœur du rapport ═══ */}
       <section className="glass-card p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap" style={{ marginBottom: 4 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-            Notions maîtrisées
-          </h2>
+          <div>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+              Notions rencontrées
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+              Score moyen sur les cartes de cette séance — de quoi préparer le prochain cours
+            </p>
+          </div>
           {indicateurs.tauxGlobal !== null && (
             <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
               Réussite globale{' '}
@@ -231,6 +385,77 @@ export default function RapportSeance({
       )}
 
       {/* ═══ DÉTAIL PAR ÉLÈVE ═══ */}
+        </div>
+
+        {/* ═══ Colonne droite (maquette) : carte qui a fait hésiter,
+            prolongement, certificat ═══ */}
+        <div className="flex flex-col gap-4">
+          {carteLaPlusManquee && (
+            <section
+              style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.35)', borderRadius: 14, padding: '16px 18px' }}
+            >
+              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.8, color: '#B87A0C', marginBottom: 8 }}>
+                LA CARTE QUI A FAIT HÉSITER
+              </div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.55 }}>
+                « {carteLaPlusManquee.question} »
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 8, lineHeight: 1.55 }}>
+                Manquée par {carteLaPlusManquee.manquees} joueur{carteLaPlusManquee.manquees > 1 ? 's' : ''} sur{' '}
+                {carteLaPlusManquee.total}. À reprendre en ouverture du prochain cours.
+              </p>
+            </section>
+          )}
+
+          {seance.prolongement?.actif && (
+            <section className="glass-card" style={{ padding: '16px 18px' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
+                Prolongement assigné
+              </h3>
+              <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                Quiz à faire sur l’app
+                {seance.prolongement.dateLimite
+                  ? <> avant le <strong style={{ color: 'var(--color-text-primary)' }}>
+                      {new Date(seance.prolongement.dateLimite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+                    </strong></>
+                  : ''}.
+              </p>
+              <div style={{ height: 7, borderRadius: 4, background: 'var(--color-surface)', overflow: 'hidden', margin: '10px 0 5px' }}>
+                <div style={{ width: '3%', height: '100%', background: '#0F1C2E', borderRadius: 4 }} />
+              </div>
+              <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+                <strong style={{ color: 'var(--color-text-primary)' }}>0</strong> / {indicateurs.effectifClasse}{' '}
+                apprenants l’ont terminé — le comptage arrive avec la prochaine version de l’app.
+              </p>
+            </section>
+          )}
+
+          <section className="glass-card" style={{ padding: '16px 18px' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+              Certificat apprenant
+            </h3>
+            <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginBottom: 10 }}>
+              Aperçu du certificat nominatif
+            </p>
+            <div style={{ background: '#0F1C2E', borderRadius: 12, padding: '16px 14px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, color: '#F5A623' }}>
+                CERTIFICAT STARTUP LUDO
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#FFFFFF', margin: '6px 0 4px' }}>
+                {lignes[0]?.nom ?? 'Prénom Nom'}
+              </div>
+              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.7)' }}>
+                {nomClasse} · co-signé CONCREE et l’établissement
+              </div>
+            </div>
+            <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 10, lineHeight: 1.55 }}>
+              Les certificats se génèrent depuis la fiche de la classe — l’éligibilité se joue sur le
+              cumul annuel, pas sur une seule séance.
+            </p>
+          </section>
+        </div>
+      </div>
+
       <section className="glass-card">
         <div
           className="flex items-center justify-between gap-3 px-5 py-4 flex-wrap"

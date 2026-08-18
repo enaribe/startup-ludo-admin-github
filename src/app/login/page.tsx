@@ -114,6 +114,12 @@ export default function LoginPage() {
               {loading ? <LoadingSpinner size={20} color="#0C243E" /> : 'Se connecter'}
             </button>
           </form>
+          <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', textAlign: 'center', marginTop: 14 }}>
+            Établissement, enseignant, annonceur ou partenaire ?{' '}
+            <a href="/inscription" style={{ color: 'var(--color-primary)', fontWeight: 700 }}>
+              Créer un compte
+            </a>
+          </p>
         </div>
 
         <p className="text-center mt-6" style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>

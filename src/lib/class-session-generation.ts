@@ -144,6 +144,54 @@ export async function genererContenuSeance(
   return normaliserContenu(json.data, `s${Date.now().toString(36)}`);
 }
 
+/**
+ * Génère un COMPLÉMENT de contenu et le fusionne à l'existant.
+ *
+ * Pas de collision d'ids possible : chaque appel de génération pose son propre
+ * seed horodaté (`s<epoch36>`), le complément vit donc dans un espace d'ids
+ * disjoint de l'existant.
+ *
+ * Deux garde-fous propres à l'AJOUT :
+ *   - les questions déjà présentes sont citées au modèle avec interdiction de
+ *     les reproduire — sans ça, le même cours redonne à peu près les mêmes
+ *     quiz, et « ajouter 5 quiz » fabriquerait surtout des doublons de sens ;
+ *   - chaque type est TRONQUÉ à la quantité demandée : un mix partiel (que des
+ *     quiz, zéro duel) doit produire exactement ça, même si le modèle déborde.
+ */
+export async function genererContenuSupplementaire(
+  sessionId: string,
+  consignes: string,
+  mix: MixSeance,
+  contexte: ContexteGeneration,
+  existant: ClassSessionContent
+): Promise<ClassSessionContent> {
+  const dejaPosees = [
+    ...existant.quizzes.map((q) => q.question),
+    ...existant.duels.map((d) => d.question),
+  ].filter(Boolean);
+
+  const consignesEnrichies = dejaPosees.length
+    ? `${consignes ? `${consignes}\n\n` : ''}Ne génère AUCUNE question identique ou proche de celles-ci, déjà posées dans cette séance :\n- ${dejaPosees.join('\n- ')}`
+    : consignes;
+
+  const complement = await genererContenuSeance(sessionId, consignesEnrichies, mix, contexte);
+
+  return {
+    ...existant,
+    quizzes: [...existant.quizzes, ...complement.quizzes.slice(0, Math.max(0, mix.quiz))],
+    duels: [...existant.duels, ...complement.duels.slice(0, Math.max(0, mix.duel))],
+    fundings: [...existant.fundings, ...complement.fundings.slice(0, Math.max(0, mix.funding))],
+    opportunities: [
+      ...existant.opportunities,
+      ...complement.opportunities.slice(0, Math.max(0, mix.opportunity)),
+    ],
+    challengeEvents: [
+      ...existant.challengeEvents,
+      ...complement.challengeEvents.slice(0, Math.max(0, mix.challenge)),
+    ],
+  };
+}
+
 // ===== NORMALISATION DE LA SORTIE DU MODÈLE =====
 
 /** Lit une valeur de champ sur un objet inconnu. */

@@ -54,7 +54,7 @@ import {
   QuotaDepasseError,
 } from '@/lib/school-service';
 import { recalculerCumuls } from '@/lib/class-cumul-service';
-import { SEUIL_QUESTIONS_NOTION } from '@/lib/class-report-service';
+import { SEUIL_QUESTIONS_NOTION , niveauApprenant } from '@/lib/class-report-service';
 import {
   examinerClasse,
   genererCertificats,
@@ -606,6 +606,7 @@ export default function ClasseDetailPage() {
                   <Th>Prénom</Th>
                   <Th>Identifiant</Th>
                   <Th>Rattachement</Th>
+                  <Th>Niveau</Th>
                   <Th>Dernière activité</Th>
                   <Th style={{ textAlign: 'right' }}>Actions</Th>
                 </tr>
@@ -654,6 +655,23 @@ export default function ClasseDetailPage() {
                             <Clock size={11} /> En attente
                           </span>
                         )}
+                      </Td>
+                      <Td>
+                        {(() => {
+                          const n = niveauApprenant(eleve);
+                          return (
+                            <span
+                              title={`${n.questions} question${n.questions > 1 ? 's' : ''} cumulée${n.questions > 1 ? 's' : ''}${n.tauxPct != null ? ` · ${n.tauxPct} % de réussite` : ''} — N1 découvre · N2 pratique (≥10 q) · N3 maîtrise (≥25 q, ≥60 %) · N4 autonome (≥50 q, ≥70 %)`}
+                              style={{
+                                fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 9,
+                                background: n.niveau >= 3 ? 'rgba(46,160,67,0.12)' : n.niveau === 2 ? 'rgba(245,166,35,0.15)' : 'rgba(15,28,46,0.07)',
+                                color: n.niveau >= 3 ? '#2EA043' : n.niveau === 2 ? '#B87A0C' : '#5A6A7E',
+                              }}
+                            >
+                              N{n.niveau}
+                            </span>
+                          );
+                        })()}
                       </Td>
                       <Td>{eleve.lastPlayedAt ? formatDate(eleve.lastPlayedAt) : '—'}</Td>
                       <td className="px-4 py-3 text-right">

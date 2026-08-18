@@ -151,6 +151,8 @@ export interface LigneSuivi {
   nbCorrectes: number;
   /** Dernier signe de vie, en millisecondes epoch (0 si jamais connecté). */
   lastSeenAt: number;
+  /** Dernier événement notable remonté par le mobile (flux live, lot M4). */
+  lastEvent?: { kind: 'quiz_ok' | 'quiz_ko'; label?: string; at: number };
 }
 
 /** Nom affichable d'un élève de la classe. */
@@ -245,6 +247,7 @@ function ligneDepuis(
     nbReponses: reponses.length,
     nbCorrectes: reponses.filter((r) => r.correct).length,
     lastSeenAt: p.lastSeenAt ?? p.joinedAt ?? 0,
+    ...(p.lastEvent ? { lastEvent: p.lastEvent } : {}),
   };
 }
 
@@ -773,4 +776,34 @@ export function construireCsvRapport(lignes: LigneSuivi[]): string {
   ];
 
   return rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NIVEAU N1-N4 DE L'APPRENANT (lot M5, arbitrage D2 du 13/08)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Niveau de PROGRESSION d'un apprenant, dérivé de son cumul annuel — jamais
+ * d'une seule séance. RÈGLE (proposée, affichée à l'écran pour être
+ * contestable) :
+ *   N1 — moins de 10 questions cumulées : il découvre.
+ *   N2 — ≥ 10 questions : il pratique.
+ *   N3 — ≥ 25 questions ET ≥ 60 % de réussite : il maîtrise les bases.
+ *   N4 — ≥ 50 questions ET ≥ 70 % de réussite : il est autonome.
+ * Le volume PRIME sur le taux (un taux parfait sur 3 questions ne dit rien) —
+ * même philosophie que le seuil des 3 questions du rapport.
+ */
+export function niveauApprenant(learner: {
+  masteryByCategory?: Record<string, { correct: number; total: number }>;
+}): { niveau: 1 | 2 | 3 | 4; questions: number; tauxPct: number | null } {
+  const compteurs = Object.values(learner.masteryByCategory ?? {});
+  const questions = compteurs.reduce((somme, c) => somme + (c.total ?? 0), 0);
+  const correctes = compteurs.reduce((somme, c) => somme + (c.correct ?? 0), 0);
+  const tauxPct = questions > 0 ? Math.round((correctes / questions) * 100) : null;
+
+  let niveau: 1 | 2 | 3 | 4 = 1;
+  if (questions >= 10) niveau = 2;
+  if (questions >= 25 && (tauxPct ?? 0) >= 60) niveau = 3;
+  if (questions >= 50 && (tauxPct ?? 0) >= 70) niveau = 4;
+  return { niveau, questions, tauxPct };
 }

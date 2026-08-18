@@ -27,18 +27,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CalendarClock, Play, Users } from 'lucide-react';
+import { ArrowLeft, CalendarClock, Pencil, Play, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth-context';
 import { getClass, getLearners } from '@/lib/school-service';
 import {
+  DUREE_SEANCE_MAX,
+  DUREE_SEANCE_MIN,
   SeanceError,
+  bornerDuree,
+  compterCartes,
   endSession,
   getClassSession,
   getSessionContent,
   saveSessionContent,
   startSession,
+  updateSession,
 } from '@/lib/class-session-service';
+import { genererContenuSupplementaire, type MixSeance } from '@/lib/class-session-generation';
 import {
   construireSuivi,
   ecouterParticipants,
@@ -55,6 +61,7 @@ import type {
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ApercuContenuSeance from '@/components/school/ApercuContenuSeance';
+import AjoutContenuSeance from '@/components/school/AjoutContenuSeance';
 import SuiviSeance from '@/components/school/SuiviSeance';
 import RapportSeance from '@/components/school/RapportSeance';
 
@@ -62,7 +69,7 @@ export default function SeanceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = String(params?.sessionId ?? '');
-  const { admin, loading: authLoading } = useAuth();
+  const { admin, loading: authLoading, isEstablishmentAdmin, scopedEstablishmentId } = useAuth();
 
   const [seance, setSeance] = useState<ClassSession | null>(null);
   const [classe, setClasse] = useState<SchoolClass | null>(null);
@@ -72,6 +79,14 @@ export default function SeanceDetailPage() {
   const [chargement, setChargement] = useState(true);
   const [chargementSuivi, setChargementSuivi] = useState(true);
   const [action, setAction] = useState(false);
+  /**
+   * Brouillon de modification de la fiche (séance `scheduled` uniquement).
+   * `null` = mode lecture. `programmee` est la valeur du champ datetime-local,
+   * chaîne vide = lancement manuel (efface `scheduledAt`).
+   */
+  const [brouillon, setBrouillon] = useState<{ titre: string; duree: number; programmee: string } | null>(null);
+  /** Génération d'un complément de contenu en cours (panneau « Ajouter »). */
+  const [enAjout, setEnAjout] = useState(false);
 
   const charger = useCallback(async () => {
     if (!sessionId) return;
@@ -237,6 +252,83 @@ export default function SeanceDetailPage() {
     }
   };
 
+  /** Ouvre le formulaire de modification, pré-rempli avec la fiche actuelle. */
+  const commencerModification = () => {
+    if (!seance) return;
+    setBrouillon({
+      titre: seance.title ?? '',
+      duree: seance.durationMinutes,
+      programmee: versDatetimeLocal(seance.scheduledAt),
+    });
+  };
+
+  /**
+   * Enregistre la fiche modifiée. Seuls titre, durée et programmation sont
+   * ouverts : la classe et le contenu source appartiennent à la création
+   * (les règles Firestore figent d'ailleurs `classId`) — pour changer de
+   * classe, on recrée une séance en réutilisant le même contenu (wizard,
+   * voie « réutiliser une séance »).
+   */
+  const enregistrerModification = async () => {
+    if (!brouillon) return;
+    const scheduledAt = brouillon.programmee ? new Date(brouillon.programmee).getTime() : null;
+    setAction(true);
+    try {
+      const titre = brouillon.titre.trim();
+      const duree = bornerDuree(brouillon.duree);
+      await updateSession(sessionId, { title: titre, durationMinutes: duree, scheduledAt });
+      setSeance((prev) =>
+        prev
+          ? { ...prev, title: titre, durationMinutes: duree, scheduledAt: scheduledAt ?? undefined }
+          : prev
+      );
+      setBrouillon(null);
+      toast.success('Séance modifiée.');
+    } catch (error) {
+      console.error('Modification de la séance :', error);
+      toast.error('Impossible de modifier la séance');
+    } finally {
+      setAction(false);
+    }
+  };
+
+  /**
+   * Génère un complément de contenu et l'ajoute au paquet de la séance.
+   * Possible tant que la séance n'est pas terminée — y compris en `running` :
+   * les élèves qui rejoignent ensuite jouent avec le paquet enrichi (ceux déjà
+   * en partie gardent celui chargé au lancement, comme pour les corrections).
+   */
+  const ajouterContenu = async (mixAjout: MixSeance) => {
+    if (!contenu || !seance) return;
+    setEnAjout(true);
+    try {
+      const fusionne = await genererContenuSupplementaire(
+        sessionId,
+        '',
+        mixAjout,
+        {
+          className: classe?.name,
+          durationMinutes: seance.durationMinutes,
+          sessionTitle: seance.title,
+        },
+        contenu
+      );
+      const ajoutees = compterCartes(fusionne) - compterCartes(contenu);
+      if (ajoutees === 0) {
+        toast.error('Aucune carte exploitable générée. Réessayez.');
+        return;
+      }
+      setContenu(fusionne);
+      await saveSessionContent(sessionId, fusionne, true);
+      toast.success(`${ajoutees} carte${ajoutees > 1 ? 's' : ''} ajoutée${ajoutees > 1 ? 's' : ''}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Génération impossible';
+      toast.error(message);
+    } finally {
+      setEnAjout(false);
+    }
+  };
+
   if (authLoading || chargement) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -263,6 +355,12 @@ export default function SeanceDetailPage() {
   // Seul l'enseignant qui a créé la séance peut la piloter (la règle Firestore
   // dit la même chose : l'afficher en lecture au directeur est volontaire).
   const estProprietaire = admin?.uid === seance.teacherId;
+  // La direction peut CLÔTURER une séance de son établissement (règle du
+  // 17/08) — indispensable pour fermer une séance qu'un enseignant a laissée
+  // « en cours ». Elle ne peut rien piloter d'autre.
+  const peutCloturer =
+    estProprietaire ||
+    (isEstablishmentAdmin && seance.establishmentId === scopedEstablishmentId);
   const enCours = seance.status === 'running';
   const terminee = seance.status === 'ended';
 
@@ -276,6 +374,7 @@ export default function SeanceDetailPage() {
         <ArrowLeft size={14} /> Séances
       </Link>
 
+      {!terminee && (
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>
@@ -290,16 +389,28 @@ export default function SeanceDetailPage() {
           </p>
         </div>
         {estProprietaire && !enCours && !terminee && (
-          <button
-            className="btn-primary flex items-center gap-2"
-            onClick={ouvrir}
-            disabled={action}
-            style={{ fontSize: 13, opacity: action ? 0.5 : 1, flexShrink: 0 }}
-          >
-            <Play size={14} /> Ouvrir la séance
-          </button>
+          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+            <button
+              className="btn-secondary flex items-center gap-2"
+              onClick={commencerModification}
+              disabled={action || brouillon !== null}
+              style={{ fontSize: 13, opacity: action || brouillon !== null ? 0.5 : 1 }}
+            >
+              <Pencil size={14} /> Modifier
+            </button>
+            <button
+              className="btn-primary flex items-center gap-2"
+              onClick={ouvrir}
+              disabled={action || brouillon !== null}
+              style={{ fontSize: 13, opacity: action || brouillon !== null ? 0.5 : 1 }}
+            >
+              <Play size={14} /> Ouvrir la séance
+            </button>
+          </div>
         )}
       </div>
+
+      )}
 
       {/* ═══ SUIVI EN DIRECT — séance en cours ═══ */}
       {enCours && (
@@ -308,7 +419,7 @@ export default function SeanceDetailPage() {
           startedAt={seance.startedAt}
           durationMinutes={seance.durationMinutes}
           chargement={chargementSuivi}
-          onTerminer={estProprietaire ? cloturer : undefined}
+          onTerminer={peutCloturer ? cloturer : undefined}
           actionEnCours={action}
         />
       )}
@@ -326,8 +437,86 @@ export default function SeanceDetailPage() {
             participants={participants}
             lignes={lignes}
             nomClasse={classe?.name ?? 'classe'}
+            contenu={contenu}
           />
         ))}
+
+      {/* ═══ MODIFICATION DE LA FICHE — séance pas encore ouverte ═══ */}
+      {brouillon && !enCours && !terminee && (
+        <div className="glass-card p-4 flex flex-col gap-4">
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Modifier la séance
+          </span>
+
+          <div>
+            <label className="label">Titre de la séance</label>
+            <input
+              className="input-field"
+              type="text"
+              value={brouillon.titre}
+              onChange={(e) => setBrouillon((prev) => (prev ? { ...prev, titre: e.target.value } : prev))}
+              placeholder="Ex. Le business model — chapitre 3"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="label" style={{ marginBottom: 0 }}>
+              Durée : {brouillon.duree} minutes
+            </label>
+            <input
+              type="range"
+              min={DUREE_SEANCE_MIN}
+              max={DUREE_SEANCE_MAX}
+              step={5}
+              value={brouillon.duree}
+              onChange={(e) =>
+                setBrouillon((prev) => (prev ? { ...prev, duree: bornerDuree(Number(e.target.value)) } : prev))
+              }
+            />
+          </div>
+
+          <div>
+            <label className="label">Programmée pour (optionnel)</label>
+            <input
+              className="input-field"
+              type="datetime-local"
+              value={brouillon.programmee}
+              onChange={(e) =>
+                setBrouillon((prev) => (prev ? { ...prev, programmee: e.target.value } : prev))
+              }
+            />
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
+              Laissez vide pour ouvrir la séance manuellement, le moment venu. La programmation est
+              indicative : la séance ne devient visible par vos élèves que quand vous l’ouvrez.
+            </p>
+          </div>
+
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+            La classe et le contenu source ne se changent pas ici : pour une autre classe, créez une
+            nouvelle séance en réutilisant ce contenu (wizard, voie « réutiliser une séance »). Le
+            contenu généré reste corrigeable ci-dessous.
+          </p>
+
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              className="btn-secondary"
+              onClick={() => setBrouillon(null)}
+              disabled={action}
+              style={{ fontSize: 13 }}
+            >
+              Annuler
+            </button>
+            <button
+              className="btn-primary"
+              onClick={() => void enregistrerModification()}
+              disabled={action}
+              style={{ fontSize: 13, opacity: action ? 0.5 : 1 }}
+            >
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ═══ FICHE DE LA SÉANCE ═══
           Reléguée SOUS le suivi et le rapport : pendant la séance, l'état des
@@ -355,7 +544,7 @@ export default function SeanceDetailPage() {
       </div>
 
       {contenu && estProprietaire && !terminee && (
-        <div className="glass-card p-4">
+        <div className="glass-card p-4 flex flex-col gap-4">
           <ApercuContenuSeance
             contenu={contenu}
             onChange={(suivant) => {
@@ -365,10 +554,28 @@ export default function SeanceDetailPage() {
               });
             }}
           />
+          {/* L'ajout repart du cours déposé sous cette séance : il n'est
+              proposé que si le contenu en a bien été généré (une séance
+              « édition seule » n'a pas de cours source). */}
+          {seance.hasGeneratedContent && (
+            <AjoutContenuSeance onAjouter={ajouterContenu} enCours={enAjout} />
+          )}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * Convertit un epoch ms vers la valeur d'un champ `datetime-local` (HEURE
+ * LOCALE — `toISOString()` serait décalé d'un fuseau, GMT au Sénégal mais pas
+ * pour un test depuis l'Europe).
+ */
+function versDatetimeLocal(ms?: number): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** Libellé français de l'état d'une séance. */
