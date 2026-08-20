@@ -407,7 +407,9 @@ function DemandesInscription() {
           email: (d.data().email as string) ?? '',
           orgName: (d.data().orgName as string) ?? '',
         }))
-        .filter((d) => d.type === 'sponsor' || d.type === 'partner')
+        // Les enseignants relèvent de leur direction ; tout le reste — dont les
+        // ÉTABLISSEMENTS sans code de licence — relève de CONCREE, ici.
+        .filter((d) => d.type === 'sponsor' || d.type === 'partner' || d.type === 'establishment')
     );
   }, []);
 
@@ -429,6 +431,8 @@ function DemandesInscription() {
           motif: decision === 'reject' ? saisie || 'Demande refusée par CONCREE.' : undefined,
           editionIds: dm.type === 'sponsor' && saisie ? saisie.split(',').map((x) => x.trim()).filter(Boolean) : [],
           partnerId: dm.type === 'partner' ? saisie : undefined,
+          // Établissement : identifiant souhaité (facultatif — sinon slug du nom).
+          establishmentId: dm.type === 'establishment' && decision === 'approve' ? saisie : undefined,
         }),
       });
       const json = (await res.json()) as { error?: string };
@@ -450,9 +454,11 @@ function DemandesInscription() {
         Demandes d'inscription ({demandes.length})
       </h2>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10 }}>
-        Annonceurs et partenaires auto-inscrits. Pour approuver : éditions (annonceur, séparées par
-        des virgules — vide accepté) ou partnerId (partenaire, requis). Le champ sert de motif en
-        cas de refus.
+        Auto-inscriptions qui relèvent de CONCREE. Pour approuver : éditions (annonceur, séparées
+        par des virgules — vide accepté), partnerId (partenaire, requis) ou identifiant souhaité
+        (établissement, facultatif). Approuver un établissement crée sa fiche avec des quotas
+        prudents (5 enseignants · 150 élèves), à ajuster ensuite. Le champ sert de motif en cas de
+        refus.
       </p>
       <div className="flex flex-col gap-2">
         {demandes.map((dm) => (
@@ -460,14 +466,22 @@ function DemandesInscription() {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                 {dm.orgName || dm.displayName}
-                <span className="badge badge-info" style={{ marginLeft: 8 }}>{dm.type === 'sponsor' ? 'Annonceur' : 'Partenaire'}</span>
+                <span className="badge badge-info" style={{ marginLeft: 8 }}>
+                  {dm.type === 'sponsor' ? 'Annonceur' : dm.type === 'partner' ? 'Partenaire' : 'Établissement'}
+                </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>{dm.displayName} · {dm.email}</div>
             </div>
             <div className="flex items-center gap-2">
               <input
                 className="input-field"
-                placeholder={dm.type === 'sponsor' ? 'éditions (a,b) / motif' : 'partnerId / motif'}
+                placeholder={
+                  dm.type === 'sponsor'
+                    ? 'éditions (a,b) / motif'
+                    : dm.type === 'partner'
+                      ? 'partnerId / motif'
+                      : 'identifiant (ex. lycee-hann) / motif'
+                }
                 value={perimetre[dm.uid] ?? ''}
                 onChange={(e) => setPerimetre((prev) => ({ ...prev, [dm.uid]: e.target.value }))}
                 style={{ width: 200, fontSize: 12 }}

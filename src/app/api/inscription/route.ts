@@ -64,9 +64,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Ce compte est déjà activé.' }, { status: 409 });
   }
 
-  // ═══ Chemin ÉTABLISSEMENT : code de licence → activation immédiate ═══
-  if (type === 'establishment') {
-    if (!code) return NextResponse.json({ error: 'Le code de licence est requis.' }, { status: 400 });
+  // ═══ Chemin ÉTABLISSEMENT ═══
+  //   - AVEC code de licence (client existant) → activation immédiate ;
+  //   - SANS code (école qui découvre CONCREE) → demande `pending`, examinée
+  //     par CONCREE dans /moderation — l'approbation crée l'établissement.
+  if (type === 'establishment' && !code) {
+    if (!orgName) {
+      return NextResponse.json(
+        { error: 'Le nom de votre établissement est requis pour une demande sans code de licence.' },
+        { status: 400 }
+      );
+    }
+    // Tombe dans le bloc « demande en attente » ci-dessous.
+  } else if (type === 'establishment') {
     try {
       const etabId = await db.runTransaction(async (tx) => {
         const snap = await tx.get(

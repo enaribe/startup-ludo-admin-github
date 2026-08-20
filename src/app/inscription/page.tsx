@@ -8,6 +8,8 @@
  * par `/api/inscription`. Trois issues possibles, affichées sur place :
  *   - établissement + code de licence valide → activé immédiatement
  *     (reconnexion demandée : les claims ne vivent qu'au prochain jeton) ;
+ *   - établissement SANS code (école qui découvre CONCREE) → demande examinée
+ *     par CONCREE (/moderation), qui crée l'établissement à l'approbation ;
  *   - enseignant → « votre direction va vous affecter » ;
  *   - annonceur / partenaire → « CONCREE examine sous 48 h ».
  * Un compte déjà connecté avec une demande en cours voit son STATUT au lieu
@@ -31,7 +33,7 @@ const ORANGE = '#F5A623';
 type TypeCompte = 'establishment' | 'teacher' | 'sponsor' | 'partner';
 
 const TYPES: Array<{ id: TypeCompte; titre: string; texte: string; Icon: typeof School; codeLabel?: string }> = [
-  { id: 'establishment', titre: 'Établissement', texte: 'École, université, centre de formation — activez votre licence Mode Classe.', Icon: School, codeLabel: 'Code de licence (ex. EST-ISM-2026)' },
+  { id: 'establishment', titre: 'Établissement', texte: 'École, université, centre de formation — avec ou sans code de licence.', Icon: School, codeLabel: 'Code de licence — si vous en avez reçu un (ex. EST-ISM-2026)' },
   { id: 'teacher', titre: 'Enseignant', texte: 'Rejoignez votre établissement — votre direction validera et vous affectera vos classes.', Icon: GraduationCap, codeLabel: 'Code établissement (remis par votre direction)' },
   { id: 'sponsor', titre: 'Annonceur', texte: 'Structure d’appui, banque, programme — diffusez vos opportunités dans le jeu.', Icon: Megaphone },
   { id: 'partner', titre: 'Partenaire', texte: 'Incubateur ou institution avec un programme d’accompagnement sur Startup Ludo.', Icon: Building2 },
@@ -171,6 +173,9 @@ export default function InscriptionPage() {
       </h1>
       <div className="flex flex-col gap-3">
         <Champ label="Votre nom complet" value={displayName} onChange={setDisplayName} placeholder="Ex. Awa Ndiaye" />
+        {type === 'establishment' && (
+          <Champ label="Nom de votre établissement" value={orgName} onChange={setOrgName} placeholder="Ex. Lycée Blaise Diagne" />
+        )}
         {(type === 'sponsor' || type === 'partner') && (
           <Champ label="Nom de votre structure" value={orgName} onChange={setOrgName} placeholder="Ex. ADEPME" />
         )}
@@ -180,16 +185,32 @@ export default function InscriptionPage() {
         {erreur && <p style={{ fontSize: 12.5, color: '#C0392B' }}>{erreur}</p>}
         <button
           type="button"
-          disabled={enCours || !displayName.trim() || !email.trim() || motDePasse.length < 6 || (!!meta.codeLabel && !code.trim())}
+          disabled={
+            enCours ||
+            !displayName.trim() ||
+            !email.trim() ||
+            motDePasse.length < 6 ||
+            // Le code n'est OBLIGATOIRE que pour un enseignant (il désigne son
+            // établissement). Un établissement sans code envoie une demande —
+            // il lui faut alors au moins le nom de l'école.
+            (type === 'teacher' && !code.trim()) ||
+            (type === 'establishment' && !orgName.trim())
+          }
           onClick={() => void soumettre()}
           style={{ background: ORANGE, color: NAVY, fontWeight: 800, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer', opacity: enCours ? 0.6 : 1 }}
         >
-          {enCours ? 'Création…' : type === 'establishment' ? 'Activer ma licence' : 'Envoyer ma demande'}
+          {enCours
+            ? 'Création…'
+            : type === 'establishment'
+              ? code.trim()
+                ? 'Activer ma licence'
+                : 'Envoyer ma demande'
+              : 'Envoyer ma demande'}
         </button>
         <p style={{ fontSize: 11.5, color: '#8A94A6', lineHeight: 1.5 }}>
           Un e-mail de vérification vous sera envoyé.{' '}
           {type === 'establishment'
-            ? 'Le code de licence active votre espace immédiatement.'
+            ? 'Avec un code de licence, votre espace s’active immédiatement. Sans code, l’équipe CONCREE examine votre demande (48 h ouvrées) et vous recontacte.'
             : type === 'teacher'
               ? 'Votre direction validera votre compte et vos classes.'
               : 'L’équipe CONCREE valide les demandes sous 48 h ouvrées.'}

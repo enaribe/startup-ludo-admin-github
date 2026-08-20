@@ -7,8 +7,14 @@
  *     synchronise `classes.teacherIds` — même geste que la création directe.
  *   - `sponsor` / `partner` : le SUPER ADMIN uniquement, avec le périmètre
  *     (éditions / partnerId) posé à l'approbation.
+ *   - `establishment` (demande SANS code de licence — école qui découvre
+ *     CONCREE) : le SUPER ADMIN uniquement. L'approbation CRÉE l'établissement
+ *     (nom = `orgName` de la demande, quotas prudents par défaut, code de
+ *     licence généré pour archive) et pose les claims de direction — mêmes
+ *     claims que le chemin « code de licence » de l'inscription. CONCREE
+ *     ajuste ensuite quotas et échéance sur la fiche de l'établissement.
  * Un refus porte toujours son motif — il s'affiche au candidat et part par
- * e-mail (Sender).
+ * e-mail.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -48,6 +54,7 @@ export async function POST(request: NextRequest) {
   if (!snap.exists) return NextResponse.json({ error: 'Demande introuvable.' }, { status: 404 });
   const demande = snap.data() as {
     type: string; status: string; email?: string; displayName?: string; establishmentId?: string;
+    orgName?: string;
   };
   if (demande.status !== 'pending') {
     return NextResponse.json({ error: `Demande déjà ${demande.status === 'approved' ? 'approuvée' : 'traitée'}.` }, { status: 409 });
@@ -113,6 +120,61 @@ export async function POST(request: NextRequest) {
       { email: demande.email ?? '', displayName: demande.displayName ?? '', role: 'partner_admin', partnerId, createdAt: maintenant, updatedAt: maintenant },
       { merge: true }
     );
+  } else if (demande.type === 'establishment') {
+    // Demande SANS code de licence : l'approbation crée l'établissement.
+    const nomEtab = (demande.orgName ?? '').trim() || (demande.displayName ?? '').trim();
+    if (!nomEtab) {
+      return NextResponse.json({ error: 'Demande sans nom d’établissement — refusez-la.' }, { status: 409 });
+    }
+    // Identifiant : celui saisi par le super admin, sinon un slug du nom,
+    // suffixé si déjà pris (jamais d'écrasement silencieux d'un client).
+    const voulu = String(body.establishmentId ?? '').trim().toLowerCase();
+    const base =
+      voulu ||
+      nomEtab
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) ||
+      'etablissement';
+    let etabId = base;
+    for (let i = 2; (await db.collection(COLLECTIONS.establishments).doc(etabId).get()).exists; i += 1) {
+      etabId = `${base}-${i}`;
+    }
+
+    // Quotas PRUDENTS par défaut (0 = illimité dans ce modèle, donc jamais 0
+    // ici) et pas d'échéance : CONCREE cadre la licence sur la fiche après
+    // l'échange commercial. Le code généré sert d'archive — il est déjà
+    // consommé (`licenseAccountUid` posé).
+    await db.collection(COLLECTIONS.establishments).doc(etabId).set({
+      name: nomEtab,
+      level: 'formation',
+      city: '',
+      country: '',
+      licenseCode: `EST-${etabId.slice(0, 8).toUpperCase().replace(/[^A-Z0-9]/g, '')}-${String(maintenant).slice(-4)}`,
+      licenseValidUntil: null,
+      maxTeachers: 5,
+      maxLearners: 150,
+      isActive: true,
+      licenseAccountUid: uid,
+      createdAt: maintenant,
+      updatedAt: maintenant,
+    });
+    await auth.setCustomUserClaims(uid, {
+      admin: true, establishment_admin: true, teacher: false,
+      establishmentId: etabId, classIds: [],
+    });
+    await db.collection(COLLECTIONS.users).doc(uid).set(
+      {
+        email: demande.email ?? '', displayName: demande.displayName ?? '',
+        role: 'establishment_admin', establishmentId: etabId, teachingClassIds: [],
+        createdAt: maintenant, updatedAt: maintenant,
+      },
+      { merge: true }
+    );
+    await ref.update({ establishmentId: etabId });
   }
 
   await ref.update({ status: 'approved', decidedAt: maintenant, decidedBy: appelant.uid });
