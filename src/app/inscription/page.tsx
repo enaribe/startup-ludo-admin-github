@@ -78,7 +78,19 @@ export default function InscriptionPage() {
       } catch (e: unknown) {
         const codeErr = (e as { code?: string }).code ?? '';
         if (codeErr === 'auth/email-already-in-use') {
-          cred = { user: (await signInWithEmailAndPassword(auth, email.trim(), motDePasse)).user };
+          // L'e-mail a déjà un compte (essai précédent, autre inscription…) :
+          // on tente la reconnexion avec le mot de passe saisi. S'il ne
+          // correspond pas, on l'explique — l'erreur brute de Firebase
+          // (« auth/invalid-credential ») ne dit rien à un directeur d'école.
+          try {
+            cred = { user: (await signInWithEmailAndPassword(auth, email.trim(), motDePasse)).user };
+          } catch {
+            throw new Error(
+              'Un compte existe déjà avec cet e-mail, mais le mot de passe saisi ne correspond pas. ' +
+                'Saisissez le mot de passe choisi lors de votre première tentative, ou réinitialisez-le ' +
+                'depuis la page de connexion (« Mot de passe oublié ? »), puis revenez ici.'
+            );
+          }
         } else if (codeErr === 'auth/weak-password') {
           throw new Error('Mot de passe trop court (6 caractères minimum).');
         } else if (codeErr === 'auth/invalid-email') {
