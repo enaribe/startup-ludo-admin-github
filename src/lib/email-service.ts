@@ -14,6 +14,14 @@
  *   SENDGRID_API_KEY    clé API SendGrid (Bearer, commence par « SG. »)
  *   SENDGRID_FROM       expéditeur vérifié chez SendGrid (défaut : no-reply@concree.com)
  *   SENDGRID_FROM_NAME  nom d'affichage (défaut : Startup Ludo · CONCREE)
+ *
+ * ÉQUIVALENCE AVEC UNE CONFIG SMTP SENDGRID (ex. ActionMailer Rails) : le
+ * `password` SMTP (user_name « apikey », smtp.sendgrid.net:587) EST la clé
+ * API — c'est la même valeur que `SENDGRID_API_KEY`, on n'utilise simplement
+ * pas le relais SMTP (l'API HTTP v3 convient mieux au serverless Next.js).
+ * ⚠️ L'expéditeur (`SENDGRID_FROM`) doit appartenir à un domaine AUTHENTIFIÉ
+ * dans CE compte SendGrid (le `domain` de la config SMTP, ex. adepme.sn) —
+ * sinon SendGrid refuse l'envoi (403 « sender identity not verified »).
  */
 
 const API_URL = 'https://api.sendgrid.com/v3/mail/send';
