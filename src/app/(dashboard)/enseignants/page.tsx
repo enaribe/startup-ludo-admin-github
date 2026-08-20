@@ -119,6 +119,8 @@ export default function EnseignantsPage() {
   const [etablissement, setEtablissement] = useState<Establishment | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Invitation (modale : code partageable + accès à la création directe)
+  const [inviter, setInviter] = useState(false);
   // Création
   const [creation, setCreation] = useState(false);
   const [nom, setNom] = useState('');
@@ -421,72 +423,24 @@ export default function EnseignantsPage() {
 
   return (
     <div>
-      {/* En-tête */}
+      {/* En-tête — maquette : effectif + invitations en attente, bouton Inviter */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>Enseignants</h1>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4, maxWidth: 640 }}>
-            Créez les comptes de vos enseignants et affectez-leur des classes. Un enseignant ne voit
-            que les classes qui lui sont affectées.
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--color-text-primary)' }}>Enseignants</h1>
+          <p style={{ fontSize: 13.5, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            {enseignants.length} enseignant{enseignants.length > 1 ? 's' : ''}
+            {demandes.length > 0 &&
+              ` · ${demandes.length} invitation${demandes.length > 1 ? 's' : ''} en attente`}
+            {!quota.illimite && ` · quota ${quota.utilises} / ${quota.max}`}
           </p>
         </div>
-        <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-          <span className={quota.atteint ? 'badge badge-error' : 'badge badge-info'}>{quota.libelle}</span>
-          <span className={licence.expiree ? 'badge badge-error' : licence.alerte ? 'badge badge-primary' : 'badge'}>
-            {licence.libelle}
-          </span>
-          <button
-            className="btn-primary flex items-center gap-2"
-            onClick={() => { reinitialiserFormulaire(); setCreation(true); }}
-            disabled={!!blocageCreation}
-            title={blocageCreation ?? undefined}
-          >
-            <Plus size={16} /> Créer un compte
-          </button>
-        </div>
-      </div>
-
-      {/* ═══ Inscription libre : code partageable + demandes (I3/I4) ═══ */}
-      <div className="glass-card p-4 mb-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Inscription des enseignants
-            </h2>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              Partagez ce code : vos enseignants s'inscrivent eux-mêmes (« Créer un compte » sur la
-              page de connexion) et leur demande apparaît ci-dessous.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', background: 'var(--color-surface)', borderRadius: 8, padding: '6px 12px' }}>
-              {joinCode || '— aucun code —'}
-            </span>
-            <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => void regenererCode()}>
-              {joinCode ? 'Régénérer' : 'Générer'}
-            </button>
-          </div>
-        </div>
-        {demandes.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {demandes.map((dm) => (
-              <div key={dm.uid} className="flex items-center justify-between gap-3" style={{ border: '1px solid var(--color-card-border)', borderRadius: 10, padding: '8px 12px' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{dm.displayName || dm.email}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>{dm.email} · en attente de validation</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button className="btn-primary" style={{ fontSize: 12 }} disabled={decisionEnCours === dm.uid} onClick={() => void deciderDemande(dm.uid, 'approve')}>
-                    Activer
-                  </button>
-                  <button className="btn-secondary" style={{ fontSize: 12 }} disabled={decisionEnCours === dm.uid} onClick={() => void deciderDemande(dm.uid, 'reject')}>
-                    Refuser
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <button
+          className="btn-primary flex items-center gap-2"
+          onClick={() => setInviter(true)}
+          style={{ flexShrink: 0 }}
+        >
+          <Mail size={16} /> Inviter un enseignant
+        </button>
       </div>
 
       {/* Licence expirée / quota atteint : on l'explique, on ne laisse pas
@@ -516,97 +470,182 @@ export default function EnseignantsPage() {
         </div>
       )}
 
-      {/* Rappel du choix produit : aucun e-mail n'est envoyé. */}
-      <div
-        className="glass-card p-4 mb-4 flex items-start gap-3"
-        style={{ borderLeft: '3px solid var(--color-info)' }}
-      >
-        <Mail size={16} style={{ color: 'var(--color-info)', flexShrink: 0, marginTop: 2 }} />
-        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-          <strong>Aucun e-mail n’est envoyé.</strong> Après la création d’un compte, les identifiants
-          s’affichent une seule fois : c’est à votre établissement de les transmettre à l’enseignant,
-          par le canal de son choix. Il devra changer ce mot de passe à sa première connexion.
-        </p>
-      </div>
-
-      {/* Liste */}
-      {enseignants.length === 0 ? (
+      {/* ═══ Équipe pédagogique — tableau (maquette) ═══ */}
+      {enseignants.length === 0 && demandes.length === 0 ? (
         <EmptyState
           icon={<GraduationCap size={48} />}
           title="Aucun enseignant"
-          description="Créez le premier compte enseignant, puis affectez-lui une ou plusieurs classes."
+          description="Invitez vos enseignants : par code d’inscription qu’ils saisissent eux-mêmes, ou en créant leur compte directement."
+          action={
+            <button className="btn-primary flex items-center gap-2" onClick={() => setInviter(true)}>
+              <Mail size={16} /> Inviter un enseignant
+            </button>
+          }
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {enseignants.map((compte) => {
-            const affectees = compte.teachingClassIds ?? [];
-            return (
-              <div key={compte.uid} className="glass-card p-5">
-                <div className="flex items-start justify-between mb-3 gap-3">
-                  <div className="flex items-center gap-3">
-                    <div
-                      style={{
-                        width: 40, height: 40, borderRadius: 10,
-                        background: 'rgba(255,188,64,0.12)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <GraduationCap size={18} color="#FFBC40" />
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                        {compte.displayName || compte.email}
-                      </h3>
-                      <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{compte.email}</p>
-                    </div>
-                  </div>
-                  <span
-                    className={compte.mustChangePassword ? 'badge badge-primary' : 'badge badge-success'}
-                    style={{ flexShrink: 0 }}
-                  >
-                    {compte.mustChangePassword ? 'Doit changer son mot de passe' : 'Actif'}
-                  </span>
-                </div>
+        <section className="glass-card">
+          <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+            <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Équipe pédagogique
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3 }}>
+              Cliquez « Affecter » pour modifier les classes d’un enseignant.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+                  <ThEq>Enseignant</ThEq>
+                  <ThEq>Classes affectées</ThEq>
+                  <ThEq>Statut</ThEq>
+                  <ThEq style={{ textAlign: 'right' }}>Action</ThEq>
+                </tr>
+              </thead>
+              <tbody>
+                {enseignants.map((compte) => {
+                  const affectees = compte.teachingClassIds ?? [];
+                  return (
+                    <tr key={compte.uid} style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+                      <td className="px-5 py-3">
+                        <CelluleIdentite nom={compte.displayName || compte.email} email={compte.email} />
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {affectees.length === 0 ? (
+                            <PilluleClasse estVide>Aucune classe</PilluleClasse>
+                          ) : (
+                            affectees.map((id) => <PilluleClasse key={id}>{nomClasse(id)}</PilluleClasse>)
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        {compte.mustChangePassword ? (
+                          <PastilleStatut couleur="#B87A0C" fond="rgba(245,166,35,0.12)" libelle="Invité"
+                            titre="Compte créé — l'enseignant n'a pas encore changé son mot de passe temporaire" />
+                        ) : (
+                          <PastilleStatut couleur="#2EA043" fond="rgba(46,160,67,0.1)" libelle="Actif" />
+                        )}
+                      </td>
+                      <td className="px-5 py-3" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button
+                          onClick={() => ouvrirEdition(compte)}
+                          className="items-center gap-1.5"
+                          style={{
+                            display: 'inline-flex', background: 'none', border: 'none', cursor: 'pointer',
+                            fontSize: 12.5, fontWeight: 700, color: '#B87A0C', padding: '4px 6px',
+                          }}
+                        >
+                          <Pencil size={13} /> Affecter
+                        </button>
+                        <button
+                          onClick={() => setRevocation(compte)}
+                          title="Révoquer ce compte"
+                          style={{
+                            display: 'inline-flex', background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--color-text-muted)', padding: '4px 6px', marginLeft: 6,
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
 
-                <div
-                  className="flex items-start gap-1.5 mb-4"
-                  style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}
-                >
-                  <Users size={13} color="#FFB347" style={{ marginTop: 2, flexShrink: 0 }} />
-                  <span>
-                    {affectees.length === 0
-                      ? 'Aucune classe affectée'
-                      : affectees.map(nomClasse).join(', ')}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => ouvrirEdition(compte)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                    style={{
-                      background: 'rgba(33,150,243,0.08)', color: 'var(--color-info)',
-                      border: 'none', cursor: 'pointer', fontSize: 12,
-                    }}
+                {/* Demandes d'inscription en attente — même tableau, statut dédié. */}
+                {demandes.map((dm, i) => (
+                  <tr
+                    key={dm.uid}
+                    style={{ borderBottom: i < demandes.length - 1 ? '1px solid var(--color-card-border)' : 'none' }}
                   >
-                    <Pencil size={13} /> Modifier les classes
-                  </button>
-                  <button
-                    onClick={() => setRevocation(compte)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                    style={{
-                      background: 'rgba(244,67,54,0.08)', color: '#F44336',
-                      border: 'none', cursor: 'pointer', fontSize: 12,
-                    }}
-                  >
-                    <Trash2 size={13} /> Révoquer
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                    <td className="px-5 py-3">
+                      <CelluleIdentite nom={dm.displayName || dm.email} email={dm.email} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <PilluleClasse estVide>Aucune classe</PilluleClasse>
+                    </td>
+                    <td className="px-5 py-3">
+                      <PastilleStatut couleur="#B87A0C" fond="rgba(245,166,35,0.12)" libelle="En attente"
+                        titre="Demande d'inscription à valider" />
+                    </td>
+                    <td className="px-5 py-3" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        className="btn-primary"
+                        style={{ fontSize: 12, padding: '6px 12px' }}
+                        disabled={decisionEnCours === dm.uid}
+                        onClick={() => void deciderDemande(dm.uid, 'approve')}
+                      >
+                        Activer
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        style={{ fontSize: 12, padding: '6px 12px', marginLeft: 8 }}
+                        disabled={decisionEnCours === dm.uid}
+                        onClick={() => void deciderDemande(dm.uid, 'reject')}
+                      >
+                        Refuser
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
+
+      {/* ===== Inviter un enseignant : code partageable OU création directe ===== */}
+      <Modal open={inviter} onClose={() => setInviter(false)} title="Inviter un enseignant" maxWidth="520px">
+        <div className="flex flex-col gap-4">
+          <div>
+            <h3 style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+              Par code d’inscription
+            </h3>
+            <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginBottom: 10 }}>
+              Partagez ce code : l’enseignant crée son compte lui-même (« Créer un compte » sur la
+              page de connexion) et sa demande apparaît dans le tableau, en attente de votre
+              validation.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', background: 'var(--color-surface)', borderRadius: 8, padding: '8px 14px' }}>
+                {joinCode || '— aucun code —'}
+              </span>
+              {joinCode && <BoutonCopier texte={joinCode} compact />}
+              <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => void regenererCode()}>
+                {joinCode ? 'Régénérer' : 'Générer'}
+              </button>
+            </div>
+            {joinCode && (
+              <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 8 }}>
+                Régénérer le code invalide l’ancien immédiatement.
+              </p>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--color-card-border)', paddingTop: 14 }}>
+            <h3 style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+              Ou créez le compte vous-même
+            </h3>
+            <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginBottom: 10 }}>
+              Vous saisissez nom, e-mail et mot de passe temporaire, puis transmettez les
+              identifiants — aucun e-mail n’est envoyé.
+            </p>
+            <button
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => {
+                setInviter(false);
+                reinitialiserFormulaire();
+                setCreation(true);
+              }}
+              disabled={!!blocageCreation}
+              title={blocageCreation ?? undefined}
+            >
+              <Plus size={15} /> Créer un compte enseignant
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ===== Création ===== */}
       <Modal open={creation} onClose={() => setCreation(false)} title="Nouveau compte enseignant">
@@ -718,6 +757,94 @@ export default function EnseignantsPage() {
         loading={enRevocation}
       />
     </div>
+  );
+}
+
+/** En-tête de colonne du tableau de l'équipe pédagogique. */
+function ThEq({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <th
+      className="text-left px-5 py-3"
+      style={{
+        fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8,
+        color: 'var(--color-text-muted)', ...style,
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+/** Avatar aux initiales + nom + e-mail (colonne Enseignant). */
+function CelluleIdentite({ nom, email }: { nom: string; email: string }) {
+  const initiales =
+    nom
+      .trim()
+      .split(/\s+/)
+      .filter((m) => m.length > 1 || /^[A-Za-zÀ-ÿ]$/.test(m))
+      .slice(0, 2)
+      .map((m) => m[0])
+      .join('')
+      .toUpperCase() || '·';
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="flex items-center justify-center"
+        style={{
+          width: 36, height: 36, borderRadius: 18, flexShrink: 0,
+          background: '#0F1C2E', color: '#FFFFFF', fontSize: 12, fontWeight: 800,
+        }}
+      >
+        {initiales}
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>{nom}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>{email}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Pilule d'une classe affectée. */
+function PilluleClasse({ children, estVide }: { children: React.ReactNode; estVide?: boolean }) {
+  return (
+    <span
+      style={{
+        fontSize: 11.5, fontWeight: estVide ? 400 : 600, padding: '4px 11px', borderRadius: 10,
+        background: 'rgba(15,28,46,0.05)', border: '1px solid var(--color-card-border)',
+        color: estVide ? 'var(--color-text-muted)' : 'var(--color-text-secondary)',
+        fontStyle: estVide ? 'italic' : 'normal', whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Pastille de statut « ● Actif / Invité / En attente ». */
+function PastilleStatut({
+  couleur,
+  fond,
+  libelle,
+  titre,
+}: {
+  couleur: string;
+  fond: string;
+  libelle: string;
+  titre?: string;
+}) {
+  return (
+    <span
+      title={titre}
+      className="items-center gap-1.5"
+      style={{
+        display: 'inline-flex', fontSize: 11.5, fontWeight: 700, padding: '4px 11px',
+        borderRadius: 10, background: fond, color: couleur, whiteSpace: 'nowrap',
+      }}
+    >
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: 3, background: couleur }} />
+      {libelle}
+    </span>
   );
 }
 

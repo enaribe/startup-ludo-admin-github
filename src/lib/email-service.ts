@@ -1,23 +1,24 @@
 /**
- * Envoi d'e-mails transactionnels via SENDER (plan inscription, §4).
+ * Envoi d'e-mails transactionnels via SENDGRID (plan inscription, §4).
  *
  * MODULE SERVEUR UNIQUEMENT (routes API). Deux règles absolues :
  *   1. JAMAIS BLOQUANT — une activation de compte, une décision de modération
  *      ou une clôture de facturation réussit même si l'e-mail échoue. L'échec
  *      est loggé, l'appelant n'attend pas de promesse critique.
- *   2. SANS CLÉ, SANS BRUIT — tant que `SENDER_API_KEY` n'est pas posée en
+ *   2. SANS CLÉ, SANS BRUIT — tant que `SENDGRID_API_KEY` n'est pas posée en
  *      variable d'environnement, chaque envoi est un no-op loggé : tout le
  *      circuit d'inscription fonctionne, les e-mails s'activeront en posant
  *      la clé, sans redéploiement de code.
  *
  * Variables d'environnement :
- *   SENDER_API_KEY   clé API Sender (Bearer)
- *   SENDER_FROM      expéditeur vérifié (défaut : no-reply@concree.com)
- *   SENDER_API_URL   endpoint transactionnel (défaut : API v2 Sender)
+ *   SENDGRID_API_KEY    clé API SendGrid (Bearer, commence par « SG. »)
+ *   SENDGRID_FROM       expéditeur vérifié chez SendGrid (défaut : no-reply@concree.com)
+ *   SENDGRID_FROM_NAME  nom d'affichage (défaut : Startup Ludo · CONCREE)
  */
 
-const API_URL = process.env.SENDER_API_URL || 'https://api.sender.net/v2/email/send';
-const FROM = process.env.SENDER_FROM || 'no-reply@concree.com';
+const API_URL = 'https://api.sendgrid.com/v3/mail/send';
+const FROM = process.env.SENDGRID_FROM || 'no-reply@concree.com';
+const FROM_NAME = process.env.SENDGRID_FROM_NAME || 'Startup Ludo · CONCREE';
 
 export interface EmailTransactionnel {
   to: string;
@@ -28,9 +29,9 @@ export interface EmailTransactionnel {
 
 /** Envoie (fire-and-forget côté appelant : `void envoyerEmail(...)`). */
 export async function envoyerEmail(email: EmailTransactionnel): Promise<boolean> {
-  const cle = process.env.SENDER_API_KEY;
+  const cle = process.env.SENDGRID_API_KEY;
   if (!cle) {
-    console.log(`[email] SENDER_API_KEY absente — e-mail non envoyé à ${email.to} : ${email.subject}`);
+    console.log(`[email] SENDGRID_API_KEY absente — e-mail non envoyé à ${email.to} : ${email.subject}`);
     return false;
   }
   try {
@@ -39,17 +40,18 @@ export async function envoyerEmail(email: EmailTransactionnel): Promise<boolean>
       headers: {
         Authorization: `Bearer ${cle}`,
         'Content-Type': 'application/json',
-        Accept: 'application/json',
       },
       body: JSON.stringify({
-        from: FROM,
-        to: email.to,
+        personalizations: [{ to: [{ email: email.to }] }],
+        from: { email: FROM, name: FROM_NAME },
         subject: email.subject,
-        html: email.html,
+        content: [{ type: 'text/html', value: email.html }],
       }),
     });
+    // SendGrid répond 202 Accepted sans corps quand l'envoi est pris en charge.
     if (!res.ok) {
-      console.error(`[email] Sender a répondu ${res.status} pour ${email.to}`);
+      const detail = await res.text().catch(() => '');
+      console.error(`[email] SendGrid a répondu ${res.status} pour ${email.to}${detail ? ` — ${detail}` : ''}`);
       return false;
     }
     return true;

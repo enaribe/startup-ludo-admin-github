@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3,
+  LineChart,
   CreditCard,
   HelpCircle,
   LogOut,
@@ -44,6 +45,7 @@ function SidebarAnnonceur() {
     {
       section: 'DIFFUSION',
       entries: [
+        { href: '/annonceur/tableau-de-bord', libelle: 'Tableau de bord', Icon: LineChart, exactOrChild: true },
         { href: '/annonceur', libelle: 'Mises en visibilité', Icon: BarChart3, exactOrChild: true },
         { href: '/annonceur/nouvelle', libelle: 'Nouvelle mise en visibilité', Icon: PlusCircle, exactOrChild: true },
         { href: '/annonceur/cartes', libelle: 'Gérer mes cartes', Icon: SquarePen, exactOrChild: true },
@@ -113,7 +115,7 @@ function SidebarAnnonceur() {
                 // « Mises en visibilité » (/annonceur) est le préfixe de toutes
                 // les autres routes : il n'est actif que sur la liste et les
                 // tableaux de bord, pas quand une entrée plus précise matche.
-                const routesPrecises = ['/annonceur/nouvelle', '/annonceur/cartes', '/annonceur/facturation', '/annonceur/regles', '/annonceur/aide'];
+                const routesPrecises = ['/annonceur/tableau-de-bord', '/annonceur/nouvelle', '/annonceur/cartes', '/annonceur/facturation', '/annonceur/regles', '/annonceur/aide'];
                 const actif =
                   entree.href === '/annonceur'
                     ? pathname === '/annonceur' ||
@@ -239,7 +241,9 @@ function TopbarAnnonceur() {
       .catch(() => {});
   }, [admin?.uid]);
 
-  const titre = pathname.startsWith('/annonceur/nouvelle')
+  const titre = pathname.startsWith('/annonceur/tableau-de-bord')
+    ? 'Tableau de bord'
+    : pathname.startsWith('/annonceur/nouvelle')
     ? 'Nouvelle mise en visibilité'
     : pathname.startsWith('/annonceur/facturation')
       ? 'Facturation'

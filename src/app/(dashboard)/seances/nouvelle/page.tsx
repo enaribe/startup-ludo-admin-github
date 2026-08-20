@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   ArrowRight,
@@ -32,11 +32,14 @@ import {
   FileText,
   GraduationCap,
   Layers,
+  LayoutGrid,
   Play,
+  Plus,
   RefreshCw,
   Sparkles,
   Upload,
   Users,
+  Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth-context';
@@ -95,6 +98,7 @@ type VoieContenu = 'generation' | 'reutilisation' | 'edition';
 
 export default function NouvelleSeancePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { admin, scopedClassIds, scopedEstablishmentId, loading: authLoading } = useAuth();
 
   const [etape, setEtape] = useState(0);
@@ -107,6 +111,13 @@ export default function NouvelleSeancePage() {
 
   // ===== Étape 1 : le contenu =====
   const [voie, setVoie] = useState<VoieContenu>('generation');
+  /**
+   * Séance prête à l'emploi retenue, `null` en mode personnalisé. C'est ce qui
+   * bascule la mise en avant entre les deux cartes de l'étape 1 (maquette) :
+   * choisir une séance prête présélectionne titre, édition et durée ; toucher
+   * au titre ou à la source de contenu repasse en personnalisé.
+   */
+  const [seancePreteId, setSeancePreteId] = useState<string | null>(null);
   const [titre, setTitre] = useState('');
   const [editionId, setEditionId] = useState('');
   const [seanceSource, setSeanceSource] = useState<ClassSession | null>(null);
@@ -168,6 +179,26 @@ export default function NouvelleSeancePage() {
         const actives = sesEditions.filter((e) => e.enabled !== false);
         setEditions(actives);
         if (actives[0]) setEditionId(actives[0].id);
+
+        // Préremplissage depuis la Communauté (« Dupliquer dans mes séances ») :
+        // titre, édition (matchée par nom parmi les éditions ACTIVES) et durée
+        // arrivent dans l'URL — la séance est prête à lancer en voie édition.
+        const titreUrl = searchParams.get('titre');
+        const editionUrl = (searchParams.get('edition') ?? '').trim().toLowerCase();
+        const dureeUrl = Number(searchParams.get('duree'));
+        if (titreUrl) {
+          setTitre(titreUrl);
+          setVoie('edition');
+        }
+        if (editionUrl) {
+          const cible = actives.find(
+            (e) =>
+              e.id.toLowerCase() === editionUrl ||
+              (e.name ?? '').toLowerCase().includes(editionUrl)
+          );
+          if (cible) setEditionId(cible.id);
+        }
+        if (Number.isFinite(dureeUrl) && dureeUrl > 0) setDuree(bornerDuree(dureeUrl));
         // Seules les séances au contenu généré sont réutilisables : réutiliser
         // une séance « édition seule » n'apporterait rien de plus que la voie (c).
         setSeancesPassees(sesSeances.filter((s) => s.hasGeneratedContent));
@@ -182,7 +213,7 @@ export default function NouvelleSeancePage() {
     return () => {
       annule = true;
     };
-  }, [authLoading, admin, scopedClassIds]);
+  }, [authLoading, admin, scopedClassIds, searchParams]);
 
   // ===== Voie (a) : dépôt du cours =====
   const deposer = useCallback(
@@ -392,13 +423,14 @@ export default function NouvelleSeancePage() {
   const derniereEtape = etape === ETAPES.length - 1;
 
   return (
-    <div className="flex flex-col gap-5" style={{ maxWidth: 900 }}>
+    <div className="flex flex-col gap-5" style={{ maxWidth: 1320 }}>
       <div>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          Nouvelle séance
+        <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--color-text-primary)' }}>
+          Lancer une session
         </h1>
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
-          Vos élèves rattachés verront la séance depuis leur profil — aucun code à ressaisir.
+        <p style={{ fontSize: 13.5, color: 'var(--color-text-muted)', marginTop: 4 }}>
+          Choisissez la séance et la classe — deux minutes, zéro préparation. Vos élèves rattachés
+          la verront depuis leur profil, sans code à saisir.
         </p>
       </div>
 
@@ -408,6 +440,8 @@ export default function NouvelleSeancePage() {
         <EtapeSeance
           voie={voie}
           onVoie={setVoie}
+          seancePreteId={seancePreteId}
+          onSeancePreteId={setSeancePreteId}
           titre={titre}
           onTitre={setTitre}
           onSeancePrete={(d) => setDuree(bornerDuree(d))}
@@ -462,8 +496,8 @@ export default function NouvelleSeancePage() {
         />
       )}
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between gap-3">
+      {/* Navigation — barre de pied de page (maquette) */}
+      <div className="glass-card flex items-center justify-between gap-3 px-4 py-3" style={{ flexWrap: 'wrap' }}>
         <button
           type="button"
           className="btn-secondary flex items-center gap-2"
@@ -474,36 +508,46 @@ export default function NouvelleSeancePage() {
           {etape === 0 ? 'Annuler' : 'Précédent'}
         </button>
 
-        <div className="flex items-center gap-3">
-          {derniereEtape && !peutLancer && (
-            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-              {!contenuPret
-                ? 'Définissez le contenu à l’étape 1.'
-                : !classId
-                  ? 'Choisissez une classe à l’étape 2.'
-                  : 'Choisissez une date.'}
-            </span>
+        {/* Indication centrale : où on en est, ce qui manque. */}
+        <span className="flex items-center gap-2" style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+          {derniereEtape && !peutLancer ? (
+            !contenuPret
+              ? 'Définissez le contenu à l’étape 1.'
+              : !classId
+                ? 'Choisissez une classe à l’étape 2.'
+                : 'Choisissez une date.'
+          ) : contenuPret ? (
+            <>
+              <Check size={14} style={{ color: 'var(--color-success)' }} />
+              Contenu prêt — il ne reste que la classe à choisir.
+            </>
+          ) : (
+            <>
+              <Check size={14} style={{ color: 'var(--color-success)' }} />
+              Zéro préparation avec une séance prête à l’emploi — vous lancez dès l’étape suivante.
+            </>
           )}
-          <button
-            type="button"
-            className="btn-primary flex items-center gap-2"
-            onClick={() => (derniereEtape ? void valider() : setEtape(etape + 1))}
-            disabled={derniereEtape && (!peutLancer || enregistrement)}
-            style={{ fontSize: 13, opacity: derniereEtape && (!peutLancer || enregistrement) ? 0.5 : 1 }}
-          >
-            {derniereEtape ? (
-              <>
-                {programmer ? <CalendarClock size={14} /> : <Play size={14} />}
-                {programmer ? 'Programmer' : 'Lancer maintenant'}
-              </>
-            ) : (
-              <>
-                Continuer
-                <ArrowRight size={14} />
-              </>
-            )}
-          </button>
-        </div>
+        </span>
+
+        <button
+          type="button"
+          className="btn-primary flex items-center gap-2"
+          onClick={() => (derniereEtape ? void valider() : setEtape(etape + 1))}
+          disabled={derniereEtape && (!peutLancer || enregistrement)}
+          style={{ fontSize: 13, opacity: derniereEtape && (!peutLancer || enregistrement) ? 0.5 : 1 }}
+        >
+          {derniereEtape ? (
+            <>
+              {programmer ? <CalendarClock size={14} /> : <Play size={14} />}
+              {programmer ? 'Programmer' : 'Lancer maintenant'}
+            </>
+          ) : (
+            <>
+              Suivant
+              <ArrowRight size={14} />
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
@@ -511,10 +555,17 @@ export default function NouvelleSeancePage() {
 
 // ===================== ÉTAPE 1 — LA SÉANCE =====================
 
-/** Étape 1 : trois voies pour définir le contenu, la génération IA en tête. */
+/**
+ * Étape 1 (maquette « Lancer une session ») : deux cartes côte à côte.
+ * À gauche les séances prêtes à l'emploi (un clic préconfigure tout), à droite
+ * la séance personnalisée — où vivent les trois vraies sources de contenu
+ * (génération depuis le cours, réutilisation, édition seule).
+ */
 function EtapeSeance({
   voie,
   onVoie,
+  seancePreteId,
+  onSeancePreteId,
   titre,
   onTitre,
   onSeancePrete,
@@ -540,6 +591,8 @@ function EtapeSeance({
 }: {
   voie: VoieContenu;
   onVoie: (v: VoieContenu) => void;
+  seancePreteId: string | null;
+  onSeancePreteId: (v: string | null) => void;
   titre: string;
   onTitre: (v: string) => void;
   /** Une séance prête à l'emploi impose aussi sa durée (étape 2 pré-remplie). */
@@ -564,144 +617,291 @@ function EtapeSeance({
   contenu: ClassSessionContent | null;
   onContenu: (c: ClassSessionContent) => void;
 }) {
+  const modePerso = seancePreteId === null;
+
+  /** Un clic sur une séance prête préconfigure tout — l'enseignant peut lancer. */
+  const choisirPrete = (sp: (typeof SEANCES_PRETES)[number]) => {
+    onSeancePreteId(sp.id);
+    onVoie('edition');
+    onTitre(sp.titre);
+    if (editions.some((e) => e.id === sp.editionId)) onEdition(sp.editionId);
+    else if (editions[0]) onEdition(editions[0].id);
+    onSeancePrete(sp.duree);
+  };
+
+  /** Toute interaction avec la carte personnalisée reprend la main. */
+  const passerEnPerso = (v: VoieContenu) => {
+    onSeancePreteId(null);
+    onVoie(v);
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1">
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Intitulé de la séance (facultatif)
-        </span>
-        <input
-          className="input-field"
-          placeholder="Ex. Le business model canvas"
-          value={titre}
-          onChange={(e) => onTitre(e.target.value)}
-        />
-      </label>
+      <span className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 700, color: '#2E7D32' }}>
+        <Check size={13} /> Séances alignées sur le curriculum Startup Ludo
+      </span>
 
-      {/* ═══ Séances prêtes à l'emploi (lot M3) — zéro préparation ═══ */}
-      <div className="glass-card p-4 flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-            Séance prête à l'emploi
-          </span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#2E7D32', background: 'rgba(46,160,67,0.1)', borderRadius: 10, padding: '3px 10px' }}>
-            ✓ Aligné sur le curriculum — choisissez, lancez
-          </span>
-        </div>
-        {SEANCES_PRETES.map((sp) => {
-          const actif = voie === 'edition' && titre === sp.titre;
-          return (
-            <button
-              key={sp.id}
-              type="button"
-              onClick={() => {
-                onVoie('edition');
-                onTitre(sp.titre);
-                onEdition(sp.editionId);
-                onSeancePrete(sp.duree);
-              }}
-              className="flex items-center justify-between gap-3"
-              style={{
-                textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-                background: actif ? 'var(--color-success-light)' : '#FFFFFF',
-              }}
-            >
-              <span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', display: 'block' }}>{sp.titre}</span>
-                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  {sp.duree} min · {sp.difficulte}{sp.note ? ` · ${sp.note}` : ''}
-                </span>
-              </span>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4A5A70', background: 'rgba(15,28,46,0.06)', borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
-                {sp.difficulte}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Les trois voies. La génération est mise en avant : c'est elle qui
-          produit un contenu propre à l'établissement, donc l'argument de vente. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <CarteVoie
-          actif={voie === 'generation'}
-          onClick={() => onVoie('generation')}
-          icone={<Sparkles size={18} />}
-          titre="Depuis votre cours"
-          texte="Déposez votre chapitre : les quiz et les événements sont générés sur VOS notions."
-          recommande
-        />
-        <CarteVoie
-          actif={voie === 'reutilisation'}
-          onClick={() => onVoie('reutilisation')}
-          icone={<RefreshCw size={18} />}
-          titre="Réutiliser une séance"
-          texte={
-            seancesPassees.length > 0
-              ? `${seancesPassees.length} séance${seancesPassees.length > 1 ? 's' : ''} déjà générée${seancesPassees.length > 1 ? 's' : ''}.`
-              : 'Aucune séance générée pour l’instant.'
-          }
-        />
-        <CarteVoie
-          actif={voie === 'edition'}
-          onClick={() => onVoie('edition')}
-          icone={<Layers size={18} />}
-          titre="Une édition existante"
-          texte="Le contenu générique de Startup Ludo, sans préparation."
-        />
-      </div>
-
-      {/* ===== Voie (a) — génération depuis le cours ===== */}
-      {voie === 'generation' && (
-        <div className="glass-card p-4 flex flex-col gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* ═══ Carte gauche — séance prête à l'emploi (zéro préparation) ═══ */}
+        <section
+          className="glass-card p-5 flex flex-col gap-4"
+          style={{
+            border: `2px solid ${!modePerso ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+            borderRadius: 14,
+          }}
+        >
+          <EnTeteMode
+            icone={<Zap size={18} />}
+            titre="Séance prête à l'emploi"
+            sousTitre="Choisissez, lancez — tout est déjà réglé."
+          />
           <div className="flex flex-col gap-2">
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              1. Déposez votre cours
-            </span>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              PDF, DOCX, Markdown ou texte, 25 Mo maximum. Le document n’est pas conservé : seul
-              son texte sert à générer le contenu.
-            </p>
-            <label
-              className="flex items-center gap-2"
+            {SEANCES_PRETES.map((sp) => {
+              const actif = seancePreteId === sp.id;
+              return (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => choisirPrete(sp)}
+                  className="flex items-center justify-between gap-3"
+                  style={{
+                    textAlign: 'left', padding: '12px 16px', borderRadius: 12, cursor: 'pointer',
+                    border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                    background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
+                  }}
+                >
+                  <span>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', display: 'block' }}>
+                      {sp.titre}
+                    </span>
+                    <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+                      {sp.duree} min · {sp.difficulte}{sp.note ? ` · ${sp.note}` : ''}
+                    </span>
+                  </span>
+                  <BadgeDifficulte difficulte={sp.difficulte} />
+                </button>
+              );
+            })}
+            {/* La « thématique en plus » de la maquette, c'est la carte de droite :
+                on y bascule au lieu de promettre un catalogue qui n'existe pas. */}
+            <button
+              type="button"
+              onClick={() => passerEnPerso('generation')}
+              className="flex items-center justify-center gap-2"
               style={{
-                border: '1px dashed var(--color-card-border)',
-                borderRadius: 10,
-                padding: '12px 14px',
-                cursor: enExtraction ? 'progress' : 'pointer',
-                opacity: enExtraction ? 0.6 : 1,
+                padding: '11px 16px', borderRadius: 12, cursor: 'pointer',
+                border: '1.5px dashed var(--color-card-border)', background: 'transparent',
+                fontSize: 13, color: 'var(--color-text-secondary)',
               }}
             >
-              <Upload size={16} style={{ color: 'var(--color-text-muted)' }} />
-              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                {enExtraction ? 'Extraction en cours…' : 'Choisir un fichier'}
-              </span>
-              <input
-                type="file"
-                accept=".pdf,.docx,.md,.markdown,.txt"
-                style={{ display: 'none' }}
-                disabled={enExtraction}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onDeposer(f);
-                  e.target.value = '';
-                }}
-              />
-            </label>
-            {coursDeposes.map((doc, i) => (
-              <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
-                <FileText size={13} style={{ color: 'var(--color-success)' }} />
-                <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
-                  {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
-                </span>
-              </div>
-            ))}
+              <Plus size={15} /> Ajouter une thématique de séance
+            </button>
           </div>
+        </section>
+
+        {/* ═══ Carte droite — séance personnalisée (les trois vraies sources) ═══ */}
+        <section
+          className="glass-card p-5 flex flex-col gap-4"
+          style={{
+            border: `2px solid ${modePerso ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+            borderRadius: 14,
+          }}
+        >
+          <EnTeteMode
+            icone={<LayoutGrid size={18} />}
+            titre="Séance personnalisée"
+            sousTitre="Votre thématique du jour, vos réglages."
+          />
 
           <label className="flex flex-col gap-1">
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              2. Vos consignes (facultatif)
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Intitulé de la séance <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
+            </span>
+            <input
+              className="input-field"
+              placeholder="Ex. Le business model canvas"
+              value={titre}
+              onChange={(e) => {
+                onSeancePreteId(null);
+                onTitre(e.target.value);
+              }}
+            />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Source du contenu
+            </span>
+            <OptionSource
+              actif={modePerso && voie === 'generation'}
+              onClick={() => passerEnPerso('generation')}
+              icone={<Sparkles size={15} />}
+              titre="Générer depuis votre cours"
+              recommande
+              texte="Quiz et événements créés sur VOS notions — déposez le cours ci-dessous."
+            />
+            <OptionSource
+              actif={modePerso && voie === 'reutilisation'}
+              onClick={() => passerEnPerso('reutilisation')}
+              icone={<RefreshCw size={15} />}
+              titre="Réutiliser une séance"
+              texte={
+                seancesPassees.length > 0
+                  ? `${seancesPassees.length} séance${seancesPassees.length > 1 ? 's' : ''} déjà générée${seancesPassees.length > 1 ? 's' : ''}.`
+                  : 'Aucune séance générée pour l’instant.'
+              }
+            />
+            <OptionSource
+              actif={modePerso && voie === 'edition'}
+              onClick={() => passerEnPerso('edition')}
+              icone={<Layers size={15} />}
+              titre="Édition seule"
+              texte="Le contenu générique de Startup Ludo, sans préparation."
+            />
+          </div>
+
+          {/* ===== Voie (b) — réutilisation : la liste, dans la carte ===== */}
+          {modePerso && voie === 'reutilisation' && seancesPassees.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {seancesPassees.map((s) => {
+                const actif = seanceSource?.id === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="flex items-center justify-between gap-3"
+                    onClick={() => onReutiliser(s)}
+                    style={{
+                      padding: '9px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                      border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                      background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
+                    }}
+                  >
+                    <span style={{ fontSize: 12.5, color: 'var(--color-text-primary)' }}>
+                      {s.title || 'Séance sans titre'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                      {s.startedAt || s.createdAt
+                        ? new Date(s.startedAt ?? s.createdAt ?? 0).toLocaleDateString('fr-FR')
+                        : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Édition thématique
+            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {editions.length === 0 && (
+                <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+                  Aucune édition disponible.
+                </span>
+              )}
+              {editions.map((e) => {
+                const actif = editionId === e.id;
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => onEdition(e.id)}
+                    style={{
+                      fontSize: 12.5, padding: '7px 15px', borderRadius: 20, cursor: 'pointer',
+                      border: `1.5px solid ${actif ? '#0F1C2E' : 'var(--color-card-border)'}`,
+                      background: actif ? '#0F1C2E' : '#FFFFFF',
+                      color: actif ? '#FFFFFF' : 'var(--color-text-secondary)',
+                      fontWeight: actif ? 700 : 400,
+                    }}
+                  >
+                    {e.name || e.id}
+                  </button>
+                );
+              })}
+            </div>
+            {voie === 'edition' && (
+              <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                Contenu générique : les catégories d’origine sont libres, le rapport de fin de
+                séance sera donc moins précis qu’avec un contenu généré depuis votre cours.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* ═══ Documents de cours — la matière de la génération (voie a) ═══ */}
+      {voie === 'generation' && (
+        <section className="glass-card p-5 flex flex-col gap-4">
+          <div>
+            <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Documents de cours{' '}
+              <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--color-text-muted)' }}>
+                · requis pour la génération
+              </span>
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3, lineHeight: 1.55 }}>
+              Déposez vos supports : les quiz du jeu sont générés sur vos notions et le rapport de
+              séance en hérite. Le fichier n’est pas conservé — seul son texte est indexé.
+            </p>
+          </div>
+
+          <label
+            className="flex flex-col items-center justify-center gap-2"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (enExtraction) return;
+              Array.from(e.dataTransfer.files).forEach((f) => onDeposer(f));
+            }}
+            style={{
+              border: '1.5px dashed var(--color-card-border)',
+              borderRadius: 12,
+              padding: '34px 20px',
+              cursor: enExtraction ? 'progress' : 'pointer',
+              opacity: enExtraction ? 0.6 : 1,
+              textAlign: 'center',
+            }}
+          >
+            <Upload size={20} style={{ color: 'var(--color-primary)' }} />
+            <span style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
+              {enExtraction ? (
+                'Extraction en cours…'
+              ) : (
+                <>
+                  Glissez vos documents ici ou{' '}
+                  <span style={{ color: '#B87A0C', fontWeight: 700 }}>parcourez vos fichiers</span>
+                </>
+              )}
+            </span>
+            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+              PDF, DOCX, Markdown, texte · 25 Mo max par fichier
+            </span>
+            <input
+              type="file"
+              accept=".pdf,.docx,.md,.markdown,.txt"
+              multiple
+              style={{ display: 'none' }}
+              disabled={enExtraction}
+              onChange={(e) => {
+                Array.from(e.target.files ?? []).forEach((f) => onDeposer(f));
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {coursDeposes.map((doc, i) => (
+            <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
+              <FileText size={13} style={{ color: 'var(--color-success)' }} />
+              <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
+                {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
+              </span>
+            </div>
+          ))}
+
+          <label className="flex flex-col gap-1">
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Vos consignes <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
             </span>
             <textarea
               className="input-field"
@@ -713,8 +913,8 @@ function EtapeSeance({
           </label>
 
           <div className="flex flex-col gap-2">
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              3. Le contenu à générer
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Le contenu à générer
             </span>
             <MixContenu mix={mix} onMix={onMix} />
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
@@ -734,72 +934,7 @@ function EtapeSeance({
             <Sparkles size={14} />
             {enGeneration ? 'Génération en cours…' : contenu ? 'Régénérer' : 'Générer le contenu'}
           </button>
-        </div>
-      )}
-
-      {/* ===== Voie (b) — réutilisation ===== */}
-      {voie === 'reutilisation' && (
-        <div className="glass-card p-4 flex flex-col gap-2">
-          {seancesPassees.length === 0 ? (
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              Vous n’avez encore aucune séance générée. Passez par « Depuis votre cours » — elle
-              sera réutilisable ensuite.
-            </p>
-          ) : (
-            seancesPassees.map((s) => {
-              const actif = seanceSource?.id === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  className="flex items-center justify-between gap-3 p-3"
-                  onClick={() => onReutiliser(s)}
-                  style={{
-                    borderRadius: 10,
-                    border: `1px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-                    background: actif ? 'var(--color-success-light)' : '#FFFFFF',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
-                    {s.title || 'Séance sans titre'}
-                  </span>
-                  <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                    {s.startedAt || s.createdAt
-                      ? new Date(s.startedAt ?? s.createdAt ?? 0).toLocaleDateString('fr-FR')
-                      : ''}
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* ===== Voie (c) — édition existante ===== */}
-      {voie === 'edition' && (
-        <div className="glass-card p-4 flex flex-col gap-2">
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-            Édition imposée à la classe
-          </span>
-          <select
-            className="input-field"
-            value={editionId}
-            onChange={(e) => onEdition(e.target.value)}
-          >
-            {editions.length === 0 && <option value="">Aucune édition disponible</option>}
-            {editions.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name || e.id}
-              </option>
-            ))}
-          </select>
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            Contenu générique : les catégories d’origine sont libres, le rapport de fin de séance
-            sera donc moins précis qu’avec un contenu généré depuis votre cours.
-          </p>
-        </div>
+        </section>
       )}
 
       {/* ===== Aperçu éditable — dès qu'un contenu existe ===== */}
@@ -854,8 +989,59 @@ function MixContenu({ mix, onMix }: { mix: MixSeance; onMix: (m: MixSeance) => v
   );
 }
 
-/** Carte de choix d'une voie de contenu. */
-function CarteVoie({
+/** En-tête d'une des deux cartes de l'étape 1 : icône sur pastille + titre + sous-titre. */
+function EnTeteMode({
+  icone,
+  titre,
+  sousTitre,
+}: {
+  icone: React.ReactNode;
+  titre: string;
+  sousTitre: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="flex items-center justify-center"
+        style={{
+          width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+          background: 'rgba(15,28,46,0.06)', color: 'var(--color-text-primary)',
+        }}
+      >
+        {icone}
+      </span>
+      <span>
+        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--color-text-primary)', display: 'block' }}>
+          {titre}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{sousTitre}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Badge de difficulté en clair (arbitrage D2 — pas de codes N1-N4 ici). */
+function BadgeDifficulte({ difficulte }: { difficulte: string }) {
+  const styles: Record<string, { background: string; color: string }> = {
+    Débutant: { background: 'rgba(46,160,67,0.12)', color: '#2EA043' },
+    Intermédiaire: { background: 'rgba(245,166,35,0.15)', color: '#B87A0C' },
+    Avancé: { background: 'rgba(15,28,46,0.07)', color: '#4A5A70' },
+  };
+  const s = styles[difficulte] ?? styles['Avancé'];
+  return (
+    <span
+      style={{
+        fontSize: 10.5, fontWeight: 700, borderRadius: 8, padding: '4px 9px',
+        flexShrink: 0, ...s,
+      }}
+    >
+      {difficulte}
+    </span>
+  );
+}
+
+/** Rangée de choix d'une source de contenu, dans la carte personnalisée. */
+function OptionSource({
   actif,
   onClick,
   icone,
@@ -874,26 +1060,27 @@ function CarteVoie({
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-col gap-2 p-4"
+      className="flex items-start gap-3"
       style={{
-        borderRadius: 12,
-        border: `1px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-        background: actif ? 'var(--color-success-light)' : '#FFFFFF',
-        cursor: 'pointer',
-        textAlign: 'left',
-        height: '100%',
+        padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+        border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+        background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
       }}
     >
-      <span className="flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
-        {icone}
-        <span style={{ fontSize: 13.5, fontWeight: 700 }}>{titre}</span>
-        {recommande && (
-          <span className="badge badge-info" style={{ fontSize: 10 }}>
-            recommandé
-          </span>
-        )}
+      <span style={{ color: 'var(--color-text-primary)', marginTop: 1 }}>{icone}</span>
+      <span>
+        <span className="flex items-center gap-2">
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>{titre}</span>
+          {recommande && (
+            <span className="badge badge-info" style={{ fontSize: 10 }}>
+              recommandé
+            </span>
+          )}
+        </span>
+        <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', display: 'block', marginTop: 2, lineHeight: 1.45 }}>
+          {texte}
+        </span>
       </span>
-      <span style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>{texte}</span>
     </button>
   );
 }

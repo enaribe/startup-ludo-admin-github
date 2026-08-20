@@ -241,3 +241,120 @@ export function telechargerRapport(octets: Uint8Array, nomFichier: string): void
   lien.click();
   URL.revokeObjectURL(url);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RAPPORT CONSOLIDÉ (tableau de bord — tous formats confondus, 30 jours)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Une ligne du tableau « Performance comparée » du rapport consolidé. */
+export interface LigneConsolidee {
+  titre: string;
+  format: string;
+  vues: string;
+  personnes: string;
+  clicsCtr: string;
+  coutPersonne: string;
+  depense: string;
+}
+
+/**
+ * Rapport consolidé A4 paysage : tuiles de synthèse puis une ligne par mise
+ * en visibilité — le pendant PDF du tableau de bord annonceur.
+ */
+export async function genererRapportConsolidePdf(donnees: {
+  structure: string;
+  periode: string;
+  tuiles: Array<[string, string]>;
+  lignes: LigneConsolidee[];
+}): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const normal = await pdf.embedFont(StandardFonts.Helvetica);
+  const gras = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  // Paysage : largeur et hauteur A4 inversées.
+  const L = A4.hauteur;
+  const H = A4.largeur;
+  const page = pdf.addPage([L, H]);
+  let y = H - MARGE;
+
+  const texte = (
+    contenu: string,
+    options: { x?: number; taille?: number; police?: PDFFont; couleur?: ReturnType<typeof rgb> } = {}
+  ) => {
+    page.drawText(winAnsi(contenu), {
+      x: options.x ?? MARGE,
+      y,
+      size: options.taille ?? 9.5,
+      font: options.police ?? normal,
+      color: options.couleur ?? NAVY,
+    });
+  };
+
+  // ── En-tête navy ──
+  page.drawRectangle({ x: 0, y: H - 70, width: L, height: 70, color: NAVY });
+  y = H - 32;
+  texte('CONCREE - Startup Ludo', { taille: 9.5, couleur: ORANGE, police: gras });
+  y -= 18;
+  texte('Rapport consolide - Espace Annonceur', { taille: 15, police: gras, couleur: rgb(1, 1, 1) });
+  y = H - 70 - 24;
+  texte(`${donnees.structure}  -  ${donnees.periode}  -  exporte le ${new Date().toLocaleString('fr-FR')}`, {
+    taille: 8.5,
+    couleur: GRIS,
+  });
+
+  // ── Tuiles de synthèse ──
+  y -= 30;
+  const largeurTuile = (L - 2 * MARGE - 12 * (donnees.tuiles.length - 1)) / donnees.tuiles.length;
+  donnees.tuiles.forEach(([libelle, valeur], i) => {
+    const x = MARGE + i * (largeurTuile + 12);
+    page.drawRectangle({
+      x, y: y - 34, width: largeurTuile, height: 52,
+      color: rgb(0.965, 0.97, 0.98), borderColor: rgb(0.88, 0.9, 0.93), borderWidth: 0.8,
+    });
+    page.drawText(winAnsi(libelle), { x: x + 10, y: y + 4, size: 7.5, font: normal, color: GRIS });
+    page.drawText(winAnsi(valeur), { x: x + 10, y: y - 14, size: 12.5, font: gras, color: NAVY });
+  });
+  y -= 60;
+
+  // ── Tableau « Performance comparée » ──
+  const colonnes: Array<{ cle: keyof LigneConsolidee; titre: string; x: number; droite?: boolean }> = [
+    { cle: 'titre', titre: 'MISE EN VISIBILITE', x: MARGE },
+    { cle: 'format', titre: 'FORMAT', x: MARGE + 292 },
+    { cle: 'vues', titre: 'VUES', x: MARGE + 360, droite: true },
+    { cle: 'personnes', titre: 'PERSONNES', x: MARGE + 434, droite: true },
+    { cle: 'clicsCtr', titre: 'CLICS - CTR', x: MARGE + 520, droite: true },
+    { cle: 'coutPersonne', titre: 'COUT / PERS.', x: MARGE + 606, droite: true },
+    { cle: 'depense', titre: 'DEPENSE', x: MARGE + 700, droite: true },
+  ];
+  const cellule = (contenu: string, col: (typeof colonnes)[number], police: PDFFont, taille = 8.5, couleur = NAVY) => {
+    const c = winAnsi(contenu);
+    const x = col.droite ? col.x - police.widthOfTextAtSize(c, taille) : col.x;
+    page.drawText(c, { x, y, size: taille, font: police, color: couleur });
+  };
+  for (const col of colonnes) cellule(col.titre, col, gras, 7.5, GRIS);
+  y -= 6;
+  page.drawLine({ start: { x: MARGE, y }, end: { x: L - MARGE, y }, thickness: 0.8, color: rgb(0.85, 0.87, 0.9) });
+  y -= 15;
+
+  for (const ligne of donnees.lignes) {
+    if (y < MARGE + 20) break; // une page suffit au consolidé — le détail vit dans les rapports d'impact
+    cellule(ligne.titre.length > 62 ? `${ligne.titre.slice(0, 59)}...` : ligne.titre, colonnes[0], normal);
+    cellule(ligne.format, colonnes[1], normal, 8.5, GRIS);
+    cellule(ligne.vues, colonnes[2], normal);
+    cellule(ligne.personnes, colonnes[3], normal);
+    cellule(ligne.clicsCtr, colonnes[4], normal);
+    cellule(ligne.coutPersonne, colonnes[5], normal);
+    cellule(ligne.depense, colonnes[6], gras);
+    y -= 8;
+    page.drawLine({ start: { x: MARGE, y }, end: { x: L - MARGE, y }, thickness: 0.4, color: rgb(0.92, 0.93, 0.95) });
+    y -= 13;
+  }
+
+  y = MARGE - 14;
+  texte('Chiffres mesures par l\'application mobile (vues et clics reels) - facture a la vue reelle, aucun frais fixe.', {
+    taille: 7.5,
+    couleur: GRIS,
+  });
+
+  return pdf.save();
+}

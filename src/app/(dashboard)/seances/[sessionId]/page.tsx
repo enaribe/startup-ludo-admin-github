@@ -87,6 +87,14 @@ export default function SeanceDetailPage() {
   const [brouillon, setBrouillon] = useState<{ titre: string; duree: number; programmee: string } | null>(null);
   /** Génération d'un complément de contenu en cours (panneau « Ajouter »). */
   const [enAjout, setEnAjout] = useState(false);
+  /**
+   * Pendant une session EN DIRECT, l'aperçu du contenu (quiz, duels…) est
+   * masqué par défaut : l'écran appartient au suivi de la classe, pas à la
+   * relecture des cartes. La correction reste possible — l'IA se trompe, et le
+   * prof s'en aperçoit souvent en voyant la question projetée — mais derrière
+   * un geste explicite.
+   */
+  const [montrerContenuEnDirect, setMontrerContenuEnDirect] = useState(false);
 
   const charger = useCallback(async () => {
     if (!sessionId) return;
@@ -252,6 +260,28 @@ export default function SeanceDetailPage() {
     }
   };
 
+  /**
+   * « +5 min » du suivi en direct : allonge la durée PRÉVUE de la séance,
+   * bornée au plafond réglementaire (45 min). Ce n'est pas une télécommande
+   * des téléphones — juste la durée que le compte à rebours et le mobile lisent.
+   */
+  const prolonger = async () => {
+    if (!seance) return;
+    const nouvelle = bornerDuree(seance.durationMinutes + 5);
+    if (nouvelle === seance.durationMinutes) return;
+    setAction(true);
+    try {
+      await updateSession(sessionId, { durationMinutes: nouvelle });
+      setSeance((prev) => (prev ? { ...prev, durationMinutes: nouvelle } : prev));
+      toast.success(`Séance prolongée : ${nouvelle} minutes.`);
+    } catch (error) {
+      console.error('Prolongation de la séance :', error);
+      toast.error('Impossible de prolonger la séance');
+    } finally {
+      setAction(false);
+    }
+  };
+
   /** Ouvre le formulaire de modification, pré-rempli avec la fiche actuelle. */
   const commencerModification = () => {
     if (!seance) return;
@@ -365,7 +395,9 @@ export default function SeanceDetailPage() {
   const terminee = seance.status === 'ended';
 
   return (
-    <div className="flex flex-col gap-5" style={{ maxWidth: 980 }}>
+    // En direct, les deux cartes (Contrôle / Progression) méritent la largeur
+    // d'un vidéoprojecteur ; les fiches et rapports restent à largeur de lecture.
+    <div className="flex flex-col gap-5" style={{ maxWidth: enCours ? 1440 : 1100 }}>
       <Link
         href="/seances"
         className="flex items-center gap-2"
@@ -374,7 +406,8 @@ export default function SeanceDetailPage() {
         <ArrowLeft size={14} /> Séances
       </Link>
 
-      {!terminee && (
+      {/* En `running`, le suivi porte son propre en-tête « Session en direct ». */}
+      {!terminee && !enCours && (
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>
@@ -416,10 +449,13 @@ export default function SeanceDetailPage() {
       {enCours && (
         <SuiviSeance
           lignes={lignes}
+          titreSeance={seance.title || 'Séance'}
+          nomClasse={classe?.name ?? seance.classId}
           startedAt={seance.startedAt}
           durationMinutes={seance.durationMinutes}
           chargement={chargementSuivi}
           onTerminer={peutCloturer ? cloturer : undefined}
+          onProlonger={estProprietaire ? prolonger : undefined}
           actionEnCours={action}
         />
       )}
@@ -520,31 +556,62 @@ export default function SeanceDetailPage() {
 
       {/* ═══ FICHE DE LA SÉANCE ═══
           Reléguée SOUS le suivi et le rapport : pendant la séance, l'état des
-          élèves prime sur les métadonnées, que l'enseignant vient de saisir. */}
-      <div className="glass-card p-4 flex flex-col gap-2">
-        <Ligne libelle="État" valeur={libelleEtat(seance)} />
-        {seance.scheduledAt && (
+          élèves prime sur les métadonnées, que l'enseignant vient de saisir.
+          En direct, elle est masquée avec l'aperçu du contenu (voir ci-dessous) :
+          l'écran reste celui du suivi de la classe. */}
+      {!enCours && (
+        <div className="glass-card p-4 flex flex-col gap-2">
+          <Ligne libelle="État" valeur={libelleEtat(seance)} />
+          {seance.scheduledAt && (
+            <Ligne
+              libelle="Programmée pour"
+              valeur={new Date(seance.scheduledAt).toLocaleString('fr-FR')}
+            />
+          )}
+          {seance.startedAt && (
+            <Ligne libelle="Ouverte le" valeur={new Date(seance.startedAt).toLocaleString('fr-FR')} />
+          )}
+          {seance.endedAt && (
+            <Ligne libelle="Terminée le" valeur={new Date(seance.endedAt).toLocaleString('fr-FR')} />
+          )}
           <Ligne
-            libelle="Programmée pour"
-            valeur={new Date(seance.scheduledAt).toLocaleString('fr-FR')}
+            libelle="Contenu"
+            valeur={
+              seance.hasGeneratedContent ? 'Généré depuis un cours' : `Édition ${seance.editionId || '—'}`
+            }
           />
-        )}
-        {seance.startedAt && (
-          <Ligne libelle="Ouverte le" valeur={new Date(seance.startedAt).toLocaleString('fr-FR')} />
-        )}
-        {seance.endedAt && (
-          <Ligne libelle="Terminée le" valeur={new Date(seance.endedAt).toLocaleString('fr-FR')} />
-        )}
-        <Ligne
-          libelle="Contenu"
-          valeur={
-            seance.hasGeneratedContent ? 'Généré depuis un cours' : `Édition ${seance.editionId || '—'}`
-          }
-        />
-      </div>
+        </div>
+      )}
 
-      {contenu && estProprietaire && !terminee && (
+      {/* En direct : l'aperçu du contenu ne s'ouvre que sur demande explicite. */}
+      {contenu && estProprietaire && enCours && !montrerContenuEnDirect && (
+        <button
+          type="button"
+          className="flex items-center gap-2"
+          onClick={() => setMontrerContenuEnDirect(true)}
+          style={{
+            alignSelf: 'flex-start', background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 12.5, color: 'var(--color-text-muted)', padding: 0,
+          }}
+        >
+          <Pencil size={13} /> Corriger le contenu de la séance (quiz, duels…)
+        </button>
+      )}
+
+      {contenu && estProprietaire && !terminee && (!enCours || montrerContenuEnDirect) && (
         <div className="glass-card p-4 flex flex-col gap-4">
+          {enCours && (
+            <button
+              type="button"
+              onClick={() => setMontrerContenuEnDirect(false)}
+              style={{
+                alignSelf: 'flex-end', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 12.5, color: 'var(--color-text-muted)', padding: 0,
+              }}
+            >
+              Masquer le contenu
+            </button>
+          )}
           <ApercuContenuSeance
             contenu={contenu}
             onChange={(suivant) => {

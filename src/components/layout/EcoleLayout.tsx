@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Award,
+  ChartColumn,
   GraduationCap,
   HelpCircle,
   LayoutDashboard,
@@ -89,7 +90,10 @@ export default function EcoleLayout({ children }: { children: React.ReactNode })
           entrees: [
             { href: '/tableau-de-bord', libelle: 'Tableau de bord', Icon: LayoutDashboard },
             { href: '/seances/nouvelle', libelle: 'Lancer une session', Icon: Zap },
-            { href: '/seances', libelle: 'Sessions et rapports', Icon: Play },
+            // Session et rapports SÉPARÉS (maquette) : le direct est une porte
+            // d'entrée dédiée, les rapports une autre — plus de page fourre-tout.
+            { href: '/session-en-direct', libelle: 'Session en direct', Icon: Play },
+            { href: '/rapports', libelle: 'Rapports', Icon: ChartColumn },
             { href: '/classes', libelle: 'Mes classes', Icon: LayoutGrid },
           ],
         },
@@ -102,7 +106,9 @@ export default function EcoleLayout({ children }: { children: React.ReactNode })
         entrees: [
           { href: '/tableau-de-bord', libelle: 'Tableau de bord', Icon: LayoutDashboard },
           { href: '/etablissement', libelle: 'Mon établissement', Icon: School },
-          { href: '/rapports', libelle: 'Rapports', Icon: Play },
+          // Pas de « Session en direct » côté direction (maquette) : le direct
+          // est le geste de l'enseignant ; la direction passe par les rapports.
+          { href: '/rapports', libelle: 'Rapports', Icon: ChartColumn },
         ],
       },
       {
@@ -119,6 +125,15 @@ export default function EcoleLayout({ children }: { children: React.ReactNode })
   // Une seule entrée active : la plus SPÉCIFIQUE qui matche (sinon « Tableau de
   // bord » /classes et « Mes classes » /classes s'allumeraient ensemble).
   const hrefActif = useMemo(() => {
+    // Le suivi d'une séance (/seances/{id}) s'ouvre depuis « Session en
+    // direct » : c'est cette entrée qu'on garde allumée (hors wizard /nouvelle),
+    // quand elle existe — la vue direction ne l'a pas.
+    if (
+      /^\/seances\/(?!nouvelle)/.test(pathname) &&
+      groupes.some((g) => g.entrees.some((e) => e.href === '/session-en-direct'))
+    ) {
+      return '/session-en-direct';
+    }
     const candidats = groupes
       .flatMap((g) => g.entrees)
       .filter((e) => !e.bientot && (pathname === e.href || pathname.startsWith(e.href + '/')))
@@ -287,9 +302,10 @@ export default function EcoleLayout({ children }: { children: React.ReactNode })
 /** Entrées du groupe COMPTE — lots M6/M7, affichées « Bientôt ». */
 function entreesCompte(): Entree[] {
   return [
-    // Certifications : calé sur la disponibilité du contenu des 4 modules
-    // (arbitrage du 13/08) — l'écran arrivera avec le parcours formateur.
-    { href: '#', libelle: 'Certifications', Icon: Award, bientot: true },
+    // Certifications : l'écran est ouvert — certificats d'apprenants mesurés
+    // (lot 7) ; le parcours formateur y est affiché en feuille de route, ses
+    // modules s'activeront avec leur contenu (arbitrage du 13/08).
+    { href: '/certifications', libelle: 'Certifications', Icon: Award },
     { href: '/communaute', libelle: 'Communauté', Icon: GraduationCap },
     { href: '/aide-ecole', libelle: 'Aide', Icon: HelpCircle },
   ];
@@ -298,12 +314,14 @@ function entreesCompte(): Entree[] {
 /** Libellé du fil d'Ariane depuis le chemin. */
 function titreDepuisChemin(pathname: string): string {
   if (pathname.startsWith('/seances/nouvelle')) return 'Lancer une session';
+  if (pathname.startsWith('/session-en-direct')) return 'Session en direct';
   if (pathname.startsWith('/rapports')) return 'Rapports de session';
-  if (pathname.startsWith('/seances')) return 'Sessions et rapports';
+  if (pathname.startsWith('/seances')) return 'Historique des séances';
   if (pathname.startsWith('/classes')) return 'Classes';
   if (pathname.startsWith('/enseignants')) return 'Enseignants';
   if (pathname.startsWith('/tableau-de-bord')) return 'Tableau de bord';
   if (pathname.startsWith('/etablissement')) return 'Mon établissement';
+  if (pathname.startsWith('/certifications')) return 'Certifications';
   if (pathname.startsWith('/communaute')) return 'Communauté';
   if (pathname.startsWith('/aide-ecole')) return 'Aide';
   return 'Mode Classe';

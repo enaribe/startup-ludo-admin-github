@@ -29,9 +29,9 @@ function isWithin(pathname: string, roots: readonly string[]): boolean {
  * tous les clients) n'y figure pas et ne doit jamais y figurer : c'est un écran
  * super admin, dont l'API est de toute façon fermée aux autres rôles.
  */
-const ESTABLISHMENT_ROUTES = ['/tableau-de-bord', '/rapports', '/etablissement', '/classes', '/enseignants', '/seances', '/communaute', '/aide-ecole'] as const;
+const ESTABLISHMENT_ROUTES = ['/tableau-de-bord', '/rapports', '/etablissement', '/classes', '/enseignants', '/seances', '/session-en-direct', '/certifications', '/communaute', '/aide-ecole'] as const;
 /** Routes ouvertes à un enseignant : ses classes et ses séances, rien d'autre. */
-const TEACHER_ROUTES = ['/tableau-de-bord', '/rapports', '/classes', '/seances', '/communaute', '/aide-ecole'] as const;
+const TEACHER_ROUTES = ['/tableau-de-bord', '/rapports', '/classes', '/seances', '/session-en-direct', '/certifications', '/communaute', '/aide-ecole'] as const;
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { admin, loading, isSponsor, isEstablishmentAdmin, isTeacher } = useAuth();
@@ -61,7 +61,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       router.replace(
         pathname.startsWith('/sponsoring')
           ? `/annonceur/cartes${pathname.slice('/sponsoring'.length)}`
-          : '/annonceur'
+          : '/annonceur/tableau-de-bord'
       );
     } else if (establishmentOutOfScope) {
       router.replace('/tableau-de-bord');

@@ -22,12 +22,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronRight, GraduationCap, Plus, School, UserRound, Users } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { GraduationCap, Plus, School, UserRound } from 'lucide-react';
+import { firestore, COLLECTIONS } from '@/lib/firebase';
 import { getClasses, getClassesByIds, getEstablishments, saveClass } from '@/lib/school-service';
+import { getSessionsByEstablishment, getSessionsByTeacher } from '@/lib/class-session-service';
 import { generateId } from '@/lib/utils';
 import {
   SCHOOL_LEVELS,
   SCHOOL_LEVEL_LABELS,
+  type ClassSession,
   type Establishment,
   type SchoolClass,
   type SchoolLevel,
@@ -41,10 +45,19 @@ import toast from 'react-hot-toast';
 /** Valeur du filtre de niveau : un niveau précis, ou tous. */
 type FiltreNiveau = SchoolLevel | 'tous';
 
+/** Initiales du badge de la classe (« Master 1 » → « M1 ») — même règle que la fiche. */
+function initialesClasse(nom: string): string {
+  const mots = nom.trim().split(/\s+/).filter(Boolean);
+  if (mots.length === 0) return 'CL';
+  const initiales = mots.slice(0, 2).map((m) => m[0]).join('').toUpperCase();
+  return initiales.length >= 2 ? initiales : nom.trim().slice(0, 2).toUpperCase();
+}
+
 export default function ClassesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
+    admin,
     isSuperAdmin,
     isEstablishmentAdmin,
     isTeacher,
@@ -55,6 +68,8 @@ export default function ClassesPage() {
 
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [etablissements, setEtablissements] = useState<Establishment[]>([]);
+  const [seances, setSeances] = useState<ClassSession[]>([]);
+  const [nomsProfs, setNomsProfs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [filtre, setFiltre] = useState<FiltreNiveau>('tous');
   const [creation, setCreation] = useState(false);
@@ -80,13 +95,32 @@ export default function ClassesPage() {
           ? await getClasses(establishmentId)
           : [];
       setClasses(data.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)));
+
+      // Enrichissement des cartes (maquette) : sessions jouées par classe et
+      // noms des enseignants. Décoratif — silencieux en cas d'échec.
+      void (isTeacher && admin
+        ? getSessionsByTeacher(admin.uid)
+        : establishmentId
+          ? getSessionsByEstablishment(establishmentId)
+          : Promise.resolve([] as ClassSession[])
+      )
+        .then(setSeances)
+        .catch(() => setSeances([]));
+
+      const uids = [...new Set(data.flatMap((c) => c.teacherIds ?? []))].slice(0, 12);
+      void Promise.all(
+        uids.map(async (uid) => {
+          const snap = await getDoc(doc(firestore, COLLECTIONS.users, uid)).catch(() => null);
+          return [uid, (snap?.data()?.displayName as string) ?? ''] as const;
+        })
+      ).then((paires) => setNomsProfs(Object.fromEntries(paires)));
     } catch (error) {
       console.error('Chargement des classes :', error);
       toast.error('Erreur lors du chargement des classes');
     } finally {
       setLoading(false);
     }
-  }, [isTeacher, scopedClassIds, establishmentId]);
+  }, [isTeacher, scopedClassIds, establishmentId, admin]);
 
   // Liste des établissements : super admin uniquement (sélecteur de support).
   useEffect(() => {
@@ -114,6 +148,23 @@ export default function ClassesPage() {
     () => (filtre === 'tous' ? classes : classes.filter((c) => c.level === filtre)),
     [classes, filtre]
   );
+
+  /** Sessions jouées et dernière séance, par classe (depuis les séances chargées). */
+  const infosSeances = useMemo(() => {
+    const parClasse = new Map<string, { jouees: number; derniere: ClassSession | null }>();
+    for (const s of seances) {
+      if (s.status !== 'ended') continue;
+      const courant = parClasse.get(s.classId) ?? { jouees: 0, derniere: null };
+      courant.jouees += 1;
+      const dateS = s.startedAt ?? s.endedAt ?? s.createdAt ?? 0;
+      const dateD = courant.derniere
+        ? courant.derniere.startedAt ?? courant.derniere.endedAt ?? courant.derniere.createdAt ?? 0
+        : -1;
+      if (dateS > dateD) courant.derniere = s;
+      parClasse.set(s.classId, courant);
+    }
+    return parClasse;
+  }, [seances]);
 
   const totalEleves = useMemo(
     () => classes.reduce((somme, c) => somme + (c.learnerCount ?? 0), 0),
@@ -152,28 +203,33 @@ export default function ClassesPage() {
 
   return (
     <div>
-      {/* En-tête */}
+      {/* En-tête — maquette : titre + « Vos N classes · M apprenants », onglets à droite */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--color-text-primary)' }}>
             {isTeacher ? 'Mes classes' : 'Classes'}
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4, maxWidth: 640 }}>
-            {isTeacher
-              ? 'Les classes qui vous sont affectées. Ouvrez une classe pour consulter sa liste d’élèves.'
-              : 'Créez vos classes, puis saisissez leurs élèves — à la main ou par import CSV. Une fois par an, environ 5 minutes par classe.'}
+          <p style={{ fontSize: 13.5, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            {isTeacher ? 'Vos ' : ''}
+            {classes.length} classe{classes.length > 1 ? 's' : ''} · {totalEleves} apprenant
+            {totalEleves > 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
+        <div className="flex items-center gap-3 flex-wrap" style={{ flexShrink: 0 }}>
           {classes.length > 0 && (
-            <>
-              <span className="badge badge-info">
-                {classes.length} classe{classes.length > 1 ? 's' : ''}
-              </span>
-              <span className="badge">
-                {totalEleves} élève{totalEleves > 1 ? 's' : ''}
-              </span>
-            </>
+            <div
+              className="flex items-center gap-1"
+              style={{ background: 'rgba(15,28,46,0.05)', borderRadius: 10, padding: 3 }}
+            >
+              <Onglet actif={filtre === 'tous'} onClick={() => setFiltre('tous')}>
+                Toutes
+              </Onglet>
+              {SCHOOL_LEVELS.map((niveau) => (
+                <Onglet key={niveau} actif={filtre === niveau} onClick={() => setFiltre(niveau)}>
+                  {SCHOOL_LEVEL_LABELS[niveau]}
+                </Onglet>
+              ))}
+            </div>
           )}
           {peutCreer && (
             <button className="btn-primary flex items-center gap-2" onClick={() => setCreation(true)}>
@@ -205,24 +261,6 @@ export default function ClassesPage() {
         </div>
       )}
 
-      {/* Filtre par niveau — masqué s'il n'y a rien à filtrer */}
-      {classes.length > 0 && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <PuceFiltre actif={filtre === 'tous'} onClick={() => setFiltre('tous')}>
-            Tous les niveaux ({classes.length})
-          </PuceFiltre>
-          {SCHOOL_LEVELS.map((niveau) => {
-            const nb = classes.filter((c) => c.level === niveau).length;
-            if (nb === 0) return null;
-            return (
-              <PuceFiltre key={niveau} actif={filtre === niveau} onClick={() => setFiltre(niveau)}>
-                {SCHOOL_LEVEL_LABELS[niveau]} ({nb})
-              </PuceFiltre>
-            );
-          })}
-        </div>
-      )}
-
       {classes.length === 0 ? (
         <EmptyState
           icon={<GraduationCap size={48} />}
@@ -247,9 +285,14 @@ export default function ClassesPage() {
           description="Changez de filtre pour voir les autres classes."
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {affichees.map((classe) => (
-            <CarteClasse key={classe.id} classe={classe} />
+            <CarteClasse
+              key={classe.id}
+              classe={classe}
+              infos={infosSeances.get(classe.id) ?? null}
+              nomProf={nomsProfs[(classe.teacherIds ?? [])[0] ?? ''] ?? ''}
+            />
           ))}
         </div>
       )}
@@ -261,8 +304,8 @@ export default function ClassesPage() {
   );
 }
 
-/** Puce de filtre de niveau. */
-function PuceFiltre({
+/** Onglet du filtre de niveau (segmenté, maquette). */
+function Onglet({
   actif,
   onClick,
   children,
@@ -275,16 +318,16 @@ function PuceFiltre({
     <button
       onClick={onClick}
       style={{
-        fontSize: 12,
-        fontWeight: 600,
-        padding: '6px 12px',
-        borderRadius: 999,
+        fontSize: 12.5,
+        fontWeight: actif ? 700 : 500,
+        padding: '7px 14px',
+        borderRadius: 8,
         cursor: 'pointer',
-        border: '1px solid',
-        borderColor: actif ? 'var(--color-primary)' : 'var(--color-border-light)',
-        background: actif ? 'rgba(255,188,64,0.14)' : 'transparent',
-        color: actif ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-        transition: 'background 0.15s, border-color 0.15s',
+        border: 'none',
+        background: actif ? '#FFFFFF' : 'transparent',
+        color: actif ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+        boxShadow: actif ? '0 1px 3px rgba(15,28,46,0.12)' : 'none',
+        transition: 'background 0.15s',
       }}
     >
       {children}
@@ -292,10 +335,26 @@ function PuceFiltre({
   );
 }
 
-/** Carte d'une classe : nom, niveau, effectif, enseignants affectés. */
-function CarteClasse({ classe }: { classe: SchoolClass }) {
+/**
+ * Carte d'une classe (maquette) : badge initiales, pilule niveau, effectif et
+ * sessions jouées, puis l'enseignant et la dernière séance — tout est mesuré,
+ * rien n'est décoratif.
+ */
+function CarteClasse({
+  classe,
+  infos,
+  nomProf,
+}: {
+  classe: SchoolClass;
+  infos: { jouees: number; derniere: ClassSession | null } | null;
+  nomProf: string;
+}) {
   const effectif = classe.learnerCount ?? 0;
-  const nbEnseignants = classe.teacherIds?.length ?? 0;
+  const jouees = infos?.jouees ?? 0;
+  const derniere = infos?.derniere ?? null;
+  const dateDerniere = derniere
+    ? derniere.startedAt ?? derniere.endedAt ?? derniere.createdAt ?? 0
+    : 0;
 
   return (
     <Link href={`/classes/${classe.id}`} style={{ textDecoration: 'none', display: 'block' }}>
@@ -304,75 +363,62 @@ function CarteClasse({ classe }: { classe: SchoolClass }) {
         style={{ height: '100%', transition: 'box-shadow 0.2s' }}
       >
         <div className="flex items-start justify-between gap-3">
-          <div style={{ minWidth: 0 }}>
-            <h3
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: 'var(--color-text-primary)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {classe.name || classe.id}
-            </h3>
-            <span className="badge badge-info" style={{ marginTop: 6, display: 'inline-block' }}>
-              {SCHOOL_LEVEL_LABELS[classe.level] ?? classe.level}
-            </span>
-          </div>
           <div
             className="flex items-center justify-center"
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 10,
-              background: 'rgba(255,188,64,0.14)',
-              color: 'var(--color-primary-dark)',
-              flexShrink: 0,
+              width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+              background: '#0F1C2E', color: '#F5A623',
+              fontSize: 15, fontWeight: 900, letterSpacing: 0.5,
             }}
           >
-            <GraduationCap size={20} />
+            {initialesClasse(classe.name || classe.id)}
           </div>
+          <span
+            style={{
+              fontSize: 11.5, fontWeight: 700, padding: '4px 11px', borderRadius: 9,
+              background: 'rgba(79,107,255,0.1)', color: '#4F6BFF', flexShrink: 0,
+            }}
+          >
+            {SCHOOL_LEVEL_LABELS[classe.level] ?? classe.level}
+          </span>
         </div>
 
-        <div className="flex items-center gap-4" style={{ marginTop: 'auto' }}>
-          <Compteur
-            icon={<Users size={13} />}
-            valeur={effectif}
-            label={`élève${effectif > 1 ? 's' : ''}`}
-          />
-          <Compteur
-            icon={<UserRound size={13} />}
-            valeur={nbEnseignants}
-            label={`enseignant${nbEnseignants > 1 ? 's' : ''}`}
-          />
-          <ChevronRight size={16} color="var(--color-text-muted)" style={{ marginLeft: 'auto' }} />
+        <div>
+          <h3
+            style={{
+              fontSize: 15.5,
+              fontWeight: 700,
+              color: 'var(--color-text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {classe.name || classe.id}
+          </h3>
+          <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 5 }}>
+            {effectif} apprenant{effectif > 1 ? 's' : ''}
+            <span style={{ margin: '0 8px' }}>·</span>
+            {jouees} session{jouees > 1 ? 's' : ''}
+          </p>
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--color-card-border)', paddingTop: 12, marginTop: 'auto' }}>
+          <span
+            className="flex items-center gap-1.5"
+            style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}
+          >
+            <UserRound size={13} style={{ color: 'var(--color-text-muted)' }} />
+            {nomProf || 'Aucun enseignant affecté'}
+          </span>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            {derniere
+              ? `${derniere.title || 'Séance'} · ${new Date(dateDerniere).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
+              : 'Aucune séance jouée pour l’instant'}
+          </p>
         </div>
       </div>
     </Link>
-  );
-}
-
-/** Compteur « N élèves » / « N enseignants ». */
-function Compteur({
-  icon,
-  valeur,
-  label,
-}: {
-  icon: React.ReactNode;
-  valeur: number;
-  label: string;
-}) {
-  return (
-    <span
-      className="flex items-center gap-1.5"
-      style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}
-    >
-      <span style={{ color: 'var(--color-text-muted)', display: 'flex' }}>{icon}</span>
-      <strong style={{ color: 'var(--color-text-primary)' }}>{valeur}</strong>
-      {label}
-    </span>
   );
 }
 

@@ -168,7 +168,7 @@ export default function TableauDeBordEcolePage() {
   }
 
   return (
-    <div style={{ maxWidth: 1180 }}>
+    <div style={{ maxWidth: 1440 }}>
       {/* ═══ En-tête ═══ */}
       <div className="flex items-end justify-between gap-4 mb-5 flex-wrap">
         <div>
@@ -233,7 +233,7 @@ export default function TableauDeBordEcolePage() {
             : 'Aucune classe pour l’instant — créez vos classes, invitez vos enseignants et affectez-leur les classes : ils pourront lancer des sessions dès leur première connexion.'}
         </p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-7">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-7">
           {classes.slice(0, 3).map((c) => (
             <CarteClasse key={c.id} classe={c} nomProf={nomsProfs[(c.teacherIds ?? [])[0] ?? ''] ?? ''} derniere={sessions.find((s) => s.classId === c.id) ?? null} />
           ))}
@@ -254,7 +254,9 @@ export default function TableauDeBordEcolePage() {
 
       {/* ═══ Deux colonnes : sessions + enseignants ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2" style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.1)', borderRadius: 16, padding: '16px 20px' }}>
+        {/* En vue enseignant, il n'y a pas d'encart Enseignants : la carte des
+            sessions occupe alors toute la largeur au lieu de laisser un vide. */}
+        <div className={vueEnseignant ? 'lg:col-span-3' : 'lg:col-span-2'} style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.1)', borderRadius: 16, padding: '16px 20px' }}>
           <h2 style={{ fontSize: 15.5, fontWeight: 700, color: NAVY }}>
             {vueEnseignant ? 'Vos dernières sessions' : 'Dernières sessions de l’établissement'}
           </h2>

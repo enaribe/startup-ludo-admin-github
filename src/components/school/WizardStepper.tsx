@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Fil d'étapes numérotées d'un wizard.
+ * Fil d'étapes numérotées d'un wizard — carte pleine largeur, cercles
+ * numérotés reliés par un filet (maquette « Lancer une session »).
  *
  * REPRIS de `SponsorCardWizard.tsx`, avec SON DÉFAUT CORRIGÉ. Là-bas, le
  * `cursor` n'est `pointer` que pour `i < etape` : les étapes SUIVANTES sont
@@ -29,54 +30,56 @@ interface WizardStepperProps {
 
 export default function WizardStepper({ etapes, etape, onAller }: WizardStepperProps) {
   return (
-    <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
+    <div className="glass-card flex items-center gap-3 px-5 py-4" style={{ flexWrap: 'wrap' }}>
       {etapes.map((label, i) => {
         const actif = i === etape;
         const franchi = i < etape;
         return (
-          <div key={label} className="flex items-center gap-2">
+          <div key={label} className="flex items-center gap-3" style={{ flex: i < etapes.length - 1 ? 1 : 'none' }}>
             <button
               type="button"
               onClick={() => onAller(i)}
               className="flex items-center gap-2"
               style={{
-                padding: '6px 12px',
-                borderRadius: 999,
-                border: `1px solid ${actif ? 'transparent' : 'var(--color-card-border)'}`,
-                background: actif
-                  ? 'var(--color-primary)'
-                  : franchi
-                    ? 'var(--color-success-light)'
-                    : '#FFFFFF',
-                color: actif ? '#0C243E' : franchi ? 'var(--color-success)' : 'var(--color-text-muted)',
+                background: 'none',
+                border: 'none',
+                padding: 0,
                 // Toutes les étapes sont atteignables : le curseur le dit.
                 cursor: 'pointer',
-                fontSize: 12.5,
-                fontWeight: actif ? 700 : 500,
               }}
             >
               <span
                 className="flex items-center justify-center"
                 style={{
-                  width: 18,
-                  height: 18,
+                  width: 26,
+                  height: 26,
                   borderRadius: '50%',
-                  fontSize: 10.5,
+                  fontSize: 12,
                   fontWeight: 800,
+                  flexShrink: 0,
                   background: actif
-                    ? 'rgba(12,36,62,0.14)'
+                    ? 'var(--color-primary)'
                     : franchi
                       ? 'var(--color-success)'
-                      : 'var(--color-surface-variant)',
+                      : 'rgba(15,28,46,0.07)',
                   color: actif ? '#0C243E' : franchi ? '#FFFFFF' : 'var(--color-text-muted)',
                 }}
               >
-                {franchi ? <Check size={11} /> : i + 1}
+                {franchi ? <Check size={13} /> : i + 1}
               </span>
-              {label}
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: actif ? 700 : 500,
+                  color: actif ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
+              </span>
             </button>
             {i < etapes.length - 1 && (
-              <span style={{ width: 14, height: 1, background: 'var(--color-card-border)' }} />
+              <span style={{ flex: 1, minWidth: 24, height: 1, background: 'var(--color-card-border)' }} />
             )}
           </div>
         );
