@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ProgramProvider } from '@/lib/program-context';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import EcoleLayout from '@/components/layout/EcoleLayout';
+import SuperAdminLayout from '@/components/layout/SuperAdminLayout';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
 
@@ -34,7 +35,7 @@ const ESTABLISHMENT_ROUTES = ['/tableau-de-bord', '/rapports', '/etablissement',
 const TEACHER_ROUTES = ['/tableau-de-bord', '/rapports', '/classes', '/seances', '/session-en-direct', '/certifications', '/communaute', '/aide-ecole'] as const;
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { admin, loading, isSponsor, isEstablishmentAdmin, isTeacher } = useAuth();
+  const { admin, loading, isSponsor, isEstablishmentAdmin, isTeacher, isSuperAdmin } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -104,6 +105,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Super admin : le chrome refondu (lot SA-1, PLAN-ESPACE-SUPERADMIN.md) —
+  // même langage visuel que les autres espaces, nav par métier, compteurs réels.
+  if (isSuperAdmin) {
+    return (
+      <ProgramProvider>
+        <SuperAdminLayout>{children}</SuperAdminLayout>
+      </ProgramProvider>
+    );
+  }
+
+  // Admins de programme / partenaire : l'ancien chrome, inchangé.
   return (
     <ProgramProvider>
       <DashboardLayout>{children}</DashboardLayout>

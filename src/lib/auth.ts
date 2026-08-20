@@ -98,6 +98,28 @@ function readClassIds(data: { teachingClassIds?: unknown; classIds?: unknown }):
 }
 
 /**
+ * Statut lisible d'une éventuelle demande d'inscription du compte connecté,
+ * ou `null` s'il n'y en a pas. Lu AVANT le signOut : la règle Firestore de
+ * `signupRequests/{uid}` n'autorise que le propriétaire authentifié.
+ */
+async function messageDemandeInscription(uid: string): Promise<string | null> {
+  try {
+    const snap = await getDoc(doc(firestore, COLLECTIONS.signupRequests, uid));
+    if (!snap.exists()) return null;
+    const demande = snap.data() as { status?: string; motif?: string };
+    if (demande.status === 'pending') {
+      return 'Votre demande d’inscription est en cours d’examen — vous recevrez un e-mail dès l’activation de votre compte.';
+    }
+    if (demande.status === 'rejected') {
+      return `Votre demande d’inscription n’a pas été retenue${demande.motif ? ` (motif : ${demande.motif})` : ''}. Vous pouvez soumettre une nouvelle demande depuis la page d’inscription.`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Sign in with email and password, then verify admin role
  */
 export async function signInAdmin(email: string, password: string): Promise<AdminUser> {
@@ -108,16 +130,22 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
   const userDoc = await getDoc(doc(firestore, COLLECTIONS.users, user.uid));
 
   if (!userDoc.exists()) {
+    // Pas de fiche : peut-être une demande d'inscription en attente —
+    // « Compte non trouvé » serait faux et anxiogène pour le candidat.
+    const attente = await messageDemandeInscription(user.uid);
     await firebaseSignOut(auth);
-    throw new Error('Compte non trouvé.');
+    throw new Error(attente ?? 'Compte non trouvé.');
   }
 
   const userData = userDoc.data();
   const role = userData.role as string | undefined;
 
   if (!isAdminRole(role)) {
+    // Même logique : un JOUEUR mobile (base Firebase partagée) qui vient de
+    // déposer une demande a une fiche `users` sans rôle admin.
+    const attente = await messageDemandeInscription(user.uid);
     await firebaseSignOut(auth);
-    throw new Error('Accès refusé. Vous n\'êtes pas administrateur.');
+    throw new Error(attente ?? 'Accès refusé. Vous n\'êtes pas administrateur.');
   }
 
   return {
