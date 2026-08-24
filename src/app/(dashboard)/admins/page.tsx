@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Users, Plus, Trash2, ShieldCheck, Rocket, Building2, Pencil, Handshake, BookOpen } from 'lucide-react';
+import { Users, Plus, Trash2, ShieldCheck, Rocket, Building2, Pencil, Handshake, BookOpen, School, GraduationCap } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { getScopedPrograms, getPartners, getEditions } from '@/lib/firestore-service';
-import type { EditionData, PartnerProgram, ProgramPartner } from '@/types';
+import { getEstablishments } from '@/lib/school-service';
+import type { EditionData, Establishment, PartnerProgram, ProgramPartner } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -20,14 +22,46 @@ interface AdminAccount {
   uid: string;
   email: string;
   displayName: string;
-  role: 'admin' | 'super_admin' | 'partner_admin' | 'sponsor';
+  /**
+   * `establishment_admin` et `teacher` (Mode Classe) arrivent AUSSI par le GET :
+   * ils sont affichés ici avec leur vrai libellé, mais se GÈRENT depuis leurs
+   * écrans dédiés (/etablissements, /enseignants) — jamais depuis cette page.
+   */
+  role: 'admin' | 'super_admin' | 'partner_admin' | 'sponsor' | 'establishment_admin' | 'teacher';
   /** Programmes gérés (multi). programId (unique) conservé pour rétrocompat. */
   programIds?: string[] | null;
   programId: string | null;
   partnerId: string | null;
   /** Éditions sponsorisées (périmètre d'un compte sponsor). */
   editionIds?: string[] | null;
+  /** Établissement de rattachement (rôles scolaires). */
+  establishmentId?: string | null;
+  /** Classes affectées (enseignant). */
+  teachingClassIds?: string[] | null;
 }
+
+/**
+ * Libellés et couleurs des rôles — EXPLICITES, jamais un « Admin » générique :
+ * un directeur d'école et un enseignant doivent se reconnaître d'un coup d'œil.
+ */
+const ROLE_META: Record<AdminAccount['role'], { libelle: string; fond: string; texte: string }> = {
+  super_admin: { libelle: 'Super admin', fond: 'rgba(255,188,64,0.16)', texte: '#B87A0C' },
+  admin: { libelle: 'Admin programme', fond: 'rgba(46,160,67,0.12)', texte: '#2EA043' },
+  partner_admin: { libelle: 'Admin partenaire', fond: 'rgba(33,150,243,0.1)', texte: '#1E88E5' },
+  sponsor: { libelle: 'Annonceur', fond: 'rgba(155,89,182,0.12)', texte: '#8E44AD' },
+  establishment_admin: { libelle: 'Admin établissement', fond: 'rgba(79,107,255,0.1)', texte: '#4F6BFF' },
+  teacher: { libelle: 'Enseignant', fond: 'rgba(15,28,46,0.07)', texte: '#4A5A70' },
+};
+
+/** Filtres de rôle affichés au-dessus de la liste. */
+const FILTRES_ROLE: Array<{ cle: 'tous' | AdminAccount['role']; libelle: string }> = [
+  { cle: 'tous', libelle: 'Tous' },
+  { cle: 'admin', libelle: 'Programmes' },
+  { cle: 'partner_admin', libelle: 'Partenaires' },
+  { cle: 'sponsor', libelle: 'Annonceurs' },
+  { cle: 'establishment_admin', libelle: 'Établissements' },
+  { cle: 'teacher', libelle: 'Enseignants' },
+];
 
 async function authHeader(): Promise<HeadersInit> {
   const token = await auth.currentUser?.getIdToken();
@@ -44,6 +78,9 @@ export default function AdminsPage() {
   const [partners, setPartners] = useState<ProgramPartner[]>([]);
   // Éditions : nécessaires pour assigner un périmètre à un compte sponsor.
   const [editions, setEditions] = useState<EditionData[]>([]);
+  // Établissements : uniquement pour AFFICHER le périmètre des rôles scolaires.
+  const [etablissements, setEtablissements] = useState<Establishment[]>([]);
+  const [filtreRole, setFiltreRole] = useState<'tous' | AdminAccount['role']>('tous');
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminAccount | null>(null);
@@ -76,11 +113,12 @@ export default function AdminsPage() {
   const load = useCallback(async () => {
     try {
       // Les éditions ne servent qu'au super admin (création de comptes sponsor).
-      const [res, progs, parts, eds] = await Promise.all([
+      const [res, progs, parts, eds, etabs] = await Promise.all([
         fetch('/api/admins', { headers: await authHeader() }),
         getScopedPrograms(admin),
         isSuperAdmin ? getPartners() : Promise.resolve([] as ProgramPartner[]),
         isSuperAdmin ? getEditions() : Promise.resolve([] as EditionData[]),
+        isSuperAdmin ? getEstablishments().catch(() => [] as Establishment[]) : Promise.resolve([] as Establishment[]),
       ]);
       if (!res.ok) throw new Error((await res.json()).error || 'Erreur');
       const data = await res.json();
@@ -88,6 +126,7 @@ export default function AdminsPage() {
       setPrograms(progs.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setPartners(parts);
       setEditions(eds.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)));
+      setEtablissements(etabs);
     } catch (error) {
       console.error('Failed to load admins:', error);
       toast.error('Erreur de chargement');
@@ -106,6 +145,18 @@ export default function AdminsPage() {
   const partnerName = (id: string | null) =>
     id ? partners.find((p) => p.id === id)?.name ?? id : '—';
   const editionName = (id: string) => editions.find((e) => e.id === id)?.name ?? id;
+  const etabName = (id: string | null | undefined) =>
+    id ? etablissements.find((e) => e.id === id)?.name ?? id : '—';
+
+  /** Comptes affichés selon le filtre de rôle, super admins toujours en tête. */
+  const affiches = useMemo(() => {
+    const liste = filtreRole === 'tous' ? admins : admins.filter((a) => a.role === filtreRole);
+    const rang = (r: AdminAccount['role']) =>
+      ({ super_admin: 0, admin: 1, partner_admin: 2, sponsor: 3, establishment_admin: 4, teacher: 5 })[r] ?? 9;
+    return [...liste].sort(
+      (a, b) => rang(a.role) - rang(b.role) || (a.displayName || a.email).localeCompare(b.displayName || b.email, 'fr')
+    );
+  }, [admins, filtreRole]);
 
   const resetForm = () => {
     setRole('admin');
@@ -263,6 +314,31 @@ export default function AdminsPage() {
         </button>
       </div>
 
+      {/* ═══ Filtre par rôle — chaque type de compte, nommé et compté ═══ */}
+      {admins.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          {FILTRES_ROLE.map(({ cle, libelle }) => {
+            const nb = cle === 'tous' ? admins.length : admins.filter((a) => a.role === cle).length;
+            if (cle !== 'tous' && nb === 0) return null;
+            const actif = filtreRole === cle;
+            return (
+              <button
+                key={cle}
+                onClick={() => setFiltreRole(cle)}
+                style={{
+                  fontSize: 12, fontWeight: actif ? 700 : 500, padding: '6px 13px', borderRadius: 999,
+                  cursor: 'pointer', border: `1px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                  background: actif ? 'rgba(255,188,64,0.14)' : '#FFFFFF',
+                  color: actif ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                }}
+              >
+                {libelle} ({nb})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {admins.length === 0 ? (
         <EmptyState
           icon={<Users size={48} />}
@@ -271,25 +347,32 @@ export default function AdminsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {admins.map((a) => (
+          {affiches.map((a) => {
+            const meta = ROLE_META[a.role] ?? ROLE_META.admin;
+            const estEcole = a.role === 'establishment_admin' || a.role === 'teacher';
+            return (
             <div key={a.uid} className="glass-card p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(255,188,64,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {a.role === 'super_admin' ? <ShieldCheck size={18} color="#FFBC40" />
-                      : a.role === 'sponsor' ? <Handshake size={18} color="#FFBC40" />
-                        : <Users size={18} color="#FFBC40" />}
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: meta.fond, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {a.role === 'super_admin' ? <ShieldCheck size={18} color={meta.texte} />
+                      : a.role === 'sponsor' ? <Handshake size={18} color={meta.texte} />
+                        : a.role === 'establishment_admin' ? <School size={18} color={meta.texte} />
+                          : a.role === 'teacher' ? <GraduationCap size={18} color={meta.texte} />
+                            : <Users size={18} color={meta.texte} />}
                   </div>
                   <div>
                     <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>{a.displayName || a.email}</h3>
                     <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{a.email}</p>
                   </div>
                 </div>
-                <span className={`badge ${a.role === 'super_admin' ? 'badge-primary' : a.role === 'partner_admin' ? 'badge-info' : a.role === 'sponsor' ? 'badge-primary' : 'badge-success'}`}>
-                  {a.role === 'super_admin' ? 'Super Admin'
-                    : a.role === 'partner_admin' ? 'Admin partenaire'
-                      : a.role === 'sponsor' ? 'Sponsor'
-                        : 'Admin programme'}
+                <span
+                  style={{
+                    fontSize: 11.5, fontWeight: 700, padding: '4px 11px', borderRadius: 10,
+                    background: meta.fond, color: meta.texte, flexShrink: 0, whiteSpace: 'nowrap',
+                  }}
+                >
+                  {meta.libelle}
                 </span>
               </div>
               <div className="flex items-start gap-1.5 mb-4" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
@@ -302,6 +385,15 @@ export default function AdminsPage() {
                     <BookOpen size={13} color="#FFB347" style={{ marginTop: 2, flexShrink: 0 }} />
                     <span>{(a.editionIds ?? []).map(editionName).join(', ') || 'Aucune édition assignée'}</span>
                   </>
+                ) : a.role === 'establishment_admin' ? (
+                  <><School size={13} color="#FFB347" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span>Direction de {etabName(a.establishmentId)}</span></>
+                ) : a.role === 'teacher' ? (
+                  <><GraduationCap size={13} color="#FFB347" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span>
+                      {etabName(a.establishmentId)}
+                      {` · ${(a.teachingClassIds ?? []).length} classe${(a.teachingClassIds ?? []).length > 1 ? 's' : ''} affectée${(a.teachingClassIds ?? []).length > 1 ? 's' : ''}`}
+                    </span></>
                 ) : (
                   <>
                     <Rocket size={13} color="#FFB347" style={{ marginTop: 2, flexShrink: 0 }} />
@@ -309,7 +401,19 @@ export default function AdminsPage() {
                   </>
                 )}
               </div>
-              {a.role !== 'super_admin' && (
+              {/* ⚠️ Les comptes SCOLAIRES ne se modifient pas ici : « Modifier »
+                  écraserait leur rôle avec un rôle programme. On renvoie vers
+                  leurs écrans de gestion, qui synchronisent claims et classes. */}
+              {estEcole ? (
+                <Link
+                  href={a.role === 'establishment_admin' ? '/etablissements' : `/enseignants?id=${encodeURIComponent(a.establishmentId ?? '')}`}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                  style={{ background: 'rgba(79,107,255,0.08)', color: '#4F6BFF', fontSize: 12, textDecoration: 'none', width: 'fit-content' }}
+                >
+                  <Pencil size={13} />
+                  {a.role === 'establishment_admin' ? 'Gérer depuis le parc des établissements' : 'Gérer depuis l’écran Enseignants'}
+                </Link>
+              ) : a.role !== 'super_admin' && (
                 <div className="flex items-center gap-2">
                   {isSuperAdmin && (
                     <button
@@ -332,7 +436,8 @@ export default function AdminsPage() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
