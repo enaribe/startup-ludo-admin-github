@@ -37,6 +37,7 @@ import {
   SeanceError,
   bornerDuree,
   compterCartes,
+  demarrerPartie,
   endSession,
   getClassSession,
   getSessionContent,
@@ -62,6 +63,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ApercuContenuSeance from '@/components/school/ApercuContenuSeance';
 import AjoutContenuSeance from '@/components/school/AjoutContenuSeance';
+import SalleAttente from '@/components/school/SalleAttente';
 import SuiviSeance from '@/components/school/SuiviSeance';
 import RapportSeance from '@/components/school/RapportSeance';
 
@@ -184,15 +186,35 @@ export default function SeanceDetailPage() {
   /** Croisement élèves × participants, partagé par le suivi et le rapport. */
   const lignes = useMemo(() => construireSuivi(eleves, participants), [eleves, participants]);
 
+  /**
+   * Ouvre la SALLE D'ATTENTE : la séance passe `running` et reçoit son code
+   * d'entrée, mais la partie ne démarre pas encore — les apprenants
+   * s'accumulent, l'enseignant lance quand la salle est prête.
+   */
   const ouvrir = async () => {
     setAction(true);
     try {
-      await startSession(sessionId);
-      toast.success('Séance ouverte — vos élèves la voient sur leur profil.');
+      const { joinCode } = await startSession(sessionId);
+      toast.success(`Salle d’attente ouverte — code ${joinCode.slice(0, 3)}-${joinCode.slice(3)}`);
       await charger();
     } catch (error) {
       const message = error instanceof SeanceError ? error.message : 'Impossible d’ouvrir la séance';
       toast.error(message);
+    } finally {
+      setAction(false);
+    }
+  };
+
+  /** « Démarrer la partie » : la salle d'attente se ferme, le jeu commence. */
+  const lancerPartie = async () => {
+    setAction(true);
+    try {
+      const debut = await demarrerPartie(sessionId);
+      setSeance((prev) => (prev ? { ...prev, startedPlayingAt: debut } : prev));
+      toast.success('La partie est lancée !');
+    } catch (error) {
+      console.error('Démarrage de la partie :', error);
+      toast.error('Impossible de démarrer la partie');
     } finally {
       setAction(false);
     }
@@ -437,7 +459,7 @@ export default function SeanceDetailPage() {
               disabled={action || brouillon !== null}
               style={{ fontSize: 13, opacity: action || brouillon !== null ? 0.5 : 1 }}
             >
-              <Play size={14} /> Ouvrir la séance
+              <Play size={14} /> Ouvrir la salle d’attente
             </button>
           </div>
         )}
@@ -445,8 +467,22 @@ export default function SeanceDetailPage() {
 
       )}
 
-      {/* ═══ SUIVI EN DIRECT — séance en cours ═══ */}
-      {enCours && (
+      {/* ═══ SALLE D'ATTENTE — séance ouverte, partie pas encore démarrée ═══ */}
+      {enCours && !seance.startedPlayingAt && seance.joinCode && (
+        <SalleAttente
+          code={seance.joinCode}
+          titreSeance={seance.title || 'Séance'}
+          nomClasse={classe?.name ?? seance.classId}
+          nomEdition={seance.editionId || undefined}
+          lignes={lignes}
+          chargement={chargementSuivi}
+          onDemarrer={estProprietaire ? lancerPartie : undefined}
+          actionEnCours={action}
+        />
+      )}
+
+      {/* ═══ SUIVI EN DIRECT — la partie a démarré ═══ */}
+      {enCours && (seance.startedPlayingAt || !seance.joinCode) && (
         <SuiviSeance
           lignes={lignes}
           titreSeance={seance.title || 'Séance'}

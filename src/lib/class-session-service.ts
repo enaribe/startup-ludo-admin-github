@@ -125,9 +125,13 @@ function sansIndefinis<T extends Record<string, unknown>>(data: T): Record<strin
  * maintenant » du récapitulatif). C'est le service qui tranche, pour qu'aucun
  * écran ne puisse créer une séance déjà `ended` ou `running` par erreur.
  *
+ * ⚠️ « Lancer maintenant » ouvre la SALLE D'ATTENTE, pas la partie : la séance
+ * naît `running` avec son code d'entrée, mais sans `startedPlayingAt`. Les
+ * apprenants rejoignent, l'enseignant démarre quand la salle est prête.
+ *
  * @param sessionId Identifiant du document (généré par l'appelant).
  * @param data      Périmètre et contenu de la séance.
- * @param lancer    True pour ouvrir immédiatement la séance aux élèves.
+ * @param lancer    True pour ouvrir immédiatement la salle d'attente.
  */
 export async function createClassSession(
   sessionId: string,
@@ -139,12 +143,23 @@ export async function createClassSession(
   if (lancer) await assertLicenceValide(data.establishmentId);
 
   const maintenant = Date.now();
+  const duree = bornerDuree(data.durationMinutes);
+  // Le code naît AVEC la séance ouverte : sans lui, la salle d'attente
+  // s'afficherait sans rien à projeter.
+  const joinCode = lancer ? await tirerCodeLibre() : null;
+
   const session: ClassSession = {
     ...data,
     id: sessionId,
-    durationMinutes: bornerDuree(data.durationMinutes),
+    durationMinutes: duree,
     status: lancer ? 'running' : 'scheduled',
-    ...(lancer ? { startedAt: maintenant } : {}),
+    ...(lancer
+      ? {
+          startedAt: maintenant,
+          joinCode,
+          joinCodeExpiresAt: expirationCode(duree, maintenant),
+        }
+      : {}),
     createdAt: maintenant,
     updatedAt: maintenant,
   };
@@ -217,36 +232,155 @@ function trierParDateDecroissante(sessions: ClassSession[]): ClassSession[] {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CODE DE SALLE D'ATTENTE
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
- * Ouvre la séance aux élèves (`running`) et pose `startedAt`.
+ * Expiration du code d'entrée, en ms epoch, pour une séance de `dureeMinutes`.
+ *
+ * La marge de 20 min couvre la salle d'attente (avant le départ) et les
+ * retardataires qui rejoignent en cours de partie.
+ *
+ * ⚠️ DÉCLARÉE EN `function` ET NON EN `const` : `createClassSession`, plus haut
+ * dans le fichier, s'en sert. Un `const` n'est pas hissé — l'appel échouerait à
+ * l'exécution avec « Cannot access before initialization ».
+ */
+function expirationCode(dureeMinutes: number, depuis: number): number {
+  return depuis + (dureeMinutes + 20) * 60_000;
+}
+
+/** Tire un code au hasard dans l'alphabet lisible (sans O/0 ni I/1). */
+function genererCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i += 1) {
+    code += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  }
+  return code;
+}
+
+/**
+ * Le code est-il déjà porté par une classe ou une séance dont la fenêtre court ?
+ *
+ * Passe par `/api/class/verifier-code` : le contrôle est un LISTING, que les
+ * règles refusent à un enseignant (sa permission porte sur l'ID du document,
+ * pas sur un champ). La route vérifie les DEUX collections — codes de classe et
+ * codes de séance partagent le même espace, l'élève les saisit au même endroit.
+ *
+ * En cas d'échec réseau, on considère le code comme pris : l'appelant en tire un
+ * autre. Mieux vaut un tirage de plus qu'un doublon actif.
+ */
+async function codeDejaActif(code: string): Promise<boolean> {
+  try {
+    const { getAuth } = await import('firebase/auth');
+    const token = await getAuth().currentUser?.getIdToken();
+    if (!token) return true;
+    const reponse = await fetch('/api/class/verifier-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ code }),
+    });
+    if (!reponse.ok) return true;
+    const data = (await reponse.json()) as { actif?: boolean };
+    return data.actif === true;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Tire un code libre pour une salle d'attente.
+ * @throws SeanceError si aucun code libre n'est trouvé en 5 essais. Au-delà,
+ *         mieux vaut échouer qu'écrire un doublon : deux séances partageant un
+ *         code enverraient des élèves dans la mauvaise partie.
+ */
+async function tirerCodeLibre(): Promise<string> {
+  for (let essai = 0; essai < 5; essai += 1) {
+    const candidat = genererCode();
+    if (!(await codeDejaActif(candidat))) return candidat;
+  }
+  throw new SeanceError(
+    'Impossible de générer un code d’entrée disponible. Réessayez dans quelques instants.'
+  );
+}
+
+/**
+ * Ouvre la SALLE D'ATTENTE d'une séance : la séance passe `running`, un code
+ * d'entrée est généré, mais la partie n'a PAS commencé (`startedPlayingAt`
+ * absent). Les élèves rejoignent et s'accumulent ; l'enseignant démarre quand
+ * la salle est prête (`demarrerPartie`).
  *
  * Refuse de relancer une séance terminée : `endedAt` serait conservé alors que
  * la séance redeviendrait visible côté élève, et le rapport du lot 6 porterait
  * sur une plage de temps fausse. Pour rejouer un contenu, on duplique la séance.
+ *
+ * ⚠️ COURSE POSSIBLE sur l'unicité du code, entre la vérification et l'écriture.
+ * Le risque est accepté (probabilité négligeable, fenêtre de quelques
+ * millisecondes) ; le supprimer imposerait une transaction sur toute la
+ * collection, hors de portée des règles côté client. Même arbitrage que
+ * `ouvrirFenetreRattachement`.
+ *
+ * @returns Le code à projeter, et son expiration.
  */
-export async function startSession(sessionId: string): Promise<void> {
+export async function startSession(sessionId: string): Promise<{ joinCode: string; joinCodeExpiresAt: number }> {
   const session = await getClassSession(sessionId);
   if (!session) throw new SeanceError('Séance introuvable.');
   if (session.status === 'ended') {
     throw new SeanceError('Cette séance est terminée. Créez-en une nouvelle à partir du même contenu.');
   }
-  if (session.status === 'running') return;
+  // Déjà ouverte avec un code valide : on rend le code existant plutôt que d'en
+  // tirer un nouveau — les élèves ont peut-être déjà celui qui est projeté.
+  if (session.status === 'running' && session.joinCode && (session.joinCodeExpiresAt ?? 0) > Date.now()) {
+    return { joinCode: session.joinCode, joinCodeExpiresAt: session.joinCodeExpiresAt as number };
+  }
+
   await assertLicenceValide(session.establishmentId);
+  const joinCode = await tirerCodeLibre();
+  const maintenant = Date.now();
+  const joinCodeExpiresAt =
+    expirationCode(bornerDuree(session.durationMinutes), maintenant);
+
   await updateDoc(doc(firestore, COLLECTIONS.classSessions, sessionId), {
     status: 'running' satisfies ClassSessionStatus,
-    startedAt: Date.now(),
-    updatedAt: Date.now(),
+    startedAt: session.startedAt ?? maintenant,
+    joinCode,
+    joinCodeExpiresAt,
+    updatedAt: maintenant,
   });
+  return { joinCode, joinCodeExpiresAt };
+}
+
+/**
+ * « Démarrer la partie » — la salle d'attente se ferme, le jeu commence.
+ *
+ * Ne touche NI au statut NI au code : la séance était déjà `running` (c'est ce
+ * qui rendait le code valide), et le code reste actif pour les retardataires.
+ * Seul `startedPlayingAt` est posé — c'est lui que le mobile attend pour lancer
+ * le plateau.
+ */
+export async function demarrerPartie(sessionId: string): Promise<number> {
+  const maintenant = Date.now();
+  await updateDoc(doc(firestore, COLLECTIONS.classSessions, sessionId), {
+    startedPlayingAt: maintenant,
+    updatedAt: maintenant,
+  });
+  return maintenant;
 }
 
 /**
  * Termine la séance. Les élèves cessent immédiatement de la voir (leur règle de
  * lecture exige `status == 'running'`).
+ *
+ * Le code d'entrée est effacé dans la même écriture : un code de séance terminée
+ * ne doit plus rien ouvrir, et il redevient disponible pour une autre séance.
  */
 export async function endSession(sessionId: string): Promise<void> {
   await updateDoc(doc(firestore, COLLECTIONS.classSessions, sessionId), {
     status: 'ended' satisfies ClassSessionStatus,
     endedAt: Date.now(),
+    joinCode: null,
+    joinCodeExpiresAt: null,
     updatedAt: Date.now(),
   });
 }

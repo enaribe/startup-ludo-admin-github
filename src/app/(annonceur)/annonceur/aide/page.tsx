@@ -35,7 +35,7 @@ export default function AidePage() {
   const [ouverte, setOuverte] = useState<number | null>(0);
 
   return (
-    <div style={{ maxWidth: 1020 }}>
+    <div style={{ maxWidth: 1200 }}>
       <h1 style={{ fontSize: 24, fontWeight: 800, color: NAVY }}>Aide</h1>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4, marginBottom: 22, maxWidth: 520 }}>
         Tout ce qu’il faut pour lancer, comprendre et justifier votre mise en visibilité — sans

@@ -140,6 +140,7 @@ export default function EnseignantsPage() {
   const [revocation, setRevocation] = useState<CompteEnseignant | null>(null);
   const [enRevocation, setEnRevocation] = useState(false);
 
+
   useEffect(() => {
     if (!authLoading && !peutAcceder) router.replace('/classes');
   }, [authLoading, peutAcceder, router]);
@@ -506,7 +507,12 @@ export default function EnseignantsPage() {
                 {enseignants.map((compte) => {
                   const affectees = compte.teachingClassIds ?? [];
                   return (
-                    <tr key={compte.uid} style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+                    <tr
+                      key={compte.uid}
+                      onClick={() => router.push(`/enseignants/${compte.uid}`)}
+                      title="Voir la fiche de l’enseignant"
+                      style={{ borderBottom: '1px solid var(--color-card-border)', cursor: 'pointer' }}
+                    >
                       <td className="px-5 py-3">
                         <CelluleIdentite nom={compte.displayName || compte.email} email={compte.email} />
                       </td>
@@ -527,7 +533,12 @@ export default function EnseignantsPage() {
                           <PastilleStatut couleur="#2EA043" fond="rgba(46,160,67,0.1)" libelle="Actif" />
                         )}
                       </td>
-                      <td className="px-5 py-3" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {/* stopPropagation : les boutons d'action ne doivent pas ouvrir la fiche. */}
+                      <td
+                        className="px-5 py-3"
+                        style={{ textAlign: 'right', whiteSpace: 'nowrap' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <button
                           onClick={() => ouvrirEdition(compte)}
                           className="items-center gap-1.5"
@@ -756,9 +767,11 @@ export default function EnseignantsPage() {
         danger
         loading={enRevocation}
       />
+
     </div>
   );
 }
+
 
 /** En-tête de colonne du tableau de l'équipe pédagogique. */
 function ThEq({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {

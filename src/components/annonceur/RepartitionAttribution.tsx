@@ -19,12 +19,21 @@ import { libelleAttribution } from '@/lib/annonceur-service';
 export default function RepartitionAttribution({
   bySector,
   byRegion,
+  avecSecteur = true,
 }: {
   bySector: Record<string, number>;
   byRegion: Record<string, number>;
+  /**
+   * Affiche la bascule « Par secteur ». À laisser à `false` sur l'habillage
+   * d'une ÉDITION : le secteur remonté est celui de la startup du joueur, or
+   * l'écran sponsor s'affiche au CHOIX de l'édition — avant qu'il n'ait joué.
+   * La ventilation sectorielle y mélangerait donc des profils sans rapport
+   * avec ce que l'annonceur a réservé. La région, elle, reste pertinente.
+   */
+  avecSecteur?: boolean;
 }) {
-  const [mode, setMode] = useState<'secteur' | 'region'>('secteur');
-  const source = mode === 'secteur' ? bySector : byRegion;
+  const [mode, setMode] = useState<'secteur' | 'region'>(avecSecteur ? 'secteur' : 'region');
+  const source = mode === 'secteur' && avecSecteur ? bySector : byRegion;
 
   const lignes = useMemo(() => {
     const entrees = Object.entries(source).sort((a, b) => b[1] - a[1]);
@@ -40,15 +49,19 @@ export default function RepartitionAttribution({
             Personnes touchées
           </h3>
           <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-            Ventilation des vues par profil de joueur
+            {avecSecteur
+              ? 'Ventilation des vues par profil de joueur'
+              : 'Ventilation des vues par région du joueur'}
           </p>
         </div>
+        {/* Une seule dimension disponible : pas de bascule à une seule option. */}
         <div
           className="flex items-center"
           style={{
             borderRadius: 8,
             border: '1px solid var(--color-card-border)',
             overflow: 'hidden',
+            display: avecSecteur ? undefined : 'none',
           }}
         >
           {(

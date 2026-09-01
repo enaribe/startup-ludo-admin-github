@@ -362,7 +362,7 @@ export default function TableauDeBordAnnonceurPage() {
   })();
 
   return (
-    <div style={{ maxWidth: 1180 }}>
+    <div style={{ maxWidth: 1440 }}>
       {/* ═══ En-tête ═══ */}
       <div className="flex items-start justify-between gap-4 flex-wrap" style={{ marginBottom: 20 }}>
         <div>

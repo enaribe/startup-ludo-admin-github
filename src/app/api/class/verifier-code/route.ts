@@ -44,16 +44,22 @@ export async function POST(request: NextRequest) {
   }
 
   const db = getAdminFirestore();
-  const snap = await db
-    .collection(COLLECTIONS.classes)
-    .where('joinCode', '==', code)
-    .limit(1)
-    .get();
 
-  if (snap.empty) return NextResponse.json({ actif: false });
+  // ⚠️ DEUX COLLECTIONS, UN SEUL ESPACE DE CODES. Le code de SÉANCE (salle
+  // d'attente) et le code de RATTACHEMENT partagent le même alphabet et le même
+  // champ de saisie côté élève : un doublon entre les deux enverrait l'élève
+  // dans la mauvaise porte. On vérifie donc les deux avant de déclarer un code
+  // libre.
+  const [classes, seances] = await Promise.all([
+    db.collection(COLLECTIONS.classes).where('joinCode', '==', code).limit(1).get(),
+    db.collection(COLLECTIONS.classSessions).where('joinCode', '==', code).limit(1).get(),
+  ]);
 
-  // Un code n'est « pris » que si sa fenêtre court encore : une classe qui a
-  // fermé la sienne libère son code pour tout le monde.
-  const expiration = Number(snap.docs[0]?.data()?.joinCodeExpiresAt ?? 0);
-  return NextResponse.json({ actif: expiration > Date.now() });
+  // Un code n'est « pris » que si sa fenêtre court encore : une classe ou une
+  // séance qui a fermé la sienne libère son code pour tout le monde.
+  const maintenant = Date.now();
+  const encoreActif = (docs: Array<{ data: () => Record<string, unknown> }>) =>
+    docs.length > 0 && Number(docs[0]?.data()?.joinCodeExpiresAt ?? 0) > maintenant;
+
+  return NextResponse.json({ actif: encoreActif(classes.docs) || encoreActif(seances.docs) });
 }

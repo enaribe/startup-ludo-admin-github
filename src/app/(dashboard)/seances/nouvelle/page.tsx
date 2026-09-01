@@ -31,6 +31,7 @@ import {
   Check,
   FileText,
   GraduationCap,
+  Info,
   Layers,
   LayoutGrid,
   Play,
@@ -157,8 +158,11 @@ export default function NouvelleSeancePage() {
   });
 
   // ===== Étape 3 : lancement =====
-  const [programmer, setProgrammer] = useState(false);
+  // Programmation (étape 3, carte « Programmer plutôt que lancer ? ») : date et
+  // heure séparées comme la maquette. Le choix lancer/programmer se fait par le
+  // BOUTON du pied de page, plus par une bascule.
   const [dateProgrammee, setDateProgrammee] = useState('');
+  const [heureProgrammee, setHeureProgrammee] = useState('09:00');
   const [enregistrement, setEnregistrement] = useState(false);
 
   const classeChoisie = useMemo(() => classes.find((c) => c.id === classId) ?? null, [classes, classId]);
@@ -336,16 +340,19 @@ export default function NouvelleSeancePage() {
 
   // ===== Validation finale =====
   const contenuPret = voie === 'edition' ? !!editionId : !!contenu && compterCartes(contenu) > 0;
-  const peutLancer = contenuPret && !!classId && (!programmer || !!dateProgrammee);
+  const peutLancer = contenuPret && !!classId;
+  const peutProgrammer = peutLancer && !!dateProgrammee && !!heureProgrammee;
 
-  const valider = useCallback(async () => {
+  const valider = useCallback(async (planifier: boolean) => {
     if (!admin || !classeChoisie) return;
     if (!contenuPret) {
       toast.error('Le contenu de la séance n’est pas défini.');
       return;
     }
-    const scheduledAt = programmer && dateProgrammee ? new Date(dateProgrammee).getTime() : undefined;
-    if (programmer && (!scheduledAt || Number.isNaN(scheduledAt))) {
+    const scheduledAt = planifier
+      ? new Date(`${dateProgrammee}T${heureProgrammee}`).getTime()
+      : undefined;
+    if (planifier && (!scheduledAt || Number.isNaN(scheduledAt))) {
       toast.error('Choisissez une date et une heure.');
       return;
     }
@@ -371,9 +378,9 @@ export default function NouvelleSeancePage() {
           ...(seanceSource?.contentPackId ? { contentPackId: seanceSource.contentPackId } : {}),
           ...(seanceSource?.levelIndex !== undefined ? { levelIndex: seanceSource.levelIndex } : {}),
         },
-        !programmer
+        !planifier
       );
-      toast.success(programmer ? 'Séance programmée' : 'Séance lancée — vos élèves la voient dès maintenant.');
+      toast.success(planifier ? 'Séance programmée' : 'Séance lancée — vos élèves la voient dès maintenant.');
       router.push(`/seances/${sessionId}`);
     } catch (error) {
       // Licence expirée / établissement suspendu : message métier affiché tel quel.
@@ -390,8 +397,8 @@ export default function NouvelleSeancePage() {
     admin,
     classeChoisie,
     contenuPret,
-    programmer,
     dateProgrammee,
+    heureProgrammee,
     sessionId,
     scopedEstablishmentId,
     editionId,
@@ -478,6 +485,7 @@ export default function NouvelleSeancePage() {
           onProlongement={setProlongement}
           prolongementDate={prolongementDate}
           onProlongementDate={setProlongementDate}
+          nomEnseignant={admin?.displayName ?? ''}
         />
       )}
 
@@ -485,14 +493,19 @@ export default function NouvelleSeancePage() {
         <EtapeRecap
           titre={titre}
           voie={voie}
+          seancePrete={seancePreteId !== null}
           contenu={contenu}
+          nbDocs={coursDeposes.length}
           edition={editions.find((e) => e.id === editionId) ?? null}
           classe={classeChoisie}
           duree={duree}
-          programmer={programmer}
-          onProgrammer={setProgrammer}
+          nomEnseignant={admin?.displayName ?? ''}
+          prolongement={prolongement}
+          prolongementDate={prolongementDate}
           dateProgrammee={dateProgrammee}
           onDateProgrammee={setDateProgrammee}
+          heureProgrammee={heureProgrammee}
+          onHeureProgrammee={setHeureProgrammee}
         />
       )}
 
@@ -511,43 +524,55 @@ export default function NouvelleSeancePage() {
         {/* Indication centrale : où on en est, ce qui manque. */}
         <span className="flex items-center gap-2" style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
           {derniereEtape && !peutLancer ? (
-            !contenuPret
-              ? 'Définissez le contenu à l’étape 1.'
-              : !classId
-                ? 'Choisissez une classe à l’étape 2.'
-                : 'Choisissez une date.'
+            !contenuPret ? 'Définissez le contenu à l’étape 1.' : 'Choisissez une classe à l’étape 2.'
           ) : contenuPret ? (
             <>
               <Check size={14} style={{ color: 'var(--color-success)' }} />
-              Contenu prêt — il ne reste que la classe à choisir.
+              {derniereEtape
+                ? 'Tout est prêt — lancez, ou programmez avec une date et une heure.'
+                : 'Contenu prêt — il ne reste que la classe à choisir.'}
             </>
           ) : (
             <>
               <Check size={14} style={{ color: 'var(--color-success)' }} />
-              Zéro préparation avec une séance prête à l’emploi — vous lancez dès l’étape suivante.
+              Zéro préparation — vous pouvez lancer dès l’étape 2.
             </>
           )}
         </span>
 
-        <button
-          type="button"
-          className="btn-primary flex items-center gap-2"
-          onClick={() => (derniereEtape ? void valider() : setEtape(etape + 1))}
-          disabled={derniereEtape && (!peutLancer || enregistrement)}
-          style={{ fontSize: 13, opacity: derniereEtape && (!peutLancer || enregistrement) ? 0.5 : 1 }}
-        >
-          {derniereEtape ? (
-            <>
-              {programmer ? <CalendarClock size={14} /> : <Play size={14} />}
-              {programmer ? 'Programmer' : 'Lancer maintenant'}
-            </>
-          ) : (
-            <>
-              Suivant
-              <ArrowRight size={14} />
-            </>
-          )}
-        </button>
+        {derniereEtape ? (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => void valider(true)}
+              disabled={!peutProgrammer || enregistrement}
+              title={!peutProgrammer ? 'Renseignez la date et l’heure dans « Programmer plutôt que lancer ? »' : undefined}
+              style={{ fontSize: 13, opacity: !peutProgrammer || enregistrement ? 0.5 : 1 }}
+            >
+              <CalendarClock size={14} /> Programmer
+            </button>
+            <button
+              type="button"
+              className="btn-primary flex items-center gap-2"
+              onClick={() => void valider(false)}
+              disabled={!peutLancer || enregistrement}
+              style={{ fontSize: 13, opacity: !peutLancer || enregistrement ? 0.5 : 1 }}
+            >
+              <Play size={14} /> Lancer maintenant
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn-primary flex items-center gap-2"
+            onClick={() => setEtape(etape + 1)}
+            style={{ fontSize: 13 }}
+          >
+            Suivant
+            <ArrowRight size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1087,7 +1112,15 @@ function OptionSource({
 
 // ===================== ÉTAPE 2 — LA CLASSE =====================
 
-/** Étape 2 : la classe et la durée. Format individuel uniquement (V1). */
+/**
+ * Étape 2 (maquette « Pour quelle classe ? ») : cartes de classes riches,
+ * format de jeu, bandeau récapitulatif, durée — et à droite les options
+ * (prolongement à interrupteur, note réseau).
+ *
+ * FORMAT INDIVIDUEL UNIQUEMENT : « En équipes » est affiché comme la maquette
+ * mais marqué « Bientôt » et non cliquable — le mobile ne le gère pas encore
+ * (SPEC §1, V2). Un choix qui ne piloterait rien serait un mensonge.
+ */
 function EtapeClasse({
   classes,
   classId,
@@ -1098,6 +1131,7 @@ function EtapeClasse({
   onProlongement,
   prolongementDate,
   onProlongementDate,
+  nomEnseignant,
 }: {
   classes: SchoolClass[];
   classId: string;
@@ -1108,217 +1142,436 @@ function EtapeClasse({
   onProlongement: (v: boolean) => void;
   prolongementDate: string;
   onProlongementDate: (v: string) => void;
+  nomEnseignant: string;
 }) {
+  const classeChoisie = classes.find((c) => c.id === classId) ?? null;
+  const effectif = classeChoisie?.learnerCount ?? 0;
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="glass-card p-4 flex flex-col gap-3">
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          Classe concernée
-        </span>
-        <div className="flex flex-col gap-2">
-          {classes.map((c) => {
-            const actif = c.id === classId;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onClasse(c.id)}
-                className="flex items-center justify-between gap-3 p-3"
-                style={{
-                  borderRadius: 10,
-                  border: `1px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-                  background: actif ? 'var(--color-success-light)' : '#FFFFFF',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  {actif ? <Check size={14} style={{ color: 'var(--color-success)' }} /> : <Users size={14} />}
-                  <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+      {/* ═══ Carte gauche — Pour quelle classe ? ═══ */}
+      <section className="glass-card lg:col-span-2">
+        <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+          <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Pour quelle classe ?
+          </h2>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3 }}>
+            Choisissez la classe et le format de jeu.
+          </p>
+        </div>
+
+        <div className="p-5 flex flex-col gap-5">
+          {/* Cartes de classes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {classes.map((c) => {
+              const actif = c.id === classId;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => onClasse(c.id)}
+                  className="flex flex-col gap-2"
+                  style={{
+                    position: 'relative', textAlign: 'left', padding: '16px 18px', borderRadius: 14,
+                    cursor: 'pointer',
+                    border: `2px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                    background: '#FFFFFF',
+                  }}
+                >
+                  {/* Coche ronde en haut à droite */}
+                  <span
+                    className="flex items-center justify-center"
+                    style={{
+                      position: 'absolute', top: 14, right: 14, width: 22, height: 22, borderRadius: 11,
+                      background: actif ? 'var(--color-primary)' : 'transparent',
+                      border: actif ? 'none' : '1.5px solid var(--color-card-border)',
+                    }}
+                  >
+                    {actif && <Check size={13} color="#0C243E" strokeWidth={3} />}
+                  </span>
+                  <span
+                    className="flex items-center justify-center"
+                    style={{
+                      width: 42, height: 42, borderRadius: 12, background: '#0F1C2E', color: '#F5A623',
+                      fontSize: 13, fontWeight: 900, letterSpacing: 0.5,
+                    }}
+                  >
+                    {initialesClasse(c.name || c.id)}
+                  </span>
+                  <span
+                    style={{
+                      alignSelf: 'flex-start', fontSize: 10.5, fontWeight: 700, padding: '3px 9px',
+                      borderRadius: 8, background: 'rgba(79,107,255,0.1)', color: '#4F6BFF',
+                    }}
+                  >
+                    {SCHOOL_LEVEL_LABELS[c.level] ?? c.level}
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.35 }}>
                     {c.name || c.id}
                   </span>
-                  <span className="badge">{SCHOOL_LEVEL_LABELS[c.level]}</span>
-                </span>
-                <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                  {c.learnerCount ?? 0} élève{(c.learnerCount ?? 0) > 1 ? 's' : ''}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="glass-card p-4 flex flex-col gap-3">
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          Durée : {duree} minutes
-        </span>
-        <input
-          type="range"
-          min={DUREE_SEANCE_MIN}
-          max={DUREE_SEANCE_MAX}
-          step={5}
-          value={duree}
-          onChange={(e) => onDuree(bornerDuree(Number(e.target.value)))}
-        />
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          De {DUREE_SEANCE_MIN} à {DUREE_SEANCE_MAX} minutes. La durée règle la quantité de quiz
-          générés — comptez environ une question toutes les trois minutes.
-        </p>
-        {/* Le format « en équipes » est reporté en V2 : chaque élève joue en solo,
-            avec le contenu imposé par l'enseignant. On l'annonce plutôt que de
-            laisser croire à un choix absent. */}
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Chaque élève joue <strong>individuellement</strong> sur son téléphone, avec le contenu
-          que vous avez choisi.
-        </p>
-      </div>
-
-      {/* ═══ Prolongement après la session (lot M3, spec §4.2) ═══ */}
-      <div className="glass-card p-4 flex flex-col gap-3">
-        <label className="flex items-start gap-3" style={{ cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={prolongement}
-            onChange={(e) => onProlongement(e.target.checked)}
-            style={{ marginTop: 3 }}
-          />
-          <span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', display: 'block' }}>
-              Prolongement après la session
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              Un quiz que les apprenants font à leur rythme sur l'app, avec date limite — le taux
-              de complétion apparaît dans le rapport.
-            </span>
-          </span>
-        </label>
-        {prolongement && (
-          <div className="flex items-center gap-3">
-            <label className="label" style={{ marginBottom: 0 }}>À rendre avant le</label>
-            <input
-              className="input-field"
-              type="date"
-              value={prolongementDate}
-              onChange={(e) => onProlongementDate(e.target.value)}
-              style={{ width: 170 }}
-            />
+                  <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+                    {c.learnerCount ?? 0} apprenant{(c.learnerCount ?? 0) > 1 ? 's' : ''}
+                    {nomEnseignant ? ` · Ens. ${nomEnseignant}` : ''}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        )}
-      </div>
+
+          {/* Format de jeu */}
+          <div>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Format de jeu
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '3px 0 10px' }}>
+              Chaque apprenant joue sur l’app — le format détermine qui répond.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                style={{
+                  fontSize: 12.5, fontWeight: 700, padding: '9px 16px', borderRadius: 10,
+                  border: '1.5px solid var(--color-primary)', background: 'rgba(255,188,64,0.12)',
+                  color: 'var(--color-text-primary)',
+                }}
+              >
+                Individuel — 1 téléphone par apprenant
+              </span>
+              <span
+                className="flex items-center gap-2"
+                title="Le format en équipes arrive dans une prochaine version de l’application mobile."
+                style={{
+                  fontSize: 12.5, padding: '9px 16px', borderRadius: 10,
+                  border: '1.5px solid var(--color-card-border)', background: '#FFFFFF',
+                  color: 'var(--color-text-muted)', cursor: 'not-allowed',
+                }}
+              >
+                En équipes — 1 téléphone par équipe
+                <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 7px', borderRadius: 8, background: 'rgba(245,166,35,0.12)', color: '#B87A0C' }}>
+                  Bientôt
+                </span>
+              </span>
+            </div>
+
+            {/* Bandeau récapitulatif — chiffres réels de la classe choisie */}
+            {classeChoisie && (
+              <div
+                className="flex items-start gap-3"
+                style={{
+                  marginTop: 12, padding: '14px 16px', borderRadius: 12,
+                  background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.3)',
+                }}
+              >
+                <Users size={16} style={{ color: '#B87A0C', flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                    {effectif} apprenant{effectif > 1 ? 's' : ''} → {effectif} joueur{effectif > 1 ? 's' : ''} individuel{effectif > 1 ? 's' : ''}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2, lineHeight: 1.5 }}>
+                    {classeChoisie.name || classeChoisie.id} · chacun joue sur son téléphone, à son
+                    rythme, avec son propre score.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--color-card-border)' }} />
+
+          {/* Durée */}
+          <div>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Durée de la session
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '3px 0 10px' }}>
+              De {DUREE_SEANCE_MIN} à {DUREE_SEANCE_MAX} minutes — la durée règle la quantité de
+              quiz générés (≈ 1 question / 3 min).
+            </p>
+            <div className="flex items-center gap-5">
+              <input
+                type="range"
+                min={DUREE_SEANCE_MIN}
+                max={DUREE_SEANCE_MAX}
+                step={5}
+                value={duree}
+                onChange={(e) => onDuree(bornerDuree(Number(e.target.value)))}
+                style={{ flex: 1, accentColor: '#F5A623' }}
+              />
+              <span style={{ fontSize: 19, fontWeight: 800, color: 'var(--color-text-primary)', flexShrink: 0, width: 74, textAlign: 'right' }}>
+                {duree} min
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Carte droite — Options de la séance ═══ */}
+      <section className="glass-card">
+        <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+          <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Options de la séance
+          </h2>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          {/* Prolongement — interrupteur (maquette) */}
+          <div style={{ border: '1px solid var(--color-card-border)', borderRadius: 12, padding: '14px 16px' }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                  Prolongement après la session
+                </div>
+                <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 3, lineHeight: 1.5 }}>
+                  Un quiz que les apprenants font à leur rythme sur l’app — le taux de complétion
+                  apparaît dans le rapport.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={prolongement}
+                onClick={() => onProlongement(!prolongement)}
+                style={{
+                  width: 42, height: 24, borderRadius: 12, flexShrink: 0, border: 'none', cursor: 'pointer',
+                  background: prolongement ? '#F5A623' : 'rgba(15,28,46,0.15)',
+                  position: 'relative', transition: 'background 0.15s',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute', top: 3, left: prolongement ? 21 : 3, width: 18, height: 18,
+                    borderRadius: 9, background: '#FFFFFF', transition: 'left 0.15s',
+                    boxShadow: '0 1px 3px rgba(15,28,46,0.25)',
+                  }}
+                />
+              </button>
+            </div>
+            {prolongement && (
+              <input
+                className="input-field"
+                type="date"
+                value={prolongementDate}
+                onChange={(e) => onProlongementDate(e.target.value)}
+                style={{ width: 180, marginTop: 12 }}
+                title="Date limite de rendu du prolongement"
+              />
+            )}
+          </div>
+
+          {/* Note réseau — uniquement ce que l'app fait vraiment */}
+          <div
+            className="flex items-start gap-2.5"
+            style={{
+              padding: '12px 14px', borderRadius: 12,
+              background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)',
+            }}
+          >
+            <Info size={14} style={{ color: '#B87A0C', flexShrink: 0, marginTop: 2 }} />
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
+              Les connexions faibles sont gérées automatiquement par l’app : la partie continue
+              hors ligne et les réponses partent au retour du réseau — rien à configurer.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   );
+}
+
+/** Initiales du badge de classe (« Master 1 » → « M1 ») — même règle que la fiche. */
+function initialesClasse(nom: string): string {
+  const mots = nom.trim().split(/\s+/).filter(Boolean);
+  if (mots.length === 0) return 'CL';
+  const initiales = mots.slice(0, 2).map((m) => m[0]).join('').toUpperCase();
+  return initiales.length >= 2 ? initiales : nom.trim().slice(0, 2).toUpperCase();
 }
 
 // ===================== ÉTAPE 3 — RÉCAPITULATIF =====================
 
-/** Étape 3 : ce qui a été choisi, puis lancement ou programmation. */
+/**
+ * Étape 3 (maquette) : récapitulatif en tableau à gauche, carte « Programmer
+ * plutôt que lancer ? » à droite. Le choix lancer/programmer se fait par les
+ * BOUTONS du pied de page — remplir la date et l'heure active « Programmer ».
+ */
 function EtapeRecap({
   titre,
   voie,
+  seancePrete,
   contenu,
+  nbDocs,
   edition,
   classe,
   duree,
-  programmer,
-  onProgrammer,
+  nomEnseignant,
+  prolongement,
+  prolongementDate,
   dateProgrammee,
   onDateProgrammee,
+  heureProgrammee,
+  onHeureProgrammee,
 }: {
   titre: string;
   voie: VoieContenu;
+  seancePrete: boolean;
   contenu: ClassSessionContent | null;
+  nbDocs: number;
   edition: EditionData | null;
   classe: SchoolClass | null;
   duree: number;
-  programmer: boolean;
-  onProgrammer: (v: boolean) => void;
+  nomEnseignant: string;
+  prolongement: boolean;
+  prolongementDate: string;
   dateProgrammee: string;
   onDateProgrammee: (v: string) => void;
+  heureProgrammee: string;
+  onHeureProgrammee: (v: string) => void;
 }) {
-  const libelleVoie =
+  const sousTitreSeance =
     voie === 'generation'
-      ? 'Généré depuis votre cours'
+      ? 'Générée depuis votre cours'
       : voie === 'reutilisation'
-        ? 'Repris d’une séance précédente'
-        : 'Édition existante';
+        ? 'Reprise d’une séance précédente'
+        : seancePrete
+          ? 'Séance prête à l’emploi'
+          : `Édition ${edition?.name ?? edition?.id ?? '—'}`;
+
+  const detailCartes =
+    voie !== 'edition' && contenu
+      ? `${contenu.quizzes.length} quiz · ${contenu.duels.length} duels · ${
+          contenu.fundings.length + contenu.opportunities.length + contenu.challengeEvents.length
+        } événements`
+      : null;
+
+  const effectif = classe?.learnerCount ?? 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="glass-card p-4 flex flex-col gap-3">
-        <Ligne libelle="Séance" valeur={titre.trim() || 'Sans titre'} />
-        <Ligne libelle="Contenu" valeur={libelleVoie} />
-        {voie === 'edition' ? (
-          <Ligne libelle="Édition" valeur={edition?.name ?? edition?.id ?? '—'} />
-        ) : (
-          <Ligne
-            libelle="Cartes"
-            valeur={
-              contenu
-                ? `${contenu.quizzes.length} quiz · ${contenu.duels.length} duels · ${
-                    contenu.fundings.length + contenu.opportunities.length + contenu.challengeEvents.length
-                  } événements`
-                : 'Aucun contenu'
-            }
-          />
-        )}
-        <Ligne libelle="Classe" valeur={classe ? `${classe.name} · ${classe.learnerCount ?? 0} élèves` : '—'} />
-        <Ligne libelle="Durée" valeur={`${duree} minutes`} />
-        <Ligne libelle="Format" valeur="Individuel" />
-      </div>
-
-      <div className="glass-card p-4 flex flex-col gap-3">
-        <div className="flex items-center gap-3" style={{ flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className={programmer ? 'btn-secondary' : 'btn-primary'}
-            style={{ fontSize: 13 }}
-            onClick={() => onProgrammer(false)}
-          >
-            Lancer maintenant
-          </button>
-          <button
-            type="button"
-            className={programmer ? 'btn-primary' : 'btn-secondary'}
-            style={{ fontSize: 13 }}
-            onClick={() => onProgrammer(true)}
-          >
-            Programmer
-          </button>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+      {/* ═══ Carte gauche — Récapitulatif ═══ */}
+      <section className="glass-card lg:col-span-2">
+        <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+          <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Récapitulatif
+          </h2>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3 }}>
+            Tout est prêt — vos apprenants rattachés la verront sur leur profil.
+          </p>
         </div>
-        {programmer ? (
+        <div className="px-5">
+          <LigneRecap libelle="La séance">
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              {titre.trim() || 'Sans titre'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+              {sousTitreSeance}
+              {detailCartes ? ` · ${detailCartes}` : ''}
+            </div>
+          </LigneRecap>
+          <LigneRecap libelle="La classe">
+            {classe ? (
+              <>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                  {classe.name || classe.id}
+                </div>
+                <span
+                  style={{
+                    display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                    borderRadius: 8, background: 'rgba(79,107,255,0.1)', color: '#4F6BFF', margin: '6px 0 4px',
+                  }}
+                >
+                  {SCHOOL_LEVEL_LABELS[classe.level] ?? classe.level}
+                </span>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                  {effectif} apprenant{effectif > 1 ? 's' : ''} · jeu individuel
+                  {nomEnseignant ? ` · Ens. ${nomEnseignant}` : ''}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: '#C0392B', fontWeight: 600 }}>
+                Aucune classe choisie — revenez à l’étape 2.
+              </div>
+            )}
+          </LigneRecap>
+          <LigneRecap libelle="Documents de cours">
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              {nbDocs > 0 ? `${nbDocs} document${nbDocs > 1 ? 's' : ''} indexé${nbDocs > 1 ? 's' : ''}` : 'Aucun'}
+            </div>
+          </LigneRecap>
+          <LigneRecap libelle="Durée">
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              {duree} minutes
+            </div>
+          </LigneRecap>
+          <LigneRecap libelle="Prolongement" derniere>
+            {prolongement ? (
+              <>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                  Quiz à rendre le {prolongementDate ? new Date(prolongementDate).toLocaleDateString('fr-FR') : '—'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                  À faire à son rythme sur l’app — complétion visible dans le rapport.
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>Désactivé</div>
+            )}
+          </LigneRecap>
+        </div>
+      </section>
+
+      {/* ═══ Carte droite — Programmer plutôt que lancer ? ═══ */}
+      <section className="glass-card p-5">
+        <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          Programmer plutôt que lancer ?
+        </h2>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '6px 0 14px', lineHeight: 1.55 }}>
+          Renseignez une date et une heure, puis cliquez « Programmer » : la séance sera enregistrée
+          pour ce créneau — vous l’ouvrirez d’un clic le moment venu, elle restera invisible aux
+          apprenants d’ici là.
+        </p>
+        <div className="flex items-end gap-3 flex-wrap">
           <label className="flex flex-col gap-1">
-            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Date et heure</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)' }}>Date</span>
             <input
-              type="datetime-local"
+              type="date"
               className="input-field"
-              style={{ width: 'auto', minWidth: 240 }}
               value={dateProgrammee}
               onChange={(e) => onDateProgrammee(e.target.value)}
+              style={{ width: 165 }}
             />
-            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-              La séance restera invisible aux élèves jusqu’à ce que vous l’ouvriez depuis son écran
-              de suivi.
-            </span>
           </label>
-        ) : (
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            La séance s’ouvre immédiatement : vos élèves rattachés la voient apparaître sur leur
-            profil, sans code à saisir.
-          </p>
-        )}
-      </div>
+          <label className="flex flex-col gap-1">
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)' }}>Heure</span>
+            <input
+              type="time"
+              className="input-field"
+              value={heureProgrammee}
+              onChange={(e) => onHeureProgrammee(e.target.value)}
+              style={{ width: 110 }}
+            />
+          </label>
+        </div>
+      </section>
     </div>
   );
 }
 
-/** Ligne « libellé — valeur » du récapitulatif. */
-function Ligne({ libelle, valeur }: { libelle: string; valeur: string }) {
+/** Ligne du récapitulatif : libellé à gauche, contenu riche à droite. */
+function LigneRecap({
+  libelle,
+  children,
+  derniere,
+}: {
+  libelle: string;
+  children: React.ReactNode;
+  derniere?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{libelle}</span>
-      <span style={{ fontSize: 13, color: 'var(--color-text-primary)', textAlign: 'right' }}>
-        {valeur}
+    <div
+      className="flex items-start gap-4 py-4"
+      style={{ borderBottom: derniere ? 'none' : '1px solid var(--color-card-border)' }}
+    >
+      <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)', width: 150, flexShrink: 0, paddingTop: 1 }}>
+        {libelle}
       </span>
+      <div style={{ minWidth: 0, flex: 1 }}>{children}</div>
     </div>
   );
 }

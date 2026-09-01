@@ -91,7 +91,7 @@ export default function AnnonceurListePage() {
   const s = espace?.synthese;
 
   return (
-    <div style={{ maxWidth: 1180 }}>
+    <div style={{ maxWidth: 1440 }}>
       {/* ===== En-tête ===== */}
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>

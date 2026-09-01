@@ -183,3 +183,73 @@ export async function resoudreClasseParCode(
     joinCodeExpiresAt: expiration,
   };
 }
+
+/** Une séance ouverte, résolue par son code de salle d'attente. */
+export interface SeanceResolue {
+  sessionId: string;
+  /** Classe de la séance — c'est ELLE qui borne qui a le droit d'entrer. */
+  classId: string;
+  className: string;
+  sessionTitle: string;
+  /** Édition support, pour l'annoncer côté mobile. */
+  editionId: string;
+  /** True si l'enseignant a déjà cliqué « Démarrer la partie ». */
+  demarree: boolean;
+}
+
+/**
+ * Résout une SÉANCE par son code de salle d'attente.
+ *
+ * Décalque exact de `resoudreClasseParCode`, sur `classSessions` : même requête
+ * indexée (jamais un listing), même filtrage de l'expiration en mémoire sur le
+ * seul document trouvé, même `null` unique pour « inconnu » comme pour
+ * « expiré » — l'appelant ne doit jamais pouvoir distinguer les deux.
+ *
+ * ⚠️ `status === 'running'` EST VÉRIFIÉ ICI : une séance `scheduled` n'a pas de
+ * code, mais une séance `ended` peut en garder un le temps que l'écriture de
+ * clôture se propage. Entrer dans une séance terminée écrirait une participation
+ * après le calcul des cumuls — donc un résultat perdu.
+ *
+ * Ce que cette fonction NE fait PAS, et c'est essentiel : autoriser quoi que ce
+ * soit. Elle désigne une séance ; c'est la règle Firestore `estCetEleve()` qui
+ * vérifie ensuite que l'appelant est rattaché à CETTE classe.
+ */
+export async function resoudreSeanceParCode(
+  db: Firestore,
+  code: string
+): Promise<SeanceResolue | null> {
+  const snap = await db
+    .collection(COLLECTIONS.classSessions)
+    .where('joinCode', '==', code)
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+
+  const docSnap = snap.docs[0]!;
+  const donnees = docSnap.data() as {
+    classId?: string;
+    title?: string;
+    editionId?: string;
+    status?: string;
+    joinCodeExpiresAt?: number | null;
+    startedPlayingAt?: number | null;
+  };
+
+  const finCode = Number(donnees.joinCodeExpiresAt ?? 0);
+  if (!finCode || finCode <= Date.now()) return null; // Code expiré.
+  if (donnees.status !== 'running') return null; // Séance close ou pas ouverte.
+  if (!donnees.classId) return null; // Séance corrompue : rien à ouvrir.
+
+  // Le nom de la classe est lu séparément : la séance ne le porte pas, et
+  // l'annoncer permet le refus explicite (« réservée à la Terminale S2 »).
+  const classeSnap = await db.collection(COLLECTIONS.classes).doc(donnees.classId).get();
+
+  return {
+    sessionId: docSnap.id,
+    classId: donnees.classId,
+    className: (classeSnap.data()?.name as string) ?? '',
+    sessionTitle: donnees.title ?? '',
+    editionId: donnees.editionId ?? '',
+    demarree: !!donnees.startedPlayingAt,
+  };
+}

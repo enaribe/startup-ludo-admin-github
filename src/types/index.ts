@@ -968,6 +968,39 @@ export interface ClassSession {
   startedAt?: number;
   /** Fin effective, en millisecondes epoch (posée au passage en `ended`). */
   endedAt?: number;
+  /**
+   * Code d'entrée à 6 caractères de la SALLE D'ATTENTE, `null` hors séance
+   * ouverte. Même alphabet que `SchoolClass.joinCode` (sans O/0 ni I/1) et
+   * unique à travers les DEUX collections : l'élève saisit les deux dans le
+   * même champ, un doublon l'enverrait dans la mauvaise porte.
+   *
+   * ⚠️ IL NE DONNE AUCUN DROIT PAR LUI-MÊME. Il désigne la séance ; c'est la
+   * règle Firestore `estCetEleve()` qui vérifie ensuite que l'appelant est bien
+   * rattaché à LA classe de cette séance. Un élève d'une autre classe qui
+   * scanne le QR est refusé par la base, pas seulement par l'interface.
+   */
+  joinCode?: string | null;
+  /**
+   * Expiration du code, en millisecondes epoch. Couvre la durée prévue plus une
+   * marge pour les retardataires ; remise à `null` à la clôture — un code de
+   * séance terminée ne vaut plus rien.
+   */
+  joinCodeExpiresAt?: number | null;
+  /**
+   * Instant où l'enseignant a cliqué « Démarrer la partie », en ms epoch.
+   *
+   * ═══ POURQUOI UN CHAMP ET NON UN QUATRIÈME `status` ═══
+   *
+   * Entre l'ouverture de la salle d'attente et le début du jeu, la séance est
+   * DÉJÀ `running` : c'est ce qui rend le code valide et laisse les élèves
+   * rejoindre. Ajouter un état `waiting` aurait obligé à réviser chaque règle
+   * Firestore, chaque requête et chaque écran qui teste `status === 'running'`
+   * — pour une information que ce seul horodatage porte aussi bien.
+   *
+   * Absent = salle d'attente, les élèves s'accumulent sans jouer.
+   * Présent = la partie a commencé.
+   */
+  startedPlayingAt?: number;
   /** URLs des documents de cours joints (Storage). */
   attachmentUrls: string[];
   /**

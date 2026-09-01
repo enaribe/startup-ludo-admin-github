@@ -33,10 +33,28 @@ import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/Courbe
 import RepartitionAttribution from '@/components/annonceur/RepartitionAttribution';
 import FunnelImpact, { type EtapeFunnel } from '@/components/annonceur/FunnelImpact';
 import SponsorCardPreview from '@/components/sponsor/SponsorCardPreview';
+import SponsorPopupPreview from '@/components/sponsor/SponsorPopupPreview';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
+
+/**
+ * Réduction de l'aperçu de carte en vignette d'en-tête.
+ * `SponsorCardPreview` fait 244 px de large et environ 400 px de haut ; à 45 %
+ * la vignette tient dans l'en-tête tout en restant reconnaissable.
+ */
+const ECHELLE_VIGNETTE = 0.45;
+/** Hauteur de référence de l'aperçu de CARTE avant réduction, en pixels. */
+const HAUTEUR_VIGNETTE = 400;
+/**
+ * Dimensions de la CARTE de `SponsorPopupPreview`, avant réduction — sans la
+ * légende qu'il affiche en dessous. Elle explique comment interagir avec
+ * l'aperçu en pleine page ; à 45 % elle serait illisible, et la réserver dans
+ * la vignette creuserait un vide sous la carte. Le conteneur la rogne donc.
+ */
+const LARGEUR_POPUP = 276;
+const HAUTEUR_POPUP = 291;
 
 const STATUTS = {
   active: { libelle: 'Active', fond: 'rgba(46, 160, 67, 0.12)', texte: '#2EA043' },
@@ -148,7 +166,7 @@ export default function TableauDeBordImpactPage() {
   const kpis = construireIndicateurs(v, metriquesEdition);
 
   return (
-    <div style={{ maxWidth: 1180 }}>
+    <div style={{ maxWidth: 1440 }}>
       <Link
         href="/annonceur"
         className="flex items-center gap-2"
@@ -168,8 +186,99 @@ export default function TableauDeBordImpactPage() {
           marginBottom: 18,
         }}
       >
-        <div style={{ minWidth: 0 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: NAVY, marginBottom: 6 }}>{v.titre}</h1>
+        {/*
+          L'APERÇU EN VIGNETTE, dès l'en-tête (maquette). L'annonceur reconnaît
+          immédiatement DE QUELLE carte parlent les chiffres qui suivent — sur
+          un compte qui en diffuse plusieurs, un titre seul ne suffit pas.
+          C'est l'aperçu de `SponsorCardPreview` — une transposition sobre du
+          rendu de partie (badge, logo, texte, jetons), pas une reproduction du
+          flip 3D du jeu, qui parasiterait la lecture des chiffres.
+        */}
+        {/*
+          Les deux aperçus ont une largeur FIXE : les contraindre par un
+          conteneur plus étroit les ferait déborder (le contenu ne se recompose
+          pas). On les met donc à l'échelle — le conteneur réserve la place
+          réellement occupée APRÈS réduction, sinon il resterait un grand vide.
+        */}
+        {v.format === 'carte' && v.card && (
+          <div
+            style={{
+              width: 244 * ECHELLE_VIGNETTE,
+              height: HAUTEUR_VIGNETTE * ECHELLE_VIGNETTE,
+              flexShrink: 0,
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'flex-start',
+            }}
+          >
+            <div
+              style={{
+                transform: `scale(${ECHELLE_VIGNETTE})`,
+                transformOrigin: 'top left',
+                width: 244,
+                flexShrink: 0,
+              }}
+            >
+              <SponsorCardPreview
+                card={v.card}
+                kind={v.kind === 'funding' ? 'funding' : 'opportunity'}
+                defaultTokens={v.kind === 'funding' ? 4 : 2}
+              />
+            </div>
+          </div>
+        )}
+        {v.format === 'edition' && (
+          // ⚠️ `SponsorPopupPreview` est centré et porte une LÉGENDE sous la
+          // carte (« Touchez en savoir plus… ») : utile en pleine page, illisible
+          // à 45 %. On borne donc la hauteur à celle de la carte seule, et
+          // `alignItems: 'flex-start'` neutralise le centrage du composant —
+          // sans quoi la carte est décalée et son bord gauche rogné.
+          <div
+            style={{
+              width: LARGEUR_POPUP * ECHELLE_VIGNETTE,
+              height: HAUTEUR_POPUP * ECHELLE_VIGNETTE,
+              flexShrink: 0,
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'flex-start',
+            }}
+          >
+            <div
+              style={{
+                transform: `scale(${ECHELLE_VIGNETTE})`,
+                transformOrigin: 'top left',
+                width: LARGEUR_POPUP,
+                flexShrink: 0,
+              }}
+            >
+              <SponsorPopupPreview editionName={v.editionName} sponsor={v.sponsor} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ minWidth: 240, flex: 1 }}>
+          {/*
+            Le titre d'une carte EST son texte d'accroche : il peut faire
+            plusieurs phrases. Non tronqué, il repoussait les boutons hors de
+            l'en-tête. Deux lignes maximum ; le texte complet reste lisible dans
+            la vignette et dans l'infobulle.
+          */}
+          <h1
+            title={v.titre}
+            style={{
+              fontSize: 20,
+              fontWeight: 800,
+              color: NAVY,
+              marginBottom: 6,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              lineHeight: 1.3,
+            }}
+          >
+            {v.titre}
+          </h1>
           <div className="flex items-center gap-3 flex-wrap" style={{ fontSize: 12.5 }}>
             <span
               style={{
@@ -190,8 +299,33 @@ export default function TableauDeBordImpactPage() {
                 : `Carte ${v.kind === 'funding' ? 'FINANCEMENT' : 'OPPORTUNITÉ'} — édition ${v.editionName}`}
             </span>
             <span style={{ color: 'var(--color-text-muted)' }}>·</span>
-            <span style={{ color: 'var(--color-text-secondary)' }}>diffusion en continu</span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>
+              {v.debutMs && v.finMs
+                ? `${new Date(v.debutMs).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} → ${new Date(v.finMs).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : 'diffusion en continu'}
+            </span>
+            {/* L'habillage d'une édition est EXCLUSIF : un seul annonceur par
+                édition à la fois, c'est ce qui en fait le format premium. */}
+            {v.format === 'edition' && (
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  padding: '4px 11px',
+                  borderRadius: 10,
+                  background: 'rgba(245,166,35,0.14)',
+                  color: '#B87A0C',
+                }}
+              >
+                Édition sponsorisée · exclusivité
+              </span>
+            )}
           </div>
+          {v.format === 'carte' && v.card && (
+            <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 8 }}>
+              Aperçu de la carte telle qu’elle est tirée en partie.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
           <Link
@@ -304,12 +438,19 @@ export default function TableauDeBordImpactPage() {
             padding: '16px 18px',
           }}
         >
+          {/* Pas de ventilation SECTORIELLE sur l'habillage d'une édition :
+              l'écran sponsor s'affiche au choix de l'édition, avant que le
+              joueur n'ait joué — son secteur ne dit rien de ce qui a été
+              réservé. La région, elle, reste pertinente. */}
           <RepartitionAttribution
             bySector={metriquesEdition?.bySector ?? {}}
             byRegion={metriquesEdition?.byRegion ?? {}}
+            avecSecteur={v.format === 'carte'}
           />
           <p style={{ fontSize: 10.5, color: 'var(--color-text-muted)', marginTop: 10 }}>
-            Échelle édition : toutes vos cartes de « {v.editionName} » confondues.
+            {v.format === 'carte'
+              ? `Échelle édition : toutes vos cartes de « ${v.editionName} » confondues.`
+              : `Échelle édition : toute votre diffusion sur « ${v.editionName} ».`}
           </p>
         </div>
       </div>
@@ -325,12 +466,27 @@ export default function TableauDeBordImpactPage() {
             padding: '16px 18px',
           }}
         >
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: NAVY, marginBottom: 12 }}>
-            {v.format === 'edition' ? 'De l’affichage à la partie' : 'Parcours du joueur'}
-          </h3>
+          <div style={{ borderBottom: '1px solid var(--color-card-border)', margin: '0 -18px 18px', padding: '0 18px 14px' }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: NAVY }}>
+              {v.format === 'edition' ? 'Du regard à la partie jouée' : 'Du regard à l’action'}
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3 }}>
+              {v.format === 'edition'
+                ? 'Ce que les joueurs font de l’écran sponsor'
+                : 'Ce que les joueurs font de votre carte'}
+            </p>
+          </div>
           <FunnelImpact etapes={construireFunnel(v, metriquesEdition)} />
         </div>
-        {v.format === 'carte' && v.card && (
+
+        {/*
+          L'ÉCRAN SPONSOR DIFFUSÉ — format édition uniquement.
+          Pour une carte, l'aperçu vit déjà dans l'en-tête et le répéter ici
+          n'apporterait rien ; pour une édition, l'écran plein cadre est trop
+          grand pour la vignette d'en-tête et mérite sa place à côté du funnel :
+          l'annonceur voit CE QUE mesurent les chiffres de gauche.
+        */}
+        {v.format === 'edition' && (
           <div
             className="lg:col-span-2"
             style={{
@@ -340,14 +496,15 @@ export default function TableauDeBordImpactPage() {
               padding: '16px 18px',
             }}
           >
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: NAVY, marginBottom: 12 }}>
-              La carte diffusée
-            </h3>
-            <SponsorCardPreview
-              card={v.card}
-              kind={v.kind === 'funding' ? 'funding' : 'opportunity'}
-              defaultTokens={v.kind === 'funding' ? 4 : 2}
-            />
+            <div style={{ borderBottom: '1px solid var(--color-card-border)', margin: '0 -18px 18px', padding: '0 18px 14px' }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: NAVY }}>L’écran sponsor diffusé</h3>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3 }}>
+                Tel qu’il s’affiche au choix de l’édition
+              </p>
+            </div>
+            <div className="flex justify-center">
+              <SponsorPopupPreview editionName={v.editionName} sponsor={v.sponsor} />
+            </div>
           </div>
         )}
       </div>
@@ -361,6 +518,38 @@ export default function TableauDeBordImpactPage() {
 
 type Kpi = LigneRapport & { jaugePct?: number | null; accent?: boolean };
 
+/**
+ * Période de réservation en jours, ou `null` si l'annonceur n'en a pas défini.
+ *
+ * ⚠️ La période est INFORMATIVE : le jeu ne coupe pas la diffusion à
+ * l'échéance (seuls `paused` et l'objectif de vues l'arrêtent). Le libellé de
+ * la tuile parle donc de « réservation », jamais d'un arrêt automatique.
+ *
+ * `restants` est borné à zéro : une réservation échue afficherait sinon un
+ * nombre négatif de jours.
+ */
+function calculerReservation(
+  debutMs: number | null,
+  finMs: number | null
+): { total: number; ecoules: number; restants: number; finLisible: string } | null {
+  if (!debutMs || !finMs || finMs <= debutMs) return null;
+
+  const JOUR = 86_400_000;
+  const total = Math.max(1, Math.round((finMs - debutMs) / JOUR));
+  const ecoules = Math.min(total, Math.max(0, Math.round((Date.now() - debutMs) / JOUR)));
+
+  return {
+    total,
+    ecoules,
+    restants: total - ecoules,
+    finLisible: new Date(finMs).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }),
+  };
+}
+
 function construireIndicateurs(
   v: MiseEnVisibilite,
   m: { totals: { views: number; uniqueViews: number; editionPopupViews: number; gamesPlayed: number; playSeconds: number } } | null
@@ -369,32 +558,91 @@ function construireIndicateurs(
   const vuesEdition = m?.totals.views ?? 0;
   const prix = v.pricePerView ?? PRIX_PAR_VUE_FCFA;
 
+  const reservation = calculerReservation(v.debutMs, v.finMs);
+
   if (v.format === 'edition') {
     const popup = v.vues;
     const parties = m?.totals.gamesPlayed ?? 0;
+    const clics = v.clics;
+    const ctrEdition = popup > 0 ? (clics / popup) * 100 : null;
+    // L'habillage d'édition n'est pas facturé aujourd'hui (`depenseFcfa` nul) :
+    // les deux dernières tuiles ne s'affichent donc QUE s'il l'est réellement.
+    const depenseEdition = v.depenseFcfa;
+    const coutParPersonne = depenseEdition != null && uniques > 0 ? depenseEdition / uniques : null;
+
     return [
       {
         libelle: 'Vues de l’écran sponsor',
         valeur: popup.toLocaleString('fr-FR'),
-        detail: 'affiché au choix de l’édition',
+        detail: v.objectifVues && v.objectifVues > 0
+          ? `objectif ${v.objectifVues.toLocaleString('fr-FR')}`
+          : 'affiché au choix de l’édition',
+        jaugePct: v.objectifVues && v.objectifVues > 0 ? (popup / v.objectifVues) * 100 : null,
       },
       {
-        libelle: 'Personnes uniques touchées (échelle édition)',
+        libelle: 'Personnes uniques touchées',
         valeur: uniques.toLocaleString('fr-FR'),
-        detail: 'joueurs différents',
+        detail:
+          uniques > 0
+            ? `${(popup / uniques).toFixed(2).replace('.', ',')} affichage par joueur en moyenne`
+            : 'joueurs différents',
+      },
+      {
+        libelle: 'Clics « en savoir plus »',
+        valeur: clics.toLocaleString('fr-FR'),
+        detail:
+          ctrEdition != null
+            ? `CTR ${ctrEdition.toFixed(1).replace('.', ',')} % — écran plein cadre`
+            : 'aucun clic mesuré',
       },
       {
         libelle: 'Parties jouées dans l’édition',
         valeur: parties.toLocaleString('fr-FR'),
         detail:
-          popup > 0 ? `${((parties / popup) * 100).toFixed(1).replace('.', ',')} % des affichages` : '—',
+          popup > 0
+            ? `${((parties / popup) * 100).toFixed(1).replace('.', ',')} % des affichages débouchent sur une partie`
+            : '—',
       },
       {
         libelle: 'Durée moyenne de jeu',
         valeur: dureeMoyenne(m?.totals.playSeconds ?? 0, parties),
-        detail: 'exposition prolongée de la marque',
+        detail: 'exposition prolongée de votre marque, toute la partie',
         accent: true,
       },
+      // La réservation n'apparaît que si l'annonceur a renseigné une période :
+      // afficher « — / — » sur une diffusion en continu serait du bruit.
+      ...(reservation
+        ? [
+            {
+              libelle: 'Jours de réservation restants',
+              valeur: `${reservation.restants}`,
+              detail: `sur ${reservation.total} · jusqu’au ${reservation.finLisible}`,
+              jaugePct: (reservation.ecoules / reservation.total) * 100,
+            },
+          ]
+        : []),
+      ...(depenseEdition != null
+        ? [
+            {
+              libelle: 'Dépense engagée',
+              valeur: `${depenseEdition.toLocaleString('fr-FR')} FCFA`,
+              detail: `${popup.toLocaleString('fr-FR')} vues × ${prix} FCFA`,
+              accent: true,
+            },
+            ...(coutParPersonne != null
+              ? [
+                  {
+                    libelle: 'Coût par personne touchée',
+                    valeur: `${Math.round(coutParPersonne).toLocaleString('fr-FR')} FCFA`,
+                    detail:
+                      clics > 0
+                        ? `coût par clic réel : ${Math.round(depenseEdition / clics).toLocaleString('fr-FR')} FCFA`
+                        : 'aucun clic pour l’instant',
+                  },
+                ]
+              : []),
+          ]
+        : []),
     ];
   }
 
@@ -469,14 +717,17 @@ function construireFunnel(
 ): EtapeFunnel[] {
   if (v.format === 'edition') {
     return [
-      { libelle: 'Vue de l’écran sponsor', valeur: v.vues },
-      { libelle: 'Partie jouée dans l’édition', valeur: m?.totals.gamesPlayed ?? 0 },
+      { libelle: 'Vues de l’écran sponsor', valeur: v.vues },
+      { libelle: 'Parties jouées dans l’édition', valeur: m?.totals.gamesPlayed ?? 0 },
+      // Le clic « en savoir plus » est la dernière marche : c'est l'action que
+      // l'annonceur cherche, et elle vient APRÈS la partie dans le parcours.
+      { libelle: 'Clics « en savoir plus »', valeur: v.clics },
     ];
   }
   return [
-    { libelle: 'Vue de la carte', valeur: v.vues },
-    { libelle: 'Flip (verso consulté)', valeur: v.flips, aVenir: v.flips === 0 },
-    { libelle: 'Clic sur le CTA', valeur: v.clics },
-    { libelle: 'Sauvegarde', valeur: v.saves },
+    { libelle: 'Vues', valeur: v.vues },
+    { libelle: 'Flips de la carte', valeur: v.flips, aVenir: v.flips === 0 },
+    { libelle: 'Clics sur le CTA', valeur: v.clics },
+    { libelle: 'Sauvegardes', valeur: v.saves },
   ];
 }

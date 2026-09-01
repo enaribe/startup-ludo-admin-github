@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { doc, getDoc } from 'firebase/firestore';
-import { LayoutGrid, Play, TrendingUp, User, Users, Zap } from 'lucide-react';
+import { Award, BarChart3, LayoutGrid, Play, TrendingUp, User, Users, Zap } from 'lucide-react';
 import { firestore, COLLECTIONS } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { getClasses, getClassesByIds } from '@/lib/school-service';
@@ -254,9 +254,7 @@ export default function TableauDeBordEcolePage() {
 
       {/* ═══ Deux colonnes : sessions + enseignants ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* En vue enseignant, il n'y a pas d'encart Enseignants : la carte des
-            sessions occupe alors toute la largeur au lieu de laisser un vide. */}
-        <div className={vueEnseignant ? 'lg:col-span-3' : 'lg:col-span-2'} style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.1)', borderRadius: 16, padding: '16px 20px' }}>
+        <div className="lg:col-span-2" style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.1)', borderRadius: 16, padding: '16px 20px' }}>
           <h2 style={{ fontSize: 15.5, fontWeight: 700, color: NAVY }}>
             {vueEnseignant ? 'Vos dernières sessions' : 'Dernières sessions de l’établissement'}
           </h2>
@@ -298,7 +296,51 @@ export default function TableauDeBordEcolePage() {
               </Link>
             ))
           )}
+
+          {/* « Tous les rapports » — pleine largeur, sous la liste (maquette). */}
+          <Link
+            href="/rapports"
+            className="flex items-center justify-center gap-2"
+            style={{
+              marginTop: 12, textDecoration: 'none', fontSize: 13, fontWeight: 600, color: NAVY,
+              border: '1.5px solid rgba(15,28,46,0.15)', borderRadius: 12, padding: '11px 16px',
+            }}
+          >
+            <BarChart3 size={15} /> Tous les rapports
+          </Link>
         </div>
+
+        {/* ═══ Colonne droite — certification (enseignant, maquette) ═══
+            Pas de « 2/4 » inventé : la progression des modules n'est pas encore
+            mesurée (parcours en préparation) — la carte le dit et renvoie à
+            l'écran Certifications, qui porte le détail honnête. */}
+        {vueEnseignant && (
+          <Link href="/certifications" style={{ textDecoration: 'none' }}>
+            <div
+              className="flex items-start gap-3"
+              style={{ background: NAVY, borderRadius: 16, padding: '18px 20px', height: 'fit-content' }}
+            >
+              <span
+                className="flex items-center justify-center"
+                style={{ width: 42, height: 42, borderRadius: 11, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }}
+              >
+                <Award size={19} color={ORANGE} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#FFFFFF' }}>
+                  Votre certification de formateur
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4, lineHeight: 1.5 }}>
+                  « Agent de sensibilisation et formateur en entrepreneuriat » · 4 modules — contenu
+                  en préparation chez CONCREE.
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: ORANGE, marginTop: 8 }}>
+                  Découvrir le parcours →
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
 
         {!vueEnseignant && (
           <div style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.1)', borderRadius: 16, padding: '16px 20px' }}>

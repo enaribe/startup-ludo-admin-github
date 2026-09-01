@@ -75,6 +75,7 @@ import { getSessionsByClass } from '@/lib/class-session-service';
 import { genererBilanClassePdf } from '@/lib/class-bilan-pdf';
 import {
   examinerClasse,
+  examinerEligibilite,
   genererCertificats,
   nomFichierCertificat,
   telechargerPdf,
@@ -95,6 +96,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import MenuActions from '@/components/ui/MenuActions';
 import Modal from '@/components/ui/Modal';
 import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
 import ImportLearnersModal from '@/components/school/ImportLearnersModal';
@@ -880,70 +882,75 @@ export default function ClasseDetailPage() {
               Les apprenants
             </h2>
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3 }}>
-              Niveau atteint dans le jeu · cumul annuel mesuré — {actifs.length} actif
-              {actifs.length > 1 ? 's' : ''}
+              Niveau atteint dans le jeu et notions certifiables · cumul annuel mesuré —{' '}
+              {actifs.length} actif{actifs.length > 1 ? 's' : ''}
               {retires.length > 0 && ` · ${retires.length} retiré${retires.length > 1 ? 's' : ''}`}
             </p>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            {retires.length > 0 && (
-              <button
-                className="btn-secondary flex items-center gap-2"
-                style={{ fontSize: 12, padding: '6px 12px' }}
-                onClick={() => setAfficherRetires((v) => !v)}
-              >
-                {afficherRetires ? <EyeOff size={14} /> : <Eye size={14} />}
-                {afficherRetires ? 'Masquer les élèves retirés' : 'Afficher les élèves retirés'}
-              </button>
-            )}
+          {/*
+            ═══ UNE SEULE ACTION VISIBLE, LE RESTE DANS UN MENU ═══
 
-            {/* ── Lot 7 : bilans annuels et certificats ── */}
-            {peutGererCumuls && (
-              <>
-                <button
-                  className="btn-secondary flex items-center gap-2"
-                  onClick={lancerRecalcul}
-                  disabled={recalculEnCours || actifs.length === 0}
-                  title="Relit toutes les séances terminées et reconstruit les bilans annuels des élèves. À utiliser si une clôture de séance a échoué."
-                >
-                  <RefreshCw size={16} className={recalculEnCours ? 'animate-spin' : undefined} />
-                  {progresRecalcul ?? 'Recalculer les cumuls'}
-                </button>
-                <button
-                  className="btn-secondary flex items-center gap-2"
-                  onClick={ouvrirCertificats}
-                  disabled={actifs.length === 0}
-                  title="Un seul PDF, une page par élève éligible"
-                >
-                  <Award size={16} /> Générer les certificats
-                </button>
-              </>
-            )}
+            Cinq boutons alignés ne hiérarchisaient rien : le geste quotidien
+            (ajouter un élève) avait le même poids visuel qu'un outil de
+            dépannage annuel (recalculer les cumuls).
 
-            <button className="btn-secondary flex items-center gap-2" onClick={() => setImportCsv(true)}>
-              <Upload size={16} /> Importer un CSV
-            </button>
-            <button className="btn-secondary flex items-center gap-2" onClick={() => setAjout(true)}>
+            Le rattachement n'est plus l'action principale depuis la SALLE
+            D'ATTENTE : un élève se rattache en scannant le QR de la séance,
+            sans passer par cet écran. Il reste ici pour les cas hors séance
+            (préparer la rentrée, accueillir un arrivant en cours d'année).
+          */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button className="btn-primary flex items-center gap-2" onClick={() => setAjout(true)}>
               <Plus size={16} /> Ajouter un élève
             </button>
-            {/*
-              Ouvrir le rattachement — l'action principale de la fiche de classe à
-              la rentrée. Désactivée sans élève : un code projeté devant une liste
-              vide n'a rien à rattacher, et le prof perdrait la séance à chercher
-              pourquoi.
-            */}
-            <button
-              className="btn-primary flex items-center gap-2"
-              onClick={() => setChoixDuree(true)}
-              disabled={actifs.length === 0}
-              title={
-                actifs.length === 0
-                  ? 'Ajoutez d’abord les élèves de la classe'
-                  : 'Projeter un code pour rattacher les comptes des élèves'
-              }
-            >
-              <KeyRound size={16} /> Ouvrir le rattachement
-            </button>
+            <MenuActions
+              actions={[
+                {
+                  libelle: 'Importer une liste (CSV)',
+                  Icon: Upload,
+                  onClick: () => setImportCsv(true),
+                },
+                {
+                  libelle: 'Ouvrir le rattachement',
+                  Icon: KeyRound,
+                  onClick: () => setChoixDuree(true),
+                  desactive: actifs.length === 0,
+                  aide:
+                    actifs.length === 0
+                      ? 'Ajoutez d’abord les élèves de la classe'
+                      : 'Projeter un code hors séance — en séance, le QR de la salle d’attente suffit',
+                },
+                ...(peutGererCumuls
+                  ? [
+                      {
+                        libelle: 'Générer les certificats',
+                        Icon: Award,
+                        onClick: ouvrirCertificats,
+                        desactive: actifs.length === 0,
+                        aide: 'Un seul PDF, une page par élève éligible',
+                      },
+                      {
+                        libelle: progresRecalcul ?? 'Recalculer les cumuls',
+                        Icon: RefreshCw,
+                        onClick: lancerRecalcul,
+                        desactive: recalculEnCours || actifs.length === 0,
+                        aide: 'Répare les bilans si une clôture de séance a échoué. Sans effet si tout est déjà à jour.',
+                      },
+                    ]
+                  : []),
+                ...(retires.length > 0
+                  ? [
+                      {
+                        libelle: afficherRetires
+                          ? 'Masquer les élèves retirés'
+                          : `Afficher les ${retires.length} élève${retires.length > 1 ? 's' : ''} retiré${retires.length > 1 ? 's' : ''}`,
+                        Icon: afficherRetires ? EyeOff : Eye,
+                        onClick: () => setAfficherRetires((v) => !v),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
         </div>
 
@@ -967,10 +974,14 @@ export default function ClasseDetailPage() {
           <div className="overflow-x-auto">
             <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--color-card-border)' }}>
+                <tr style={{ background: 'rgba(15,28,46,0.03)' }}>
                   <Th>Apprenant</Th>
                   <Th>Rattachement</Th>
                   <Th>Niveau</Th>
+                  {/* « Certificats » = notions CERTIFIABLES (mesurées sur ≥ 3
+                      questions cumulées) : c'est exactement ce que porte le PDF
+                      remis à l'apprenant, donc un chiffre vérifiable. */}
+                  <Th>Certificats</Th>
                   <Th>Questions</Th>
                   <Th>Réussite</Th>
                   <Th>Séances</Th>
@@ -1024,13 +1035,30 @@ export default function ClasseDetailPage() {
                         <span
                           title={`${n.questions} question${n.questions > 1 ? 's' : ''} cumulée${n.questions > 1 ? 's' : ''}${n.tauxPct != null ? ` · ${n.tauxPct} % de réussite` : ''} — N1 découvre · N2 pratique (≥10 q) · N3 maîtrise (≥25 q, ≥60 %) · N4 autonome (≥50 q, ≥70 %)`}
                           style={{
-                            fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 9,
-                            background: n.niveau >= 3 ? 'rgba(46,160,67,0.12)' : n.niveau === 2 ? 'rgba(245,166,35,0.15)' : 'rgba(15,28,46,0.07)',
-                            color: n.niveau >= 3 ? '#2EA043' : n.niveau === 2 ? '#B87A0C' : '#5A6A7E',
+                            fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 8,
+                            background: 'rgba(46,160,67,0.12)', color: '#2EA043',
                           }}
                         >
                           N{n.niveau}
                         </span>
+                      </Td>
+                      {/* Notions certifiables — le contenu exact de son PDF. */}
+                      <Td>
+                        {(() => {
+                          const certifiables = examinerEligibilite(eleve).notions.length;
+                          return (
+                            <span
+                              title={
+                                certifiables > 0
+                                  ? `${certifiables} notion${certifiables > 1 ? 's' : ''} mesurée${certifiables > 1 ? 's' : ''} sur ≥ ${SEUIL_QUESTIONS_NOTION} questions — c'est ce que portera son certificat`
+                                  : `Aucune notion n'atteint encore ${SEUIL_QUESTIONS_NOTION} questions cumulées : pas de certificat possible`
+                              }
+                              style={{ fontWeight: certifiables > 0 ? 700 : 400 }}
+                            >
+                              {certifiables}
+                            </span>
+                          );
+                        })()}
                       </Td>
                       <Td>{n.questions > 0 ? n.questions : '—'}</Td>
                       <Td>{n.tauxPct != null ? `${n.tauxPct} %` : '—'}</Td>
@@ -1138,11 +1166,11 @@ export default function ClasseDetailPage() {
   );
 }
 
-/** En-tête de colonne du tableau d'élèves. */
+/** En-tête de colonne du tableau d'élèves — bandeau gris clair (maquette). */
 function Th({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <th
-      className="text-left px-4 py-3"
+      className="text-left px-5 py-3"
       style={{
         fontSize: 11,
         fontWeight: 600,
@@ -1157,10 +1185,10 @@ function Th({ children, style }: { children?: React.ReactNode; style?: React.CSS
   );
 }
 
-/** Cellule du tableau d'élèves. */
+/** Cellule du tableau d'élèves — lignes aérées, lisibles à distance. */
 function Td({ children }: { children: React.ReactNode }) {
   return (
-    <td className="px-4 py-3" style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+    <td className="px-5 py-4" style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
       {children}
     </td>
   );

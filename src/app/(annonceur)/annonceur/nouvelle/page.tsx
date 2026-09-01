@@ -408,7 +408,7 @@ export default function NouvelleMiseEnVisibilitePage() {
   const derniere = etape === etapes.length - 1;
 
   return (
-    <div style={{ maxWidth: 980 }}>
+    <div style={{ maxWidth: 1320 }}>
       {/* Stepper (maquette) : cercles numérotés — orange en cours, navy fait */}
       <div
         className="flex items-center justify-between gap-2 mb-6 flex-wrap"

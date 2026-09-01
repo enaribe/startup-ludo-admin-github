@@ -56,6 +56,16 @@ export interface MiseEnVisibilite {
   pricePerView: number | null;
   /** Dépense engagée en FCFA ; null = non facturé (habillage). */
   depenseFcfa: number | null;
+  /**
+   * Période de diffusion souhaitée (`sponsor.startDate` / `endDate`), en ms.
+   *
+   * ⚠️ INFORMATIVE, ET C'EST IMPORTANT : le jeu ne l'applique pas — seul
+   * `paused` et l'objectif de vues arrêtent réellement la diffusion. L'écran
+   * doit donc parler de « réservation », jamais promettre un arrêt automatique
+   * à l'échéance. `null` quand l'annonceur n'a pas renseigné de dates.
+   */
+  debutMs: number | null;
+  finMs: number | null;
   /** La carte elle-même (format carte). */
   card?: SponsorEventCard;
   sponsor: EditionSponsor;
@@ -191,6 +201,14 @@ export async function chargerEspaceAnnonceur(editions: EditionData[]): Promise<E
     const prix = sponsor.pricePerView ?? PRIX_PAR_VUE_FCFA;
 
     // ── L'habillage d'édition (écran sponsor plein cadre) ──
+    //
+    // FACTURÉ AU MÊME PRIX QUE LES CARTES : l'écran sponsor est une vue
+    // sponsorisée comme une autre, et l'annonceur doit voir ce qu'il engage.
+    // Le laisser à `null` affichait un espace vide là où il attend un montant.
+    const vuesEcran = m?.totals.editionPopupViews ?? 0;
+    const debutMs = typeof sponsor.startDate === 'number' ? sponsor.startDate : null;
+    const finMs = typeof sponsor.endDate === 'number' ? sponsor.endDate : null;
+
     visibilites.push({
       id: idVisibiliteEdition(edition.id),
       format: 'edition',
@@ -199,13 +217,15 @@ export async function chargerEspaceAnnonceur(editions: EditionData[]): Promise<E
       titre: `Édition ${edition.name || edition.id}`,
       structure: sponsor.name || '—',
       statut,
-      vues: m?.totals.editionPopupViews ?? 0,
-      objectifVues: null,
+      vues: vuesEcran,
+      objectifVues: sponsor.viewsGoal ?? null,
       clics: 0,
       saves: 0,
       flips: 0,
-      pricePerView: null,
-      depenseFcfa: null,
+      pricePerView: prix,
+      depenseFcfa: vuesEcran * prix,
+      debutMs,
+      finMs,
       sponsor,
     });
 
@@ -233,6 +253,10 @@ export async function chargerEspaceAnnonceur(editions: EditionData[]): Promise<E
         flips: cm?.flips ?? 0,
         pricePerView: prix,
         depenseFcfa: (cm?.views ?? 0) * prix,
+        // Les dates vivent sur le SPONSOR, pas sur la carte : toutes les cartes
+        // d'une même édition partagent donc la période de réservation.
+        debutMs,
+        finMs,
         card,
         sponsor,
       });

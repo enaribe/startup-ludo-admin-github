@@ -24,7 +24,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
 import { GraduationCap, Plus, School, UserRound } from 'lucide-react';
-import { firestore, COLLECTIONS } from '@/lib/firebase';
+import { auth, firestore, COLLECTIONS } from '@/lib/firebase';
 import { getClasses, getClassesByIds, getEstablishments, saveClass } from '@/lib/school-service';
 import { getSessionsByEstablishment, getSessionsByTeacher } from '@/lib/class-session-service';
 import { generateId } from '@/lib/utils';
@@ -73,6 +73,10 @@ export default function ClassesPage() {
   const [loading, setLoading] = useState(true);
   const [filtre, setFiltre] = useState<FiltreNiveau>('tous');
   const [creation, setCreation] = useState(false);
+  /** Enseignants de l'établissement, pour « Enseignant responsable » à la création. */
+  const [enseignants, setEnseignants] = useState<
+    Array<{ uid: string; displayName: string; teachingClassIds: string[] }>
+  >([]);
 
   // Établissement consulté — même convention que /etablissement : claim pour un
   // rôle scolaire, paramètre d'URL pour le super admin.
@@ -144,6 +148,44 @@ export default function ClassesPage() {
     if (!authLoading) charger();
   }, [authLoading, charger]);
 
+  // Enseignants de l'établissement (direction uniquement) : alimente le champ
+  // « Enseignant responsable » de la modale de création. Facultatif — silencieux.
+  useEffect(() => {
+    if (authLoading || !peutCreer) return;
+    let annule = false;
+    (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch('/api/admins', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          admins?: Array<{
+            uid: string; role: string; displayName?: string; email?: string;
+            establishmentId?: string | null; teachingClassIds?: string[] | null;
+          }>;
+        };
+        if (annule) return;
+        setEnseignants(
+          (data.admins ?? [])
+            .filter((a) => a.role === 'teacher' && (!establishmentId || a.establishmentId === establishmentId))
+            .map((a) => ({
+              uid: a.uid,
+              displayName: a.displayName || a.email || a.uid,
+              teachingClassIds: a.teachingClassIds ?? [],
+            }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName, 'fr'))
+        );
+      } catch {
+        // Le champ restera « À affecter plus tard » — jamais bloquant.
+      }
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [authLoading, peutCreer, establishmentId]);
+
   const affichees = useMemo(
     () => (filtre === 'tous' ? classes : classes.filter((c) => c.level === filtre)),
     [classes, filtre]
@@ -172,7 +214,7 @@ export default function ClassesPage() {
   );
 
   /** Crée la classe puis ouvre directement son détail — la suite du geste est d'y saisir les élèves. */
-  const creerClasse = async (nom: string, niveau: SchoolLevel) => {
+  const creerClasse = async (nom: string, niveau: SchoolLevel, enseignantUid: string | null) => {
     if (!establishmentId) return;
     const classId = `class_${generateId()}`;
     try {
@@ -184,7 +226,36 @@ export default function ClassesPage() {
         learnerCount: 0,
         createdAt: Date.now(),
       });
-      toast.success('Classe créée');
+
+      // Affectation de l'enseignant responsable — PAR L'API, qui synchronise
+      // claim `classIds`, `users.teachingClassIds` ET `classes.teacherIds`.
+      // Un échec ici ne perd rien : la classe existe, l'affectation se refait
+      // depuis l'écran Enseignants.
+      if (enseignantUid) {
+        const ens = enseignants.find((e) => e.uid === enseignantUid);
+        try {
+          const token = await auth.currentUser?.getIdToken();
+          const res = await fetch('/api/admins', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              uid: enseignantUid,
+              role: 'teacher',
+              teachingClassIds: [...new Set([...(ens?.teachingClassIds ?? []), classId])],
+            }),
+          });
+          if (!res.ok) throw new Error();
+          toast.success(`Classe créée — affectée à ${ens?.displayName ?? 'l’enseignant'}.`);
+        } catch {
+          toast.error(
+            'Classe créée, mais l’affectation de l’enseignant a échoué — refaites-la depuis l’écran Enseignants.',
+            { duration: 7000 }
+          );
+        }
+      } else {
+        toast.success('Classe créée');
+      }
+
       setCreation(false);
       router.push(`/classes/${classId}`);
     } catch (error) {
@@ -298,7 +369,11 @@ export default function ClassesPage() {
       )}
 
       {creation && establishmentId && (
-        <ModaleCreation onClose={() => setCreation(false)} onCreate={creerClasse} />
+        <ModaleCreation
+          enseignants={enseignants}
+          onClose={() => setCreation(false)}
+          onCreate={creerClasse}
+        />
       )}
     </div>
   );
@@ -422,16 +497,27 @@ function CarteClasse({
   );
 }
 
-/** Modale de création d'une classe : nom + niveau, rien de plus. */
+/**
+ * Modale de création d'une classe (maquette) : nom, niveau en boutons
+ * segmentés, enseignant responsable (affecté via l'API à la création).
+ *
+ * PAS DE CHAMP « nombre d'apprenants » malgré la maquette : l'effectif est un
+ * chiffre MESURÉ (recalculé à chaque mouvement d'élève) — un nombre saisi ici
+ * serait une intention affichée comme un fait. Les apprenants se saisissent
+ * juste après, à la main ou par import CSV.
+ */
 function ModaleCreation({
+  enseignants,
   onClose,
   onCreate,
 }: {
+  enseignants: Array<{ uid: string; displayName: string; teachingClassIds: string[] }>;
   onClose: () => void;
-  onCreate: (nom: string, niveau: SchoolLevel) => Promise<void>;
+  onCreate: (nom: string, niveau: SchoolLevel, enseignantUid: string | null) => Promise<void>;
 }) {
   const [nom, setNom] = useState('');
   const [niveau, setNiveau] = useState<SchoolLevel>('lycee');
+  const [enseignantUid, setEnseignantUid] = useState('');
   const [enCours, setEnCours] = useState(false);
 
   const valider = async () => {
@@ -442,45 +528,86 @@ function ModaleCreation({
     }
     setEnCours(true);
     try {
-      await onCreate(propre, niveau);
+      await onCreate(propre, niveau, enseignantUid || null);
     } finally {
       setEnCours(false);
     }
   };
 
   return (
-    <Modal open onClose={onClose} title="Créer une classe" maxWidth="440px">
+    <Modal open onClose={onClose} title="Créer une classe" maxWidth="520px">
       <div className="flex flex-col gap-4">
+        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', lineHeight: 1.55, marginTop: -6 }}>
+          Collège, lycée, université ou formation professionnelle — le niveau adapte les séances
+          proposées.
+        </p>
+
         <div>
           <label className="label">Nom de la classe</label>
           <input
             className="input-field"
             value={nom}
             autoFocus
-            placeholder="Terminale S2"
+            placeholder="ex. Licence 3 — Marketing"
             onChange={(e) => setNom(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') valider();
             }}
           />
         </div>
+
         <div>
           <label className="label">Niveau</label>
+          <div className="flex items-center gap-2 flex-wrap">
+            {SCHOOL_LEVELS.map((n) => {
+              const actif = niveau === n;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setNiveau(n)}
+                  style={{
+                    fontSize: 13, fontWeight: actif ? 700 : 500, padding: '9px 16px', borderRadius: 10,
+                    cursor: 'pointer',
+                    border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                    background: actif ? 'rgba(255,188,64,0.12)' : '#FFFFFF',
+                    color: 'var(--color-text-primary)',
+                  }}
+                >
+                  {SCHOOL_LEVEL_LABELS[n]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Enseignant responsable</label>
           <select
             className="input-field"
-            value={niveau}
-            onChange={(e) => setNiveau(e.target.value as SchoolLevel)}
+            value={enseignantUid}
+            onChange={(e) => setEnseignantUid(e.target.value)}
           >
-            {SCHOOL_LEVELS.map((n) => (
-              <option key={n} value={n}>
-                {SCHOOL_LEVEL_LABELS[n]}
+            <option value="">À affecter plus tard</option>
+            {enseignants.map((e) => (
+              <option key={e.uid} value={e.uid}>
+                {e.displayName}
               </option>
             ))}
           </select>
+          {enseignants.length === 0 && (
+            <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 6 }}>
+              Aucun enseignant pour l’instant — invitez-les depuis l’écran « Enseignants », puis
+              affectez-leur la classe.
+            </p>
+          )}
         </div>
+
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Vous saisirez les élèves juste après, à la main ou par import CSV.
+          Vous saisirez les apprenants juste après, à la main ou par import CSV — l’effectif
+          affiché sera toujours le nombre réel d’élèves inscrits.
         </p>
+
         <div className="flex items-center justify-end gap-3">
           <button className="btn-secondary" onClick={onClose} disabled={enCours}>
             Annuler

@@ -35,7 +35,7 @@ const REFUSE = [
 
 export default function ReglesContenuPage() {
   return (
-    <div style={{ maxWidth: 1020 }}>
+    <div style={{ maxWidth: 1200 }}>
       <h1 style={{ fontSize: 24, fontWeight: 800, color: NAVY }}>Règles de contenu</h1>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4, marginBottom: 22, maxWidth: 560 }}>
         Startup Ludo est un jeu pédagogique utilisé en formation. Vos contenus doivent enrichir
