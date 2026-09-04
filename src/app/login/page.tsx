@@ -3,8 +3,12 @@
 /**
  * Connexion — écran scindé (maquette 19/08). Panneau navy « plateau de jeu »
  * à gauche (motif CSS, logo du jeu, accroche en Luckiest Guy), carte de
- * connexion à droite avec le choix d'espace. Le choix d'espace est un repère
- * visuel : le rôle réel vient des claims du compte à la connexion.
+ * connexion à droite.
+ *
+ * PAS de choix d'espace : le rôle vient des claims du compte, jamais d'un
+ * bouton. Demander « êtes-vous établissement ou annonceur ? » laissait croire
+ * à un choix qui n'en était pas un — la valeur n'était lue nulle part, et un
+ * annonceur cochant « Établissement » se connectait quand même en annonceur.
  *
  * Chiffres du panneau gauche : rien d'inventé — le nombre d'éditions est lu
  * en base quand la lecture publique le permet, sinon le libellé reste neutre.
@@ -18,7 +22,7 @@ import {
   sendPasswordResetEmail,
   setPersistence,
 } from 'firebase/auth';
-import { Building2, Eye, EyeOff, GraduationCap, Megaphone, School } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { signInAdmin } from '@/lib/auth';
 import { auth } from '@/lib/firebase';
 import { getEditions } from '@/lib/firestore-service';
@@ -27,16 +31,9 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
 
-const ESPACES = [
-  { id: 'etablissement', titre: 'Établissement', texte: 'Direction — classes, enseignants, licence', Icon: School },
-  { id: 'enseignant', titre: 'Enseignant', texte: 'Vos classes et vos sessions', Icon: GraduationCap },
-  { id: 'annonceur', titre: 'Annonceur', texte: 'Sponsoring dans le jeu', Icon: Megaphone },
-  { id: 'partenaire', titre: 'Partenaire', texte: 'Programmes d’accompagnement', Icon: Building2 },
-] as const;
 
 export default function LoginPage() {
   const router = useRouter();
-  const [espace, setEspace] = useState<(typeof ESPACES)[number]['id']>('etablissement');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -160,49 +157,8 @@ export default function LoginPage() {
           <div style={{ background: '#FFFFFF', borderRadius: 20, boxShadow: '0 14px 40px rgba(15,28,46,0.10)', padding: '26px 26px 22px' }}>
             <h2 style={{ fontSize: 22, fontWeight: 800, color: NAVY }}>Connexion</h2>
             <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', margin: '4px 0 16px' }}>
-              Choisissez votre espace — chaque profil a ses outils.
+              Vous êtes dirigé vers votre espace selon votre compte.
             </p>
-
-            {/* Choix d'espace (repère visuel) */}
-            <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 18 }}>
-              {ESPACES.map(({ id, titre, texte, Icon }) => {
-                const actif = espace === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setEspace(id)}
-                    style={{
-                      position: 'relative', textAlign: 'left', padding: '14px 12px', borderRadius: 12, cursor: 'pointer',
-                      border: `1.5px solid ${actif ? ORANGE : 'rgba(15,28,46,0.13)'}`,
-                      background: '#FFFFFF',
-                      boxShadow: actif ? '0 2px 10px rgba(245,166,35,0.16)' : 'none',
-                    }}
-                  >
-                    <span
-                      className="flex items-center justify-center"
-                      style={{
-                        position: 'absolute', top: 10, right: 10, width: 16, height: 16, borderRadius: 8,
-                        border: actif ? 'none' : '1.5px solid rgba(15,28,46,0.25)',
-                        background: actif ? ORANGE : 'transparent', color: '#FFF', fontSize: 10, fontWeight: 800,
-                      }}
-                    >
-                      {actif ? '✓' : ''}
-                    </span>
-                    <span
-                      className="flex items-center justify-center"
-                      style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(15,28,46,0.05)', border: '1px solid rgba(15,28,46,0.08)' }}
-                    >
-                      <Icon size={16} color={NAVY} />
-                    </span>
-                    <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: NAVY, marginTop: 9 }}>{titre}</span>
-                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--color-text-muted)', marginTop: 3, lineHeight: 1.35 }}>
-                      {texte}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
 
             <form onSubmit={handleSubmit}>
               <div className="mb-4">

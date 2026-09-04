@@ -26,7 +26,6 @@ import {
   LogOut,
   PlusCircle,
   ShieldCheck,
-  SquarePen,
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { firestore, COLLECTIONS } from '@/lib/firebase';
@@ -48,7 +47,6 @@ function SidebarAnnonceur() {
         { href: '/annonceur/tableau-de-bord', libelle: 'Tableau de bord', Icon: LineChart, exactOrChild: true },
         { href: '/annonceur', libelle: 'Mises en visibilité', Icon: BarChart3, exactOrChild: true },
         { href: '/annonceur/nouvelle', libelle: 'Nouvelle mise en visibilité', Icon: PlusCircle, exactOrChild: true },
-        { href: '/annonceur/cartes', libelle: 'Gérer mes cartes', Icon: SquarePen, exactOrChild: true },
       ],
     },
     {

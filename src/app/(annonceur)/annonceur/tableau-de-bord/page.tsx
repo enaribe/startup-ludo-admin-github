@@ -189,6 +189,12 @@ export default function TableauDeBordAnnonceurPage() {
               if (jour.date >= j30) vuesPopup += jour.totals.editionPopupViews;
             }
             if (vuesPopup === 0) continue; // habillage jamais affiché sur la période
+            // L'habillage est facturé à la vue, au meme titre qu'une carte : la
+            // liste et la page de detail le comptent deja ainsi. Le laisser a 0
+            // ici sous-estimait le total du tableau de bord et faussait le
+            // classement des lignes (trie par depense).
+            const depensePopup = vuesPopup * (v.pricePerView ?? PRIX_PAR_VUE_FCFA);
+            depense30 += depensePopup;
             lignes.push({
               cle: v.id,
               titre: v.titre,
@@ -197,7 +203,7 @@ export default function TableauDeBordAnnonceurPage() {
               vues30: vuesPopup,
               uniques30: null,
               clics30: 0,
-              depense30: 0,
+              depense30: depensePopup,
               href: `/annonceur/${encodeURIComponent(v.id)}`,
             });
           }
