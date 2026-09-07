@@ -56,7 +56,36 @@ export interface AdminUser {
   teachingClassIds?: string[];
   /** True tant que l'admin doit changer son mot de passe (1re connexion / reset). */
   mustChangePassword?: boolean;
+  /**
+   * COMPTE EN ATTENTE D'ACTIVATION (demande `pending`).
+   *
+   * Le compte peut se connecter et PARCOURIR son espace, mais n'a AUCUN claim
+   * Firebase : toutes ses lectures Firestore sont refusées et ses écrans sont
+   * donc vides. C'est voulu — on ne fabrique pas de fausses données pour
+   * meubler. L'interface désactive les actions et affiche un bandeau ; les
+   * routes API refusent en 403 ; les règles refusent faute de claim.
+   *
+   * `role` est alors le rôle DEMANDÉ, pas un rôle accordé : il ne sert qu'à
+   * choisir l'espace à afficher. Ne jamais s'en servir pour autoriser quoi que
+   * ce soit sans vérifier `enAttente` d'abord.
+   */
+  enAttente?: boolean;
+  /** Nom de l'organisation déclarée dans la demande (bandeau d'attente). */
+  orgName?: string | null;
+  /** Date de dépôt de la demande, en ms (bandeau d'attente). */
+  demandeLe?: number | null;
 }
+
+/**
+ * Espace à présenter à un compte EN ATTENTE, d'après le type de sa demande.
+ * Aucun pouvoir attaché : `enAttente` reste vrai et rien n'est autorisé.
+ */
+const ROLE_DEMANDE: Record<string, AdminRole> = {
+  establishment: 'establishment_admin',
+  teacher: 'teacher',
+  sponsor: 'sponsor',
+  partner: 'partner_admin',
+};
 
 /** Rôles reconnus comme administrateurs autorisés à se connecter à l'admin. */
 const ADMIN_ROLES: AdminRole[] = [
@@ -97,26 +126,65 @@ function readClassIds(data: { teachingClassIds?: unknown; classIds?: unknown }):
   return Array.from(new Set(cleaned));
 }
 
+/** Demande d'inscription telle qu'écrite par /api/inscription. */
+interface DemandeInscription {
+  status?: string;
+  motif?: string;
+  type?: string;
+  displayName?: string;
+  orgName?: string | null;
+  createdAt?: number;
+}
+
 /**
- * Statut lisible d'une éventuelle demande d'inscription du compte connecté,
+ * Demande d'inscription du compte connecté, ou `null`. Lue AVANT le signOut :
  * ou `null` s'il n'y en a pas. Lu AVANT le signOut : la règle Firestore de
  * `signupRequests/{uid}` n'autorise que le propriétaire authentifié.
  */
-async function messageDemandeInscription(uid: string): Promise<string | null> {
+async function lireDemandeInscription(uid: string): Promise<DemandeInscription | null> {
   try {
     const snap = await getDoc(doc(firestore, COLLECTIONS.signupRequests, uid));
     if (!snap.exists()) return null;
-    const demande = snap.data() as { status?: string; motif?: string };
-    if (demande.status === 'pending') {
-      return 'Votre demande d’inscription est en cours d’examen — vous recevrez un e-mail dès l’activation de votre compte.';
-    }
-    if (demande.status === 'rejected') {
-      return `Votre demande d’inscription n’a pas été retenue${demande.motif ? ` (motif : ${demande.motif})` : ''}. Vous pouvez soumettre une nouvelle demande depuis la page d’inscription.`;
-    }
-    return null;
+    return snap.data() as DemandeInscription;
   } catch {
     return null;
   }
+}
+
+/** Message d'échec pour une demande qui n'ouvre PAS l'espace (refus, absence). */
+function messageRefus(demande: DemandeInscription | null): string | null {
+  if (!demande) return null;
+  if (demande.status === 'rejected') {
+    return `Votre demande d’inscription n’a pas été retenue${demande.motif ? ` (motif : ${demande.motif})` : ''}. Vous pouvez soumettre une nouvelle demande depuis la page d’inscription.`;
+  }
+  return null;
+}
+
+/**
+ * Construit l'utilisateur « visiteur » d'une demande en attente, ou `null` si
+ * la demande n'est pas en attente (refusée, absente, type inconnu).
+ */
+function visiteurEnAttente(
+  uid: string,
+  email: string,
+  demande: DemandeInscription | null
+): AdminUser | null {
+  if (!demande || demande.status !== 'pending') return null;
+  const role = ROLE_DEMANDE[String(demande.type ?? '')];
+  if (!role) return null;
+  return {
+    uid,
+    email,
+    displayName: demande.displayName || 'Compte en attente',
+    role,
+    enAttente: true,
+    orgName: demande.orgName ?? null,
+    demandeLe: typeof demande.createdAt === 'number' ? demande.createdAt : null,
+    // Aucun périmètre : le compte n'a ni claim, ni établissement, ni édition.
+    establishmentId: null,
+    editionIds: [],
+    teachingClassIds: [],
+  };
 }
 
 /**
@@ -130,11 +198,14 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
   const userDoc = await getDoc(doc(firestore, COLLECTIONS.users, user.uid));
 
   if (!userDoc.exists()) {
-    // Pas de fiche : peut-être une demande d'inscription en attente —
-    // « Compte non trouvé » serait faux et anxiogène pour le candidat.
-    const attente = await messageDemandeInscription(user.uid);
+    // Pas de fiche : peut-être une demande d'inscription en attente. On ouvre
+    // alors l'espace en LECTURE SEULE plutôt que de rejeter la connexion — le
+    // candidat découvre son futur espace pendant l'examen de sa demande.
+    const demande = await lireDemandeInscription(user.uid);
+    const visiteur = visiteurEnAttente(user.uid, user.email || email, demande);
+    if (visiteur) return visiteur;
     await firebaseSignOut(auth);
-    throw new Error(attente ?? 'Compte non trouvé.');
+    throw new Error(messageRefus(demande) ?? 'Compte non trouvé.');
   }
 
   const userData = userDoc.data();
@@ -143,9 +214,11 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
   if (!isAdminRole(role)) {
     // Même logique : un JOUEUR mobile (base Firebase partagée) qui vient de
     // déposer une demande a une fiche `users` sans rôle admin.
-    const attente = await messageDemandeInscription(user.uid);
+    const demande = await lireDemandeInscription(user.uid);
+    const visiteur = visiteurEnAttente(user.uid, user.email || email, demande);
+    if (visiteur) return visiteur;
     await firebaseSignOut(auth);
-    throw new Error(attente ?? 'Accès refusé. Vous n\'êtes pas administrateur.');
+    throw new Error(messageRefus(demande) ?? 'Accès refusé. Vous n\'êtes pas administrateur.');
   }
 
   return {
@@ -186,12 +259,18 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
 
   try {
     const userDoc = await getDoc(doc(firestore, COLLECTIONS.users, user.uid));
-    if (!userDoc.exists()) return null;
+    // Même repli que `signInAdmin` : sans lui, un compte en attente perdrait sa
+    // session au premier rafraîchissement de page.
+    if (!userDoc.exists()) {
+      return visiteurEnAttente(user.uid, user.email || '', await lireDemandeInscription(user.uid));
+    }
 
     const userData = userDoc.data();
     const role = userData.role as string | undefined;
 
-    if (!isAdminRole(role)) return null;
+    if (!isAdminRole(role)) {
+      return visiteurEnAttente(user.uid, user.email || '', await lireDemandeInscription(user.uid));
+    }
 
     return {
       uid: user.uid,

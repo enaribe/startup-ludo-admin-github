@@ -145,9 +145,10 @@ export async function POST(request: NextRequest) {
   void envoyerEmail({
     to: email,
     subject: 'Demande reçue — Startup Ludo',
-    html: gabaritEmail('Demande bien reçue', type === 'teacher'
+    html: gabaritEmail('Demande bien reçue', `${type === 'teacher'
       ? 'Votre direction va valider votre compte et vous affecter vos classes — vous recevrez un e-mail dès l’activation.'
-      : 'L’équipe CONCREE examine votre demande (48 h ouvrées) — vous recevrez un e-mail dès l’activation.'),
+      : 'L’équipe CONCREE examine votre demande (48 h ouvrées) — vous recevrez un e-mail dès l’activation.'
+    } En attendant, vous pouvez vous connecter pour découvrir votre espace : il reste vide et les actions y sont désactivées tant que le compte n’est pas activé.`),
   });
   return NextResponse.json({ ok: true, status: 'pending' });
 }

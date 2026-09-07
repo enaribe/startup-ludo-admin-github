@@ -32,6 +32,7 @@ import { firestore, COLLECTIONS } from '@/lib/firebase';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
+import BandeauCompteEnAttente from '@/components/auth/BandeauCompteEnAttente';
 
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
@@ -214,6 +215,9 @@ function AnnonceurGuard({ children }: { children: React.ReactNode }) {
       <SidebarAnnonceur />
       <div style={{ flex: 1, minWidth: 0 }}>
         <TopbarAnnonceur />
+        {admin.enAttente && (
+          <BandeauCompteEnAttente orgName={admin.orgName} demandeLe={admin.demandeLe} />
+        )}
         <main style={{ padding: '26px 32px' }}>{children}</main>
       </div>
     </div>

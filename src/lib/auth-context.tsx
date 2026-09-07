@@ -31,6 +31,12 @@ interface AuthContextValue {
    * masquage d'écrans hors Mode Classe).
    */
   isSchoolRole: boolean;
+  /**
+   * COMPTE EN ATTENTE D'ACTIVATION : il parcourt son espace mais ne peut RIEN
+   * faire. Toute action de l'interface doit être désactivée quand c'est vrai
+   * (cf. `<BandeauCompteEnAttente>` et le helper `actionBloquee`).
+   */
+  enAttente: boolean;
   /** Programme géré (pour un admin de programme), sinon null. */
   scopedProgramId: string | null;
   /** Partenaire géré (pour un admin de partenaire), sinon null. */
@@ -59,6 +65,7 @@ const AuthContext = createContext<AuthContextValue>({
   isEstablishmentAdmin: false,
   isTeacher: false,
   isSchoolRole: false,
+  enAttente: false,
   scopedProgramId: null,
   scopedPartnerId: null,
   scopedEditionIds: [],
@@ -101,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isEstablishmentAdmin = admin?.role === 'establishment_admin';
   const isTeacher = admin?.role === 'teacher';
   const isSchoolRole = isEstablishmentAdmin || isTeacher;
+  const enAttente = admin?.enAttente === true;
   const scopedProgramId = isProgramAdmin ? admin?.programId ?? null : null;
   const scopedPartnerId = isPartnerAdmin ? admin?.partnerId ?? null : null;
   const scopedEstablishmentId = isSchoolRole ? admin?.establishmentId ?? null : null;
@@ -118,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ admin, loading, logout, refreshAdmin, isSuperAdmin, isPartnerAdmin, isProgramAdmin, isSponsor, isEstablishmentAdmin, isTeacher, isSchoolRole, scopedProgramId, scopedPartnerId, scopedEditionIds, scopedEstablishmentId, scopedClassIds }}
+      value={{ admin, loading, logout, refreshAdmin, isSuperAdmin, isPartnerAdmin, isProgramAdmin, isSponsor, isEstablishmentAdmin, isTeacher, isSchoolRole, enAttente, scopedProgramId, scopedPartnerId, scopedEditionIds, scopedEstablishmentId, scopedClassIds }}
     >
       {children}
     </AuthContext.Provider>

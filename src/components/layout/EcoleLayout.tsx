@@ -32,6 +32,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import BandeauCompteEnAttente from '@/components/auth/BandeauCompteEnAttente';
 import { getEstablishment } from '@/lib/school-service';
 
 const NAVY = '#0F1C2E';
@@ -49,7 +50,7 @@ interface Entree {
 
 export default function EcoleLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { admin, logout, isEstablishmentAdmin, scopedEstablishmentId, scopedClassIds } = useAuth();
+  const { admin, logout, isEstablishmentAdmin, enAttente, scopedEstablishmentId, scopedClassIds } = useAuth();
 
   // Double rôle : l'admin qui enseigne a des classes dans ses claims.
   const doubleRole = isEstablishmentAdmin && scopedClassIds.length > 0;
@@ -293,6 +294,14 @@ export default function EcoleLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
         </header>
+        {enAttente && (
+          <BandeauCompteEnAttente
+            orgName={admin?.orgName}
+            demandeLe={admin?.demandeLe}
+            // Un enseignant est validé par SA direction ; un établissement, par CONCREE.
+            examinePar={isEstablishmentAdmin ? 'concree' : 'direction'}
+          />
+        )}
         <main style={{ padding: '26px 28px' }}>{children}</main>
       </div>
     </div>

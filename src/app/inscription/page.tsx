@@ -129,7 +129,7 @@ export default function InscriptionPage() {
           {status === 'approved' &&
             'Votre compte est activé. Reconnectez-vous pour charger vos accès — puis laissez-vous guider.'}
           {status === 'pending' &&
-            'Votre demande est en cours d’examen. Vous recevrez un e-mail dès l’activation — vous pourrez alors vous connecter normalement.'}
+            'Votre demande est en cours d’examen. Vous pouvez dès maintenant vous connecter pour découvrir votre espace : il restera vide et les actions désactivées jusqu’à l’activation, dont vous serez averti par e-mail.'}
           {status === 'rejected' && (
             <>Motif : {statutExistant?.motif || '—'}. Vous pouvez soumettre une nouvelle demande.</>
           )}
