@@ -324,6 +324,39 @@ export interface Advertiser {
   updatedAt?: number;
 }
 
+/**
+ * Intention de paiement — `paymentIntents/{id}`, écriture SERVEUR seule.
+ *
+ * Créée avant de rediriger vers le prestataire, elle est le seul lien entre un
+ * paiement et un compte : au retour du webhook, c'est elle qui dit qui créditer
+ * et de combien on était convenu. On ne déduit jamais le destinataire d'un
+ * montant reçu.
+ *
+ * `status` porte aussi l'idempotence : le passage `pending` → `settled` se fait
+ * DANS la transaction qui crédite, si bien qu'un webhook rejoué — PayDunya les
+ * rejoue — ne peut pas créditer deux fois.
+ */
+export interface PaymentIntent {
+  id: string;
+  ownerUid: string;
+  /** `topup` alimente le solde ; `invoice` règle une facture existante. */
+  kind: 'topup' | 'invoice';
+  /** Montant demandé à la création. Le montant CRÉDITÉ est celui que confirme le prestataire. */
+  montantFcfa: number;
+  /** Facture visée, pour `kind: 'invoice'`. */
+  invoiceId?: string;
+  status: 'pending' | 'settled' | 'failed' | 'expired';
+  provider: 'paydunya';
+  /** Jeton du prestataire, utilisé pour la confirmation serveur à serveur. */
+  providerToken: string;
+  /** Montant réellement encaissé, tel que confirmé. Absent tant que non réglé. */
+  montantConfirmeFcfa?: number;
+  createdAt: number;
+  settledAt?: number;
+  /** Motif d'échec, à usage de diagnostic. */
+  echec?: string;
+}
+
 /** Alimentation du compte — `advertisers/{uid}/topUps/{id}`, écriture serveur seule. */
 export interface TopUp {
   montantFcfa: number;

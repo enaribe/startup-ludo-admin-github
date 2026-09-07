@@ -26,6 +26,7 @@ import {
   telechargerRapport,
 } from '@/lib/annonceur-rapport-pdf';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import ModaleRecharge from '@/components/annonceur/ModaleRecharge';
 import type { Advertiser, Invoice, TopUp } from '@/types';
 import { autonomieEnJours } from '@/lib/sponsor-pricing';
 
@@ -54,6 +55,31 @@ export default function FacturationPage() {
   const [factures, setFactures] = useState<Invoice[]>([]);
   const [topUps, setTopUps] = useState<TopUp[]>([]);
   const [chargement, setChargement] = useState(true);
+  const [rechargeOuverte, setRechargeOuverte] = useState(false);
+  /**
+   * Bac à sable PayDunya. Lu depuis une variable PUBLIQUE : c'est un simple
+   * bandeau d'information, jamais une décision de sécurité — le mode réel est
+   * tranché côté serveur par `PAYDUNYA_MODE`.
+   */
+  const modeTest = process.env.NEXT_PUBLIC_PAYDUNYA_MODE !== 'live';
+
+  /**
+   * Retour depuis PayDunya. Le message reste PRUDENT : à cet instant le
+   * webhook n'a peut-être pas encore été traité, et le solde affiché peut donc
+   * être l'ancien. Annoncer « compte crédité » alors que l'écran montre le
+   * solde d'avant ferait croire à une perte d'argent.
+   */
+  useEffect(() => {
+    const etat = new URLSearchParams(window.location.search).get('paiement');
+    if (!etat) return;
+    if (etat === 'retour') {
+      toast.success('Paiement enregistré. Votre solde est mis à jour dès sa confirmation (quelques instants).');
+    } else if (etat === 'annule') {
+      toast('Paiement annulé — aucun montant n’a été débité.');
+    }
+    // L'URL est nettoyée pour qu'un rafraîchissement ne rejoue pas le message.
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   useEffect(() => {
     if (authLoading || !admin) return;
@@ -299,13 +325,14 @@ export default function FacturationPage() {
           >
             <Download size={14} /> Export comptable
           </button>
-          <a
-            href={`mailto:${EMAIL_ANNONCEURS}?subject=${encodeURIComponent('Alimentation de mon compte annonceur')}&body=${encodeURIComponent('Bonjour,\n\nJe souhaite alimenter mon compte annonceur.\n\nMontant :\nMoyen (Orange Money / Wave / virement CBAO) :\nRéférence de la transaction :\n\nMerci !')}`}
+          <button
+            type="button"
+            onClick={() => setRechargeOuverte(true)}
             className="btn-primary flex items-center gap-2"
-            style={{ textDecoration: 'none', fontSize: 13 }}
+            style={{ fontSize: 13 }}
           >
-            <CreditCard size={14} /> Alimenter le compte
-          </a>
+            <CreditCard size={14} /> Recharger le compte
+          </button>
         </div>
       </div>
 
@@ -447,8 +474,9 @@ export default function FacturationPage() {
               <div className="flex justify-between"><span style={{ color: 'rgba(255,255,255,0.6)' }}>Prochaine clôture</span><strong>{prochaineCloture}</strong></div>
             </div>
             <p style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', marginTop: 10 }}>
-              Pour alimenter : Orange Money, Wave ou virement CBAO, puis référence à
-              annonceurs@concree.com — le solde est crédité à réception.
+              Rechargez en ligne par Orange Money, Wave, Free Money ou carte —
+              le solde est crédité dès confirmation du paiement. Virement
+              bancaire possible : écrivez à {EMAIL_ANNONCEURS}.
             </p>
           </div>
 
@@ -484,6 +512,12 @@ export default function FacturationPage() {
           </Carte>
         </div>
       </div>
+
+      <ModaleRecharge
+        ouvert={rechargeOuverte}
+        onFermer={() => setRechargeOuverte(false)}
+        modeTest={modeTest}
+      />
     </div>
   );
 }

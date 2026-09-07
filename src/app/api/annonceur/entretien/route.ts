@@ -41,7 +41,9 @@ import { getAdminFirestore } from '@/lib/firebase-admin';
 import { verifierAppelant } from '@/lib/api-auth';
 import { COLLECTIONS } from '@/lib/firebase';
 import { publierFeed } from '@/lib/sponsor-feed';
-import type { Advertiser, Campaign } from '@/types';
+import type { Advertiser, Campaign, PaymentIntent } from '@/types';
+import { confirmerFacture, paydunyaConfigure } from '@/lib/paydunya';
+import { crediterIntention } from '@/lib/paiement-credit';
 import { envoyerEmail, gabaritEmail } from '@/lib/email-service';
 import { autonomieEnJours, SEUIL_ALERTE_SOLDE_JOURS } from '@/lib/sponsor-pricing';
 
@@ -113,6 +115,7 @@ export async function POST(request: NextRequest) {
     enRevision: [] as string[],
     liensMorts: [] as string[],
     suspendues: [] as string[],
+    paiementsRattrapes: [] as string[],
     alertesSolde: [] as string[],
   };
   let changement = false;
@@ -215,6 +218,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (changement) await publierFeed(db);
+  /** Une suspension pour solde épuisé impose de republier le feed à son tour. */
+  let changementSolde = false;
 
   // ══════════════════════════════════════════════════════════════════════════
   // ALERTE DE SOLDE — prévue par la spec (§ lot 6, point 4), jamais écrite.
@@ -255,6 +260,36 @@ export async function POST(request: NextRequest) {
     // régime le plus permissif par accident.
     if ((compte.billingMode ?? 'prepaid') !== 'prepaid') continue;
 
+    // ── Solde épuisé : suspension de TOUTES les campagnes du compte ──
+    // Le solde est global au compte alors que la diffusion est par campagne :
+    // rien ne permet de désigner « la » campagne fautive, donc on les arrête
+    // toutes. En laisser diffuser une creuserait une dette sur un compte
+    // prépayé, ce que ce modèle existe précisément pour empêcher.
+    const soldeEpuise = (compte.balanceFcfa ?? 0) <= 0;
+    if (soldeEpuise) {
+      for (const docSnap of snap.docs) {
+        const c = { ...(docSnap.data() as Campaign), id: docSnap.id };
+        // `status` est relu depuis le snapshot initial : une campagne déjà
+        // arrêtée plus haut dans cette passe n'est pas re-suspendue.
+        if (c.ownerUid !== ownerUid || c.status !== 'active') continue;
+        await docSnap.ref.update({
+          status: 'suspended',
+          suspension: { motif: 'solde-epuise', suspendedAt: maintenant },
+          updatedAt: maintenant,
+        });
+        // Le format édition ne passe pas par le feed : son habillage doit être
+        // éteint séparément, comme pour le plafond.
+        if (c.format === 'edition' && c.editionSkin?.editionId) {
+          await db
+            .collection(COLLECTIONS.editions)
+            .doc(c.editionSkin.editionId)
+            .set({ sponsor: { paused: true } }, { merge: true });
+        }
+        bilan.suspendues.push(c.id);
+        changementSolde = true;
+      }
+    }
+
     // La consommation cumulée sert de proxy de rythme sur la durée de vie des
     // campagnes ; faute de date de début fiable pour toutes, on retient la
     // fenêtre de 30 jours, la même que le tableau de bord.
@@ -263,7 +298,9 @@ export async function POST(request: NextRequest) {
       consommationFcfa: consomme,
       fenetreJours: 30,
     });
-    if (jours === null || jours > SEUIL_ALERTE_SOLDE_JOURS) continue;
+    // Un compte suspendu est TOUJOURS averti, même si le rythme est inconnu
+    // (`jours === null`) : la suspension est un fait, pas une projection.
+    if (!soldeEpuise && (jours === null || jours > SEUIL_ALERTE_SOLDE_JOURS)) continue;
 
     // Anti-répétition : une alerte tous les 7 jours au plus. L'entretien peut
     // être relancé plusieurs fois par jour ; sans ce garde-fou, l'annonceur
@@ -277,19 +314,85 @@ export async function POST(request: NextRequest) {
     const email = compte.billingInfo?.email || emailParCompte.get(ownerUid);
     if (!email) continue;
 
+    // Deux messages distincts : annoncer « votre solde arrive à son terme » à
+    // un compte DÉJÀ suspendu serait faux, et lui cacherait que sa diffusion
+    // est arrêtée — l'information la plus utile qu'on ait à lui donner.
     void envoyerEmail({
       to: email,
-      subject: 'Startup Ludo — votre solde annonceur arrive à son terme',
-      html: gabaritEmail(
-        'Solde bientôt épuisé',
-        `Au rythme de diffusion actuel, votre solde couvre encore environ <strong>${jours} jour${jours > 1 ? 's' : ''}</strong>. ` +
-          `Passé ce délai, vos campagnes seront suspendues automatiquement jusqu'à la prochaine alimentation. ` +
-          `Pour recharger votre compte, contactez-nous à annonceurs@concree.com.`
-      ),
+      subject: soldeEpuise
+        ? 'Startup Ludo — vos campagnes sont suspendues (solde épuisé)'
+        : 'Startup Ludo — votre solde annonceur arrive à son terme',
+      html: soldeEpuise
+        ? gabaritEmail(
+            'Diffusion suspendue',
+            'Votre solde est épuisé : vos campagnes ont été suspendues et ne sont plus diffusées. ' +
+              'Elles repartiront dès que votre compte sera réalimenté. ' +
+              'Pour recharger, rendez-vous sur votre espace Facturation ou écrivez-nous à annonceurs@concree.com.'
+          )
+        : gabaritEmail(
+            'Solde bientôt épuisé',
+              `Au rythme de diffusion actuel, votre solde couvre encore environ <strong>${jours ?? 0} jour${(jours ?? 0) > 1 ? 's' : ''}</strong>. ` +
+              `Passé ce délai, vos campagnes seront suspendues automatiquement jusqu'à la prochaine alimentation. ` +
+              `Pour recharger votre compte, rendez-vous sur votre espace Facturation.`
+          ),
     });
     await compteRef.set({ soldeAlerteLe: maintenant }, { merge: true });
     bilan.alertesSolde.push(ownerUid);
   }
 
-  return NextResponse.json({ ok: true, ...bilan, feedRepublie: changement });
+  // ══════════════════════════════════════════════════════════════════════════
+  // RÉCONCILIATION DES PAIEMENTS (lot B, § B6)
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // Un IPN peut se perdre : coupure réseau, déploiement en cours, incident chez
+  // le prestataire. Sans rattrapage, un annonceur qui a PAYÉ voit son solde
+  // inchangé et le seul recours est un traitement manuel — l'exact contraire
+  // de ce qu'on attend d'un paiement en ligne.
+  //
+  // On relit donc chez PayDunya les intentions restées `pending` depuis plus de
+  // 30 minutes (en deçà, l'annonceur est probablement encore sur la page de
+  // paiement) et on crédite celles qui se révèlent réglées.
+  //
+  // Le crédit passe par la MÊME transaction idempotente que le webhook : si
+  // l'IPN finit par arriver après coup, il trouvera l'intention `settled` et
+  // ne créditera pas une seconde fois.
+  if (paydunyaConfigure()) {
+    const limite = maintenant - 30 * 60 * 1000;
+    const enAttente = await db
+      .collection(COLLECTIONS.paymentIntents)
+      .where('status', '==', 'pending')
+      .where('createdAt', '<', limite)
+      .limit(50)
+      .get();
+
+    for (const docSnap of enAttente.docs) {
+      const intent = { ...(docSnap.data() as PaymentIntent), id: docSnap.id };
+      if (!intent.providerToken) continue; // création interrompue avant PayDunya
+      try {
+        const confirme = await confirmerFacture(intent.providerToken);
+        if (confirme.statut === 'completed' && confirme.montantFcfa > 0) {
+          const credite = await crediterIntention(db, docSnap.ref, intent, confirme.montantFcfa);
+          if (credite) bilan.paiementsRattrapes.push(intent.id);
+        } else if (confirme.statut === 'cancelled' || confirme.statut === 'failed') {
+          await docSnap.ref.update({ status: 'failed', echec: `PayDunya : ${confirme.statut}` });
+        }
+        // `pending` chez PayDunya : on laisse tel quel, l'annonceur paie peut-être encore.
+      } catch (error) {
+        // Une intention non confirmable reste `pending` : elle sera retentée au
+        // passage suivant plutôt que fermée à tort.
+        console.error(`[entretien] Réconciliation de ${intent.id} impossible :`, error);
+      }
+    }
+  }
+
+  // Les suspensions pour solde ont lieu après la première publication : il
+  // faut republier, sinon les cartes resteraient dans le feed jusqu'au passage
+  // suivant — un compte à zéro continuerait de diffuser.
+  if (changementSolde) await publierFeed(db);
+
+  return NextResponse.json({
+    ok: true,
+    ...bilan,
+    feedRepublie: changement || changementSolde,
+  });
 }

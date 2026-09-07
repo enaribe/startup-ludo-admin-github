@@ -79,6 +79,8 @@ export const COLLECTIONS = {
   advertisers: 'advertisers',
   signupRequests: 'signupRequests',
   invoices: 'invoices',
+  // Intentions de paiement (PayDunya) — écriture serveur seule, cf. lib/paydunya.ts.
+  paymentIntents: 'paymentIntents',
   // ===== Mode Classe =====
   // Établissements clients, leurs classes, et les élèves de chaque classe.
   // Les élèves vivent en SOUS-COLLECTION de la classe : leur identité relève de
