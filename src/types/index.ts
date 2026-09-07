@@ -105,7 +105,24 @@ export interface StartupIdea {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type CampaignFormat = 'card' | 'edition';
-export type CampaignStatus = 'draft' | 'in_review' | 'active' | 'paused' | 'rejected' | 'ended';
+/**
+ * Cycle de vie d'une campagne.
+ *
+ * `paused` et `suspended` sont volontairement DISTINCTS : la pause est une
+ * décision de l'annonceur (ou de la modération), qu'il peut défaire ; la
+ * suspension est un arrêt automatique pour cause d'argent — plafond budgétaire
+ * atteint, ou solde épuisé. Les confondre priverait l'annonceur de la seule
+ * information qui lui permet d'agir : il verrait « en pause » sans comprendre
+ * qu'il doit relever son plafond ou recharger son compte.
+ */
+export type CampaignStatus =
+  | 'draft'
+  | 'in_review'
+  | 'active'
+  | 'paused'
+  | 'suspended'
+  | 'rejected'
+  | 'ended';
 /** Bandeau de la carte, déterminé par l'objectif choisi à l'étape 1. */
 export type CampaignCardKind = 'financement' | 'opportunite' | 'evenement';
 /** Objectif métier de l'étape 1 (4 cartes cliquables de la maquette). */
@@ -193,6 +210,18 @@ export interface Campaign {
   period?: { startAt: number | null; endAt: number | null };
   /** Mois réservés (AAAA-MM) — éditions uniquement, posés par la transaction serveur. */
   reservationMonths?: string[];
+  /**
+   * Consommation cumulée depuis le début de la campagne, en FCFA, recalculée
+   * par la route d'entretien. Sert à comparer au plafond sans re-sommer tout
+   * l'historique des buckets quotidiens à chaque passage.
+   */
+  spentFcfa?: number;
+  spentUpdatedAt?: number;
+  /**
+   * Pourquoi la diffusion a été suspendue automatiquement. Renseigné avec
+   * `status: 'suspended'`, affiché à l'annonceur pour qu'il sache quoi faire.
+   */
+  suspension?: { motif: 'plafond-atteint' | 'solde-epuise'; suspendedAt: number };
   /** Consentement aux règles de contenu (étape 5). */
   consentAt?: number;
   submittedAt?: number;
@@ -210,6 +239,98 @@ export interface EditionReservation {
   ownerUid: string;
   /** Nom de la structure — affiché sur le calendrier (« Réservée par X jusqu'au… »). */
   structure: string;
+  createdAt: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FACTURATION ANNONCEUR — LA SOURCE UNIQUE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Ces formes étaient redéclarées à trois endroits (route de clôture, écran de
+// facturation, générateur PDF) et avaient déjà divergé : le PDF ignorait
+// `campaignId`, l'écran typait `status` en `string`. Un champ ajouté d'un côté
+// disparaissait en silence des deux autres, sans que rien ne casse à la
+// compilation. Une pièce comptable ne peut pas dépendre de trois définitions
+// qui se ressemblent.
+
+/**
+ * État d'une facture.
+ *  - `due`  : émise, non réglée ;
+ *  - `paid` : réglée (virement constaté, ou paiement en ligne confirmé) ;
+ *  - `void` : annulée — jamais supprimée, une facture émise laisse une trace.
+ */
+export type InvoiceStatus = 'due' | 'paid' | 'void';
+
+/** Une ligne de facture = une campagne sur la période. */
+export interface InvoiceLine {
+  campaignId: string;
+  titre: string;
+  vues: number;
+  clics: number;
+  /** Grille FIGÉE de la campagne, recopiée ici : une facture doit rester
+   *  reproductible même si le tarif public change ensuite. */
+  perView: number;
+  perClick: number;
+  montantFcfa: number;
+}
+
+/** Facture mensuelle — `invoices/{ownerUid}_{AAAA-MM}`, écrite par le seul serveur. */
+export interface Invoice {
+  id: string;
+  ownerUid: string;
+  /** « FAC-2026-08 ». */
+  reference: string;
+  /** Période facturée, AAAA-MM. */
+  period: string;
+  lines: InvoiceLine[];
+  totalFcfa: number;
+  status: InvoiceStatus;
+  createdAt: number;
+  paidAt?: number;
+}
+
+/**
+ * Mode de facturation d'un compte annonceur.
+ *  - `prepaid`  : défaut. Le compte est alimenté d'avance, la diffusion
+ *                 consomme le solde et s'arrête quand il est épuisé.
+ *  - `postpaid` : facturation différée, réservée aux comptes autorisés par
+ *                 CONCREE (institutionnels, grands comptes qui règlent par
+ *                 virement). Pas de suspension sur solde.
+ *
+ * Absent = `prepaid` : un compte sans mode déclaré ne doit jamais hériter du
+ * régime le plus permissif par accident.
+ */
+export type BillingMode = 'prepaid' | 'postpaid';
+
+/** Compte annonceur — `advertisers/{uid}`. */
+export interface Advertiser {
+  /**
+   * Solde en FCFA. Écrit par le SEUL Admin SDK (les règles Firestore bornent
+   * l'annonceur à `billingInfo`). Absent se lit comme zéro, jamais comme un
+   * crédit — c'est pourquoi le champ est optionnel plutôt que défaut à 0.
+   */
+  balanceFcfa?: number;
+  /** Raison sociale, NINEA, adresse, contact compta — seul champ écrivable par l'annonceur. */
+  billingInfo?: Record<string, string>;
+  /** Posé par CONCREE uniquement. Absent = `prepaid`. */
+  billingMode?: BillingMode;
+  /**
+   * Dernière alerte de solde bas envoyée. Sert d'anti-répétition : l'entretien
+   * peut être relancé plusieurs fois par jour, l'annonceur ne doit pas recevoir
+   * un e-mail par clic.
+   */
+  soldeAlerteLe?: number;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+/** Alimentation du compte — `advertisers/{uid}/topUps/{id}`, écriture serveur seule. */
+export interface TopUp {
+  montantFcfa: number;
+  /** « orange-money », « wave », « virement »… ou « paydunya » une fois le PSP branché. */
+  canal: string;
+  /** Référence de la transaction, telle que constatée hors plateforme. */
+  reference: string;
   createdAt: number;
 }
 

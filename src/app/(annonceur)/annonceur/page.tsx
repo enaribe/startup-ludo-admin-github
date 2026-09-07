@@ -241,6 +241,10 @@ const STATUTS_CAMPAGNE: Record<CampaignStatus, { libelle: string; fond: string; 
   in_review: { libelle: 'En modération', fond: 'rgba(245,166,35,0.15)', texte: '#B87A0C' },
   active: { libelle: 'Active', fond: 'rgba(46,160,67,0.12)', texte: '#2EA043' },
   paused: { libelle: 'En pause', fond: 'rgba(15,28,46,0.08)', texte: '#5A6A7E' },
+  // Rouge et non gris : contrairement à une pause, une suspension appelle une
+  // action de l'annonceur (relever le plafond, recharger). La rendre neutre
+  // reviendrait à lui cacher que sa diffusion s'est arrêtée toute seule.
+  suspended: { libelle: 'Suspendue', fond: 'rgba(220,60,60,0.10)', texte: '#C0392B' },
   rejected: { libelle: 'Refusée', fond: 'rgba(220,60,60,0.10)', texte: '#C0392B' },
   ended: { libelle: 'Terminée', fond: 'rgba(15,28,46,0.06)', texte: '#5A6A7E' },
 };
@@ -273,6 +277,13 @@ function LigneCampagne({ c }: { c: Campaign }) {
         {c.status === 'rejected' && c.review?.motifRefus && (
           <div style={{ fontSize: 11.5, color: '#C0392B', marginTop: 2 }}>
             Motif : {c.review.motifRefus}
+          </div>
+        )}
+        {c.status === 'suspended' && c.suspension && (
+          <div style={{ fontSize: 11.5, color: '#C0392B', marginTop: 2 }}>
+            {c.suspension.motif === 'plafond-atteint'
+              ? `Plafond de ${c.budgetCapFcfa.toLocaleString('fr-FR')} FCFA atteint — relevez-le pour reprendre la diffusion.`
+              : 'Solde insuffisant — rechargez votre compte pour reprendre la diffusion.'}
           </div>
         )}
       </div>

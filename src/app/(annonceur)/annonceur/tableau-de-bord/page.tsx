@@ -39,7 +39,7 @@ import {
   jourLocal,
   type SponsorDailyMetrics,
 } from '@/lib/sponsor-metrics-service';
-import { PRIX_PAR_VUE_FCFA } from '@/lib/sponsor-pricing';
+import { PRIX_PAR_VUE_FCFA, autonomieEnJours } from '@/lib/sponsor-pricing';
 import {
   genererRapportConsolidePdf,
   telechargerRapport,
@@ -84,6 +84,7 @@ const LIBELLES_STATUT: Record<string, string> = {
   active: 'active',
   in_review: 'en modération',
   paused: 'en pause',
+  suspended: 'suspendue',
   ended: 'terminée',
 };
 
@@ -115,7 +116,9 @@ export default function TableauDeBordAnnonceurPage() {
         ]);
 
         // Séries 60 jours des campagnes diffusées (les brouillons et refus n'ont rien à mesurer).
-        const diffusees = campagnes.filter((c) => ['active', 'paused', 'ended'].includes(c.status));
+        const diffusees = campagnes.filter((c) =>
+          ['active', 'paused', 'ended', 'suspended'].includes(c.status)
+        );
         const seriesCampagnes = new Map<string, SponsorDailyMetrics[]>();
         await Promise.all(
           diffusees.map(async (c) => {
@@ -279,8 +282,11 @@ export default function TableauDeBordAnnonceurPage() {
           actives: activesLegacy + activesCampagnes,
           detailStatuts: detail.join(' · '),
           solde,
-          autonomieJours:
-            solde != null && depense30 > 0 ? Math.max(0, Math.round(solde / (depense30 / 30))) : null,
+          autonomieJours: autonomieEnJours({
+            soldeFcfa: solde,
+            consommationFcfa: depense30,
+            fenetreJours: 30,
+          }),
           serie14,
           lignes,
         });

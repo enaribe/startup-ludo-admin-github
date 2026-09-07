@@ -12,6 +12,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { MiseEnVisibilite } from './annonceur-service';
 import type { PointJour } from '@/components/annonceur/CourbeQuotidienne';
+import type { InvoiceLine, InvoiceStatus } from '@/types';
 
 const NAVY = rgb(15 / 255, 28 / 255, 46 / 255);
 const ORANGE = rgb(245 / 255, 166 / 255, 35 / 255);
@@ -163,14 +164,13 @@ export async function genererRapportImpactPdf(donnees: DonneesRapport): Promise<
 }
 
 /** Une ligne de facture (miroir de la route /api/annonceur/compte). */
-export interface LigneFacturePdf {
-  titre: string;
-  vues: number;
-  clics: number;
-  perView: number;
-  perClick: number;
-  montantFcfa: number;
-}
+/**
+ * Le PDF affiche une ligne de facture. Il n'en redéfinit plus la forme : elle
+ * vient de `InvoiceLine`, la même que celle écrite par la clôture. La version
+ * locale omettait `campaignId` — un champ ajouté à la facture serveur ne
+ * serait jamais arrivé jusqu'ici, et rien n'aurait cassé pour le signaler.
+ */
+export type LigneFacturePdf = InvoiceLine;
 
 /** Génère la facture mensuelle — la pièce comptable téléchargée par l'annonceur. */
 export async function genererFacturePdf(donnees: {
@@ -180,7 +180,7 @@ export async function genererFacturePdf(donnees: {
   ninea?: string;
   lines: LigneFacturePdf[];
   totalFcfa: number;
-  status: string;
+  status: InvoiceStatus;
 }): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const normal = await pdf.embedFont(StandardFonts.Helvetica);
@@ -198,7 +198,15 @@ export async function genererFacturePdf(donnees: {
   texte(`Facture ${donnees.reference}`, MARGE, 16, gras, rgb(1, 1, 1));
 
   y = A4.hauteur - 86 - 30;
-  texte(`Periode : ${donnees.period}  -  Statut : ${donnees.status === 'paid' ? 'Payee' : 'En cours'}`, MARGE, 10, normal, GRIS);
+  // Trois etats, pas deux : une facture ANNULEE presentee comme « En cours »
+  // ferait reclamer un paiement qui n'est plus du. Le typage strict de
+  // `InvoiceStatus` est ce qui a rendu le cas visible.
+  const STATUT_LISIBLE: Record<InvoiceStatus, string> = {
+    paid: 'Payee',
+    due: 'En cours',
+    void: 'Annulee',
+  };
+  texte(`Periode : ${donnees.period}  -  Statut : ${STATUT_LISIBLE[donnees.status]}`, MARGE, 10, normal, GRIS);
   y -= 14;
   if (donnees.raisonSociale) {
     texte(`Client : ${donnees.raisonSociale}${donnees.ninea ? ` - NINEA ${donnees.ninea}` : ''}`, MARGE, 10, normal, GRIS);

@@ -12,6 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebase-admin';
 import { verifierAppelant } from '@/lib/api-auth';
 import { COLLECTIONS } from '@/lib/firebase';
@@ -22,11 +23,16 @@ type Decision = 'activate' | 'reject' | 'pause' | 'resume' | 'end';
 
 /** Transitions autorisées — tout le reste est une erreur d'état, pas de droit. */
 const TRANSITIONS: Record<Decision, { depuis: CampaignStatus[]; vers: CampaignStatus }> = {
-  activate: { depuis: ['in_review', 'paused'], vers: 'active' },
+  activate: { depuis: ['in_review', 'paused', 'suspended'], vers: 'active' },
   reject: { depuis: ['in_review'], vers: 'rejected' },
   pause: { depuis: ['active'], vers: 'paused' },
-  resume: { depuis: ['paused'], vers: 'active' },
-  end: { depuis: ['active', 'paused'], vers: 'ended' },
+  // `suspended` est reprenable : sans cela, une campagne arrêtée pour plafond
+  // atteint le resterait DÉFINITIVEMENT, même après que l'annonceur a relevé
+  // son plafond — la suspension automatique deviendrait une sanction.
+  // La reprise reste une décision humaine : rien ne réactive tout seul, et
+  // l'entretien resuspendra au prochain passage si le plafond n'a pas bougé.
+  resume: { depuis: ['paused', 'suspended'], vers: 'active' },
+  end: { depuis: ['active', 'paused', 'suspended'], vers: 'ended' },
 };
 
 export async function POST(request: NextRequest) {
@@ -84,6 +90,11 @@ export async function POST(request: NextRequest) {
       reviewedAt: maintenant,
       ...(decision === 'reject' ? { motifRefus: motif } : {}),
     },
+    // Une campagne qui redevient active n'est plus suspendue : on efface le
+    // motif plutôt que de le laisser traîner. Sinon l'écran annonceur
+    // continuerait d'afficher « plafond atteint » sous une campagne qui
+    // diffuse — le champ ne serait plus qu'un vestige trompeur.
+    ...(transition.vers === 'active' ? { suspension: FieldValue.delete() } : {}),
     updatedAt: maintenant,
   });
 

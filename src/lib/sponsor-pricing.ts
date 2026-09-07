@@ -238,3 +238,45 @@ export function calculerEtatDiffusion(params: {
   if (params.paused) return 'pause';
   return 'diffusion';
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTONOMIE DU SOLDE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Nombre de jours de diffusion que le solde couvre encore, au rythme observé.
+ *
+ * POURQUOI ICI : le calcul vivait en double, et les deux copies ne donnaient
+ * pas le même chiffre pour le même compte — le tableau de bord arrondissait
+ * (`Math.round`) sur une fenêtre de 30 jours, l'écran de facturation tronquait
+ * (`Math.floor`) sur le mois en cours. Un annonceur pouvait lire « 12 jours »
+ * d'un côté et « 9 jours » de l'autre. L'alerte de solde ajoutant une
+ * troisième copie, la seule issue tenable était d'en faire une fonction pure.
+ *
+ * `null` quand la réponse est inconnue — solde absent, ou aucune consommation
+ * mesurée. Zéro se lirait « plus d'autonomie », ce qui est faux : c'est
+ * « rien à mesurer ». La distinction compte, puisque l'alerte se déclenche sur
+ * un seuil bas.
+ *
+ * L'arrondi retenu est `Math.floor` : annoncer 9 jours quand il en reste 9,7
+ * est prudent ; annoncer 10 ne l'est pas.
+ */
+export function autonomieEnJours(params: {
+  soldeFcfa: number | null | undefined;
+  /** Consommation constatée sur la fenêtre, en FCFA. */
+  consommationFcfa: number;
+  /** Longueur de la fenêtre, en jours (jours écoulés du mois, ou 30). */
+  fenetreJours: number;
+}): number | null {
+  const { soldeFcfa, consommationFcfa, fenetreJours } = params;
+  if (typeof soldeFcfa !== 'number' || !Number.isFinite(soldeFcfa)) return null;
+  if (!(fenetreJours > 0) || !(consommationFcfa > 0)) return null;
+  const rythmeJournalier = consommationFcfa / fenetreJours;
+  return Math.max(0, Math.floor(soldeFcfa / rythmeJournalier));
+}
+
+/**
+ * Seuil d'alerte, en jours d'autonomie restante. En dessous, l'annonceur est
+ * prévenu par e-mail — sept jours laissent le temps d'un virement.
+ */
+export const SEUIL_ALERTE_SOLDE_JOURS = 7;

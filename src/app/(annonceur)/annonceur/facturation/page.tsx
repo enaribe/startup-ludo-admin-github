@@ -24,23 +24,17 @@ import { fcfa } from '@/lib/annonceur-service';
 import {
   genererFacturePdf,
   telechargerRapport,
-  type LigneFacturePdf,
 } from '@/lib/annonceur-rapport-pdf';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import type { Advertiser, Invoice, TopUp } from '@/types';
+import { autonomieEnJours } from '@/lib/sponsor-pricing';
 
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
 /** Contact d'alimentation du compte — le crédit est constaté par CONCREE. */
 const EMAIL_ANNONCEURS = 'annonceurs@concree.com';
 
-interface Facture {
-  id: string;
-  reference: string;
-  period: string;
-  lines: LigneFacturePdf[];
-  totalFcfa: number;
-  status: string;
-}
+
 
 interface LigneMois {
   titre: string;
@@ -57,8 +51,8 @@ export default function FacturationPage() {
   const [campagnesActives, setCampagnesActives] = useState<Array<{ budgetCapFcfa?: number }>>([]);
   const [solde, setSolde] = useState<number | null>(null);
   const [billing, setBilling] = useState<Record<string, string>>({});
-  const [factures, setFactures] = useState<Facture[]>([]);
-  const [topUps, setTopUps] = useState<Array<{ montantFcfa: number; canal: string; reference: string; createdAt: number }>>([]);
+  const [factures, setFactures] = useState<Invoice[]>([]);
+  const [topUps, setTopUps] = useState<TopUp[]>([]);
   const [chargement, setChargement] = useState(true);
 
   useEffect(() => {
@@ -83,7 +77,13 @@ export default function FacturationPage() {
 
         // Consommation du mois en cours, campagne par campagne.
         const lignes: LigneMois[] = [];
-        const diffusees = campagnes.filter((c) => ['active', 'paused', 'ended'].includes(c.status));
+        // `suspended` incluse : une campagne arrêtée pour plafond ou solde a
+        // consommé jusqu'à son arrêt, et cette consommation est facturée. La
+        // masquer ici ferait apparaître sur la facture une ligne absente de
+        // l'écran qui l'annonce.
+        const diffusees = campagnes.filter((c) =>
+          ['active', 'paused', 'ended', 'suspended'].includes(c.status)
+        );
         // Seules les campagnes ENCORE en diffusion portent un engagement futur :
         // une campagne terminée a déjà tout consommé, son plafond ne dit plus rien.
         setCampagnesActives(campagnes.filter((c) => c.status === 'active'));
@@ -98,10 +98,14 @@ export default function FacturationPage() {
               clics += j.totals.clicks;
             }
           }
-          if (vues === 0 && clics === 0 && c.status !== 'paused') continue;
+          // Une campagne à zéro consommation est masquée, SAUF si elle est en
+          // pause ou suspendue : dans ces deux cas l'annonceur doit voir la
+          // ligne pour comprendre pourquoi elle ne consomme rien.
+          const arretee = c.status === 'paused' || c.status === 'suspended';
+          if (vues === 0 && clics === 0 && !arretee) continue;
           lignes.push({
             titre: c.card?.rectoText?.slice(0, 70) || `Édition ${c.editionSkin?.editionId ?? ''}`,
-            grille: `${c.pricing.perView} F/vue · ${c.pricing.perClick} F/clic${c.status === 'paused' ? ' · en pause' : ''}`,
+            grille: `${c.pricing.perView} F/vue · ${c.pricing.perClick} F/clic${c.status === 'paused' ? ' · en pause' : c.status === 'suspended' ? ' · suspendue' : ''}`,
             vues,
             clics,
             montant: vues * c.pricing.perView + clics * c.pricing.perClick,
@@ -110,16 +114,15 @@ export default function FacturationPage() {
 
         if (annule) return;
         setLignesMois(lignes);
-        setSolde((compteSnap.data()?.balanceFcfa as number) ?? 0);
-        setBilling((compteSnap.data()?.billingInfo as Record<string, string>) ?? {});
+        const compte = compteSnap.data() as Advertiser | undefined;
+        setSolde(compte?.balanceFcfa ?? 0);
+        setBilling(compte?.billingInfo ?? {});
         setFactures(
           facturesSnap.docs
-            .map((d) => ({ ...(d.data() as Omit<Facture, 'id'>), id: d.id }))
+            .map((d) => ({ ...(d.data() as Omit<Invoice, 'id'>), id: d.id }))
             .sort((a, b) => b.period.localeCompare(a.period))
         );
-        setTopUps(
-          (topUpsSnap?.docs ?? []).map((d) => d.data() as (typeof topUps)[number])
-        );
+        setTopUps((topUpsSnap?.docs ?? []).map((d) => d.data() as TopUp));
       } catch (error) {
         console.error('Chargement facturation :', error);
       } finally {
@@ -135,8 +138,11 @@ export default function FacturationPage() {
   const totalMois = lignesMois.reduce((s, l) => s + l.montant, 0);
   const joursEcoules = new Date().getDate();
   const rythmeJournalier = joursEcoules > 0 ? totalMois / joursEcoules : 0;
-  const autonomieJours =
-    solde != null && rythmeJournalier > 0 ? Math.floor(solde / rythmeJournalier) : null;
+  const autonomieJours = autonomieEnJours({
+    soldeFcfa: solde,
+    consommationFcfa: totalMois,
+    fenetreJours: joursEcoules,
+  });
 
   /**
    * Projection de la consommation sur 30 jours au rythme observé.
@@ -211,7 +217,7 @@ export default function FacturationPage() {
   }, [lignesMois, factures, moisCourantLisible]);
 
   const telechargerFacture = useCallback(
-    async (f: Facture) => {
+    async (f: Invoice) => {
       try {
         const octets = await genererFacturePdf({
           reference: f.reference,
@@ -453,6 +459,10 @@ export default function FacturationPage() {
                 ['ninea', 'NINEA'],
                 ['adresse', 'Adresse'],
                 ['contactCompta', 'Contact comptabilité'],
+                // Destinataire des alertes de solde bas. Sans lui, l'alerte
+                // retombe sur l'e-mail du compte — mais la comptabilité n'est
+                // pas toujours la personne qui s'est inscrite.
+                ['email', 'E-mail de facturation'],
               ] as const
             ).map(([cle, libelle]) => (
               <div key={cle} style={{ marginBottom: 8 }}>

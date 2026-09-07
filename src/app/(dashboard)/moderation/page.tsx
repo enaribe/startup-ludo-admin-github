@@ -79,7 +79,11 @@ export default function ModerationPage() {
     try {
       const [attente, act, passe] = await Promise.all([
         chargerParStatut(['in_review']),
-        chargerParStatut(['active', 'paused']),
+        // `suspended` incluse : une campagne arrêtée automatiquement pour
+        // plafond atteint doit rester VISIBLE ici — c'est le seul écran depuis
+        // lequel CONCREE peut la reprendre. L'omettre l'aurait fait disparaître
+        // de la modération sans apparaître dans l'historique.
+        chargerParStatut(['active', 'paused', 'suspended']),
         chargerParStatut(['rejected', 'ended']),
       ]);
       setEnAttente(attente);
@@ -384,7 +388,17 @@ export default function ModerationPage() {
                       : c.card?.rectoText}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                    {c.ownerEmail ?? c.ownerUid} · {c.status === 'paused' ? 'en pause' : 'active'}
+                    {c.ownerEmail ?? c.ownerUid} ·{' '}
+                    {c.status === 'paused'
+                      ? 'en pause'
+                      : c.status === 'suspended'
+                        ? 'suspendue'
+                        : 'active'}
+                    {c.status === 'suspended' && c.suspension
+                      ? c.suspension.motif === 'plafond-atteint'
+                        ? ` · plafond de ${c.budgetCapFcfa.toLocaleString('fr-FR')} FCFA atteint`
+                        : ' · solde épuisé'
+                      : ''}
                     {c.review?.motifRefus ? ` · ${c.review.motifRefus}` : ''}
                   </div>
                 </div>
