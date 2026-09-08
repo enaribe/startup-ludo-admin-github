@@ -17,6 +17,7 @@ import { getAdminFirestore } from '@/lib/firebase-admin';
 import { verifierAppelant } from '@/lib/api-auth';
 import { COLLECTIONS } from '@/lib/firebase';
 import { publierFeed } from '@/lib/sponsor-feed';
+import { libererReservations, DECISIONS_LIBERATRICES } from '@/lib/reservations';
 import type { Campaign, CampaignStatus } from '@/types';
 
 type Decision = 'activate' | 'reject' | 'pause' | 'resume' | 'end';
@@ -84,18 +85,32 @@ export async function POST(request: NextRequest) {
   }
 
   const maintenant = Date.now();
-  await ref.update({
-    status: transition.vers,
-    review: {
-      reviewedAt: maintenant,
-      ...(decision === 'reject' ? { motifRefus: motif } : {}),
-    },
+  // TRANSACTION : le changement de statut et la libération des mois réservés
+  // forment un seul geste. Séparés, un plantage entre les deux laisserait soit
+  // une campagne refusée qui bloque encore son créneau, soit un créneau libéré
+  // sous une campagne toujours active — deux incohérences à réparer à la main.
+  const moisLiberes = await db.runTransaction(async (tx) => {
+    const liberes = DECISIONS_LIBERATRICES.has(transition.vers)
+      ? await libererReservations(db, tx, {
+          campaignId,
+          editionId: campagne.editionSkin?.editionId,
+          months: campagne.reservationMonths,
+        })
+      : 0;
+    tx.update(ref, {
+      status: transition.vers,
+      review: {
+        reviewedAt: maintenant,
+        ...(decision === 'reject' ? { motifRefus: motif } : {}),
+      },
     // Une campagne qui redevient active n'est plus suspendue : on efface le
     // motif plutôt que de le laisser traîner. Sinon l'écran annonceur
     // continuerait d'afficher « plafond atteint » sous une campagne qui
     // diffuse — le champ ne serait plus qu'un vestige trompeur.
-    ...(transition.vers === 'active' ? { suspension: FieldValue.delete() } : {}),
-    updatedAt: maintenant,
+      ...(transition.vers === 'active' ? { suspension: FieldValue.delete() } : {}),
+      updatedAt: maintenant,
+    });
+    return liberes;
   });
 
   // ═══ CAMPAGNE ÉDITION : l'habillage suit la décision ═══
@@ -134,5 +149,5 @@ export async function POST(request: NextRequest) {
   // sort du feed est exactement le but de ces décisions.
   const cartesPubliees = await publierFeed(db);
 
-  return NextResponse.json({ ok: true, status: transition.vers, cartesPubliees });
+  return NextResponse.json({ ok: true, status: transition.vers, cartesPubliees, moisLiberes });
 }

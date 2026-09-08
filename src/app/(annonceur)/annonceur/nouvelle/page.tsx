@@ -40,6 +40,7 @@ import {
   creerBrouillonCampagne,
   getCampagne,
   getReservationsEdition,
+  disponibiliteEdition,
   libelleMois,
   prochainsMois,
   reserverEtSoumettre,
@@ -1073,7 +1074,6 @@ function BrancheEdition(props: {
   // ── Étape 1 : édition et réservation (maquette 17/08) ──
   if (etape === 0) {
     const moisAxe = prochainsMois(12);
-    const moisCourant = moisAxe[0];
     const prisPar = new Map(
       (props.reservationsParEdition[props.editionId] ?? []).map((r) => [r.month, r.structure])
     );
@@ -1090,13 +1090,28 @@ function BrancheEdition(props: {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {props.editions.map((e) => {
               const actif = props.editionId === e.id;
-              const occupee = (props.reservationsParEdition[e.id] ?? []).some((r) => r.month === moisCourant);
+              // Disponibilité sur les 12 mois du calendrier, et non sur le seul
+              // mois en cours : voir `disponibiliteEdition`.
+              const dispo = disponibiliteEdition(props.reservationsParEdition[e.id] ?? [], moisAxe);
+              const occupee = dispo.complete;
+              const partielle = !dispo.entierementLibre && !dispo.complete;
+              const badge = dispo.complete
+                ? 'Complète'
+                : dispo.entierementLibre
+                  ? 'Disponible'
+                  : `${dispo.moisLibres} mois libres`;
               return (
                 <button
                   key={e.id}
                   type="button"
                   onClick={() => props.onEdition(e.id)}
-                  title={occupee ? 'Le mois en cours est réservé — des mois suivants restent ouverts au calendrier.' : undefined}
+                  title={
+                    dispo.complete
+                      ? 'Tous les mois du calendrier sont réservés sur cette édition.'
+                      : dispo.prochainLibre
+                        ? `Prochain mois libre : ${libelleMois(dispo.prochainLibre)}`
+                        : undefined
+                  }
                   style={{
                     position: 'relative', padding: '18px 12px 14px', borderRadius: 14, cursor: 'pointer', textAlign: 'center',
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -1133,11 +1148,21 @@ function BrancheEdition(props: {
                     <span
                       style={{
                         display: 'inline-block', borderRadius: 12, padding: '3px 10px',
-                        background: occupee ? '#EEF1F6' : 'rgba(46,160,67,0.12)', color: occupee ? '#8A94A6' : '#2E7D32',
+                        background: dispo.complete
+                          ? '#EEF1F6'
+                          : partielle
+                            ? 'rgba(245,166,35,0.14)'
+                            : 'rgba(46,160,67,0.12)',
+                        color: dispo.complete ? '#8A94A6' : partielle ? '#B87A0C' : '#2E7D32',
                       }}
                     >
-                      ● {occupee ? 'Réservée' : 'Disponible'}
+                      ● {badge}
                     </span>
+                    {dispo.prochainLibre && !dispo.entierementLibre && (
+                      <span style={{ display: 'block', fontSize: 9.5, color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 3 }}>
+                        dès {libelleMois(dispo.prochainLibre)}
+                      </span>
+                    )}
                   </span>
                 </button>
               );

@@ -205,6 +205,48 @@ export function prochainsMois(nombre = 12): string[] {
   return mois;
 }
 
+/** Disponibilité d'une édition sur la fenêtre affichée au calendrier. */
+export interface DisponibiliteEdition {
+  /** Nombre de mois encore libres sur la fenêtre. */
+  moisLibres: number;
+  /** Longueur de la fenêtre observée (12 par défaut). */
+  moisTotal: number;
+  /** Premier mois libre (AAAA-MM), `null` si l'édition est complète. */
+  prochainLibre: string | null;
+  /** Aucun mois pris. */
+  entierementLibre: boolean;
+  /** Aucun mois libre : plus rien à vendre sur la fenêtre. */
+  complete: boolean;
+}
+
+/**
+ * Calcule la disponibilité d'une édition sur les mois à venir.
+ *
+ * POURQUOI CETTE FONCTION : la vignette de choix affichait « Réservée » dès
+ * que le MOIS EN COURS était pris, et « Disponible » sinon. Les deux réponses
+ * étaient trompeuses : une édition réservée d'octobre à décembre s'affichait
+ * « Disponible » en septembre, et une édition prise ce mois-ci mais libre les
+ * onze suivants s'affichait « Réservée » — décourageant un annonceur alors
+ * que le créneau qu'il visait était ouvert.
+ *
+ * La fenêtre est la MÊME que celle du calendrier (`prochainsMois`) : le badge
+ * et le calendrier ne peuvent donc pas se contredire.
+ */
+export function disponibiliteEdition(
+  reservations: EditionReservation[],
+  fenetre: string[] = prochainsMois(12)
+): DisponibiliteEdition {
+  const pris = new Set(reservations.map((r) => r.month));
+  const libres = fenetre.filter((mois) => !pris.has(mois));
+  return {
+    moisLibres: libres.length,
+    moisTotal: fenetre.length,
+    prochainLibre: libres[0] ?? null,
+    entierementLibre: libres.length === fenetre.length,
+    complete: libres.length === 0,
+  };
+}
+
 /** « octobre 2026 » depuis « 2026-10 ». */
 export function libelleMois(mois: string): string {
   const [annee, m] = mois.split('-').map(Number);
