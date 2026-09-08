@@ -432,6 +432,17 @@ export interface EditionSponsor {
   startDate?: number;
   /** Fin souhaitée de la diffusion (timestamp ms) — informatif, non appliqué par le jeu. */
   endDate?: number;
+  /**
+   * Fin d'EXCLUSIVITÉ (ms) : dernier instant du dernier mois réservé, posé à
+   * l'activation de la campagne.
+   *
+   * Contrairement à `endDate`, celle-ci est APPLIQUÉE : le jeu refuse
+   * d'afficher l'habillage au-delà, sans attendre que la tâche d'entretien du
+   * back-office soit déclenchée — elle l'est à la main, donc s'y fier seule
+   * laisserait diffuser un sponsor dont la période payée est terminée, sur un
+   * créneau parfois déjà revendu au suivant.
+   */
+  endAt?: number | null;
 }
 
 export interface EditionData {

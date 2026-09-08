@@ -435,8 +435,27 @@ function LigneVisibilite({ v }: { v: MiseEnVisibilite }) {
           ● {statut.libelle}
         </span>
       </td>
+      {/*
+        * PÉRIODE — « En continu » était écrit EN DUR, quelle que soit la
+        * campagne : l'annonceur ne pouvait pas savoir combien de temps il lui
+        * restait, alors que c'est précisément la colonne prévue pour le dire.
+        */}
       <td style={{ padding: '12px 12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-        En continu
+        {(() => {
+          const jours = joursRestants(v.finMs);
+          if (jours === null) return 'En continu';
+          if (jours === 0) return <span style={{ color: '#8A94A6' }}>Terminée</span>;
+          return (
+            <>
+              <span style={{ color: jours <= 15 ? '#B87A0C' : undefined, fontWeight: jours <= 15 ? 700 : 400 }}>
+                Encore {jours} j
+              </span>
+              <span style={{ display: 'block', fontSize: 10.5, color: 'var(--color-text-muted)' }}>
+                jusqu’au {new Date(v.finMs as number).toLocaleDateString('fr-FR')}
+              </span>
+            </>
+          );
+        })()}
       </td>
       <td style={{ padding: '12px 12px', minWidth: 150 }}>
         {progression != null ? (

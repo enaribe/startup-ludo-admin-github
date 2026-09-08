@@ -40,6 +40,7 @@ import {
   type SponsorDailyMetrics,
 } from '@/lib/sponsor-metrics-service';
 import { PRIX_PAR_VUE_FCFA, autonomieEnJours } from '@/lib/sponsor-pricing';
+import { finExclusivite, joursRestants } from '@/lib/reservations';
 import {
   genererRapportConsolidePdf,
   telechargerRapport,
@@ -87,6 +88,26 @@ const LIBELLES_STATUT: Record<string, string> = {
   suspended: 'suspendue',
   ended: 'terminée',
 };
+
+/**
+ * « · encore 47 jours » — le temps de diffusion restant, ajouté au sous-titre.
+ *
+ * Chaîne vide quand il n'y a rien à dire : campagne sans échéance (carte en
+ * continu), ou campagne qui ne diffuse plus. Un compte à rebours sur une
+ * campagne terminée n'informerait de rien.
+ *
+ * Le jour est l'unité retenue au-delà de deux mois aussi : « encore 2 mois »
+ * se lit vite mais empêche de savoir s'il reste 32 ou 89 jours, ce qui est
+ * précisément ce qu'on veut savoir avant de renouveler.
+ */
+function echeanceLisible(c: Campaign): string {
+  if (!['active', 'paused', 'suspended'].includes(c.status)) return '';
+  const fin = c.period?.endAt ?? finExclusivite(c.reservationMonths);
+  const jours = joursRestants(fin);
+  if (jours === null) return '';
+  if (jours === 0) return ' · période terminée';
+  return ` · encore ${jours} jour${jours > 1 ? 's' : ''}`;
+}
 
 /** « 2,15 M » / « 454 K » — les montants compacts de la répartition. */
 function compact(n: number): string {
@@ -238,7 +259,10 @@ export default function TableauDeBordAnnonceurPage() {
             titre:
               c.card?.rectoText?.slice(0, 80) ||
               `Édition ${c.editionSkin?.editionId ?? ''} — habillage sponsorisé`,
-            sousTitre: `${c.card?.structure || c.editionSkin?.structure || '—'} · ${LIBELLES_STATUT[c.status] ?? c.status}`,
+            // L'échéance suit le statut : c'est l'endroit où l'annonceur
+            // regarde sa diffusion, donc l'endroit où « il me reste X jours »
+            // a une chance d'être lu avant que la campagne ne s'arrête.
+            sousTitre: `${c.card?.structure || c.editionSkin?.structure || '—'} · ${LIBELLES_STATUT[c.status] ?? c.status}${echeanceLisible(c)}`,
             format: c.format === 'card' ? 'carte' : 'edition',
             vues30: vues,
             uniques30: uniques,

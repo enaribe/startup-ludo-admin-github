@@ -57,12 +57,16 @@ export interface MiseEnVisibilite {
   /** Dépense engagée en FCFA ; null = non facturé (habillage). */
   depenseFcfa: number | null;
   /**
-   * Période de diffusion souhaitée (`sponsor.startDate` / `endDate`), en ms.
+   * Période de diffusion, en ms.
    *
-   * ⚠️ INFORMATIVE, ET C'EST IMPORTANT : le jeu ne l'applique pas — seul
-   * `paused` et l'objectif de vues arrêtent réellement la diffusion. L'écran
-   * doit donc parler de « réservation », jamais promettre un arrêt automatique
-   * à l'échéance. `null` quand l'annonceur n'a pas renseigné de dates.
+   * `finMs` est désormais APPLIQUÉE : elle vient de `sponsor.endAt`, la fin
+   * d'exclusivité posée à l'activation depuis le dernier mois réservé, et le
+   * jeu refuse d'afficher l'habillage au-delà (EventManager). L'écran peut
+   * donc annoncer un arrêt à l'échéance sans mentir.
+   *
+   * L'ancien `sponsor.endDate` reste lu en repli pour les éditions
+   * historiques, qui n'ont jamais eu d'`endAt` : sur celles-là, la date reste
+   * purement indicative. `null` quand aucune date n'est connue.
    */
   debutMs: number | null;
   finMs: number | null;
@@ -207,7 +211,13 @@ export async function chargerEspaceAnnonceur(editions: EditionData[]): Promise<E
     // Le laisser à `null` affichait un espace vide là où il attend un montant.
     const vuesEcran = m?.totals.editionPopupViews ?? 0;
     const debutMs = typeof sponsor.startDate === 'number' ? sponsor.startDate : null;
-    const finMs = typeof sponsor.endDate === 'number' ? sponsor.endDate : null;
+    // `endAt` d'abord : c'est la borne que le jeu applique réellement.
+    const finMs =
+      typeof sponsor.endAt === 'number'
+        ? sponsor.endAt
+        : typeof sponsor.endDate === 'number'
+          ? sponsor.endDate
+          : null;
 
     visibilites.push({
       id: idVisibiliteEdition(edition.id),
