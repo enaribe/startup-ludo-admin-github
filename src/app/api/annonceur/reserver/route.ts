@@ -76,9 +76,35 @@ export async function POST(request: NextRequest) {
         throw new ErreurLisible('Cette campagne a déjà été soumise.');
       }
 
-      // ── L'édition existe ──
+      // ── L'édition existe, et n'est pas déjà occupée hors calendrier ──
       const editionSnap = await tx.get(db.collection(COLLECTIONS.editions).doc(editionId));
       if (!editionSnap.exists) throw new ErreurLisible('Édition introuvable.');
+
+      // Un habillage peut être en place SANS aucune réservation : les
+      // sponsorings antérieurs à ce circuit, et ceux posés à la main par
+      // CONCREE, vivent directement sur l'édition. Ne vérifier que les
+      // réservations laissait un annonceur réserver une édition activement
+      // sponsorisée par une autre marque — exactement la collision que
+      // l'exclusivité promet d'empêcher.
+      const sponsorEnPlace = editionSnap.data()?.sponsor as
+        | { enabled?: boolean; paused?: boolean; endAt?: number | null; name?: string }
+        | undefined;
+      if (sponsorEnPlace?.enabled && sponsorEnPlace.paused !== true) {
+        const fin = sponsorEnPlace.endAt;
+        const collision = months.filter((mois) => {
+          const [an, m] = mois.split('-').map(Number);
+          const finMois = new Date(an, m, 0, 23, 59, 59, 999).getTime();
+          return typeof fin !== 'number' || finMois <= fin;
+        });
+        if (collision.length > 0) {
+          const par = sponsorEnPlace.name || 'une autre structure';
+          throw new ErreurLisible(
+            typeof fin === 'number'
+              ? `Cette édition est sponsorisée par ${par} jusqu'au ${new Date(fin).toLocaleDateString('fr-FR')}. Choisissez des mois postérieurs ou une autre édition.`
+              : `Cette édition est déjà sponsorisée par ${par}. Choisissez une autre édition.`
+          );
+        }
+      }
 
       // ── Tous les mois demandés sont LIBRES (lectures dans la transaction) ──
       for (const mois of months) {

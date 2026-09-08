@@ -1077,6 +1077,20 @@ function BrancheEdition(props: {
     const prisPar = new Map(
       (props.reservationsParEdition[props.editionId] ?? []).map((r) => [r.month, r.structure])
     );
+    // Les sponsorings posés hors calendrier (historiques, ou installés à la
+    // main par CONCREE) n'ont aucune réservation : sans cette passe, leurs
+    // mois s'affichaient libres et réservables sous une marque déjà en place.
+    const sponsorEnPlace = editionChoisie?.sponsor;
+    if (sponsorEnPlace?.enabled && sponsorEnPlace.paused !== true) {
+      const fin = sponsorEnPlace.endAt;
+      for (const mois of moisAxe) {
+        const [an, m] = mois.split('-').map(Number);
+        const finMois = new Date(an, m, 0, 23, 59, 59, 999).getTime();
+        if ((typeof fin !== 'number' || finMois <= fin) && !prisPar.has(mois)) {
+          prisPar.set(mois, sponsorEnPlace.name || 'une autre structure');
+        }
+      }
+    }
     return (
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div className="lg:col-span-3" style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.08)', borderRadius: 14, padding: '18px 20px' }}>
@@ -1092,7 +1106,11 @@ function BrancheEdition(props: {
               const actif = props.editionId === e.id;
               // Disponibilité sur les 12 mois du calendrier, et non sur le seul
               // mois en cours : voir `disponibiliteEdition`.
-              const dispo = disponibiliteEdition(props.reservationsParEdition[e.id] ?? [], moisAxe);
+              const dispo = disponibiliteEdition(
+                props.reservationsParEdition[e.id] ?? [],
+                moisAxe,
+                e.sponsor
+              );
               const occupee = dispo.complete;
               const partielle = !dispo.entierementLibre && !dispo.complete;
               const badge = dispo.complete

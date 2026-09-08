@@ -205,6 +205,12 @@ export function prochainsMois(nombre = 12): string[] {
   return mois;
 }
 
+/** Dernier instant du mois `AAAA-MM` — jour 0 du mois suivant, sans cas particulier. */
+function finDuMois(mois: string): number {
+  const [annee, m] = mois.split('-').map(Number);
+  return new Date(annee, m, 0, 23, 59, 59, 999).getTime();
+}
+
 /** Disponibilité d'une édition sur la fenêtre affichée au calendrier. */
 export interface DisponibiliteEdition {
   /** Nombre de mois encore libres sur la fenêtre. */
@@ -234,9 +240,33 @@ export interface DisponibiliteEdition {
  */
 export function disponibiliteEdition(
   reservations: EditionReservation[],
-  fenetre: string[] = prochainsMois(12)
+  fenetre: string[] = prochainsMois(12),
+  /**
+   * Habillage DÉJÀ EN PLACE sur l'édition (`editions/{id}.sponsor`).
+   *
+   * POURQUOI CE SECOND PARAMÈTRE : toutes les éditions sponsorisées ne sont
+   * pas passées par le calendrier. Les sponsorings antérieurs à ce circuit —
+   * et ceux posés à la main par CONCREE — vivent directement sur l'édition,
+   * sans aucun document dans `editionReservations`. En ne lisant que les
+   * réservations, l'écran annonçait « Disponible » des éditions activement
+   * sponsorisées : un annonceur pouvait croire un créneau libre et se le voir
+   * refuser, ou pire, se retrouver en concurrence avec une marque déjà en
+   * place.
+   */
+  habillageEnPlace?: { enabled?: boolean; paused?: boolean; endAt?: number | null } | null
 ): DisponibiliteEdition {
   const pris = new Set(reservations.map((r) => r.month));
+
+  // Un habillage actif occupe la fenêtre jusqu'à sa fin d'exclusivité — et
+  // toute la fenêtre s'il n'en a pas, ce qui est le cas des sponsorings
+  // historiques : sans date de fin connue, les annoncer libres serait un pari,
+  // pas une information. C'est à CONCREE de les dater ou de les arrêter.
+  if (habillageEnPlace?.enabled && habillageEnPlace.paused !== true) {
+    const fin = habillageEnPlace.endAt;
+    for (const mois of fenetre) {
+      if (typeof fin !== 'number' || finDuMois(mois) <= fin) pris.add(mois);
+    }
+  }
   const libres = fenetre.filter((mois) => !pris.has(mois));
   return {
     moisLibres: libres.length,
