@@ -44,11 +44,15 @@ import { publierFeed } from '@/lib/sponsor-feed';
 import type { Advertiser, Campaign, PaymentIntent } from '@/types';
 import { confirmerFacture, paydunyaConfigure } from '@/lib/paydunya';
 import { crediterIntention } from '@/lib/paiement-credit';
+import { finExclusivite, joursRestants, libererReservations } from '@/lib/reservations';
 import { envoyerEmail, gabaritEmail } from '@/lib/email-service';
 import { autonomieEnJours, SEUIL_ALERTE_SOLDE_JOURS } from '@/lib/sponsor-pricing';
 
 /** Nombre de signalements distincts qui déclenchent une revérification. */
 const SEUIL_SIGNALEMENTS = 3;
+
+/** Préavis de fin d'exclusivité, en jours — le temps de décider d'un renouvellement. */
+const PREAVIS_FIN_JOURS = 15;
 
 /**
  * Consommation cumulée d'une campagne, en FCFA, depuis les buckets quotidiens.
@@ -116,6 +120,7 @@ export async function POST(request: NextRequest) {
     liensMorts: [] as string[],
     suspendues: [] as string[],
     paiementsRattrapes: [] as string[],
+    preavisFin: [] as string[],
     alertesSolde: [] as string[],
   };
   let changement = false;
@@ -140,8 +145,34 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 2. Fin de période ──
-    if (campagne.period?.endAt && campagne.period.endAt < maintenant) {
+    // Deux échéances distinctes selon le format :
+    //   - CARTE   : `period.endAt`, la date choisie par l'annonceur ;
+    //   - ÉDITION : la fin du DERNIER mois réservé — `period` n'est jamais
+    //     renseigné pour ce format, si bien que le seul test de `period.endAt`
+    //     laissait une campagne édition diffuser INDÉFINIMENT, bien au-delà des
+    //     mois payés, tout en gardant le créneau bloqué pour le suivant.
+    const finExclu = finExclusivite(campagne.reservationMonths);
+    const echeance = campagne.period?.endAt ?? finExclu;
+    if (echeance && echeance < maintenant) {
       await ref.update({ status: 'ended', updatedAt: maintenant });
+      // L'habillage d'édition ne passe pas par le feed : il faut l'éteindre
+      // explicitement, sinon le mobile continuerait de l'afficher.
+      if (campagne.format === 'edition' && campagne.editionSkin?.editionId) {
+        await db
+          .collection(COLLECTIONS.editions)
+          .doc(campagne.editionSkin.editionId)
+          .set({ sponsor: { enabled: false, paused: true } }, { merge: true });
+      }
+      // Les mois sont rendus au calendrier : l'exclusivité est consommée.
+      if (campagne.reservationMonths?.length && campagne.editionSkin?.editionId) {
+        await db.runTransaction((tx) =>
+          libererReservations(db, tx, {
+            campaignId: campagne.id,
+            editionId: campagne.editionSkin?.editionId,
+            months: campagne.reservationMonths,
+          })
+        );
+      }
       bilan.terminees.push(campagne.id);
       changement = true;
       continue;
@@ -179,6 +210,37 @@ export async function POST(request: NextRequest) {
       bilan.liensMorts.push(campagne.id);
       changement = true;
       continue;
+    }
+
+    // ── 4 bis. Exclusivité bientôt terminée ──
+    // Prévenir AVANT l'arrêt : découvrir que sa campagne s'est arrêtée est la
+    // pire façon d'apprendre qu'elle arrivait à son terme, et c'est aussi le
+    // moment où le renouvellement se décide — un créneau libéré part vite.
+    const finProche = campagne.period?.endAt ?? finExclusivite(campagne.reservationMonths);
+    const joursAvantFin = joursRestants(finProche, maintenant);
+    if (
+      joursAvantFin !== null &&
+      joursAvantFin > 0 &&
+      joursAvantFin <= PREAVIS_FIN_JOURS &&
+      !campagne.preavisFinEnvoyeLe
+    ) {
+      const destinataire = campagne.ownerEmail;
+      if (destinataire) {
+        void envoyerEmail({
+          to: destinataire,
+          subject: `Startup Ludo — votre campagne se termine dans ${joursAvantFin} jour${joursAvantFin > 1 ? 's' : ''}`,
+          html: gabaritEmail(
+            'Fin de diffusion proche',
+            `Votre campagne s'arrêtera le <strong>${new Date(finProche as number).toLocaleDateString('fr-FR')}</strong>, ` +
+              `au terme de la période réservée. Passé cette date, le créneau redevient disponible pour d'autres annonceurs. ` +
+              `Pour prolonger, réservez de nouveaux mois depuis votre espace.`
+          ),
+        });
+      }
+      // Marqueur d'envoi : l'entretien peut être relancé plusieurs fois par
+      // jour, l'annonceur ne doit pas recevoir un e-mail par clic.
+      await ref.update({ preavisFinEnvoyeLe: maintenant });
+      bilan.preavisFin.push(campagne.id);
     }
 
     // ── 5. Plafond budgétaire ──

@@ -26,6 +26,7 @@ import {
   type StatutVisibilite,
 } from '@/lib/annonceur-service';
 import { getMesCampagnes } from '@/lib/campaign-service';
+import { finExclusivite, joursRestants } from '@/lib/reservations';
 import type { Campaign, CampaignStatus } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -274,6 +275,28 @@ function LigneCampagne({ c }: { c: Campaign }) {
         >
           {titre}
         </div>
+        {/*
+          * Échéance de l'exclusivité — l'information manquait entièrement :
+          * l'annonceur payait des mois sans jamais voir combien il lui en
+          * restait. Affichée uniquement sur une campagne qui DIFFUSE : sur une
+          * campagne terminée ou refusée, un décompte n'aurait aucun sens.
+          */}
+        {(c.status === 'active' || c.status === 'paused' || c.status === 'suspended') &&
+          (() => {
+            const fin = c.period?.endAt ?? finExclusivite(c.reservationMonths);
+            const jours = joursRestants(fin);
+            if (jours === null) return null;
+            // Sous 15 jours, le décompte passe en orange : c'est le moment où
+            // renouveler devient une décision, pas une information.
+            const urgent = jours <= 15;
+            return (
+              <div style={{ fontSize: 11.5, color: urgent ? '#B87A0C' : 'var(--color-text-muted)', marginTop: 2 }}>
+                {jours === 0
+                  ? 'Période terminée — diffusion arrêtée.'
+                  : `Encore ${jours} jour${jours > 1 ? 's' : ''} de diffusion · jusqu’au ${new Date(fin as number).toLocaleDateString('fr-FR')}`}
+              </div>
+            );
+          })()}
         {c.status === 'rejected' && c.review?.motifRefus && (
           <div style={{ fontSize: 11.5, color: '#C0392B', marginTop: 2 }}>
             Motif : {c.review.motifRefus}

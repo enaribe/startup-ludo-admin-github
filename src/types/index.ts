@@ -222,6 +222,8 @@ export interface Campaign {
    * `status: 'suspended'`, affiché à l'annonceur pour qu'il sache quoi faire.
    */
   suspension?: { motif: 'plafond-atteint' | 'solde-epuise'; suspendedAt: number };
+  /** Préavis de fin d'exclusivité déjà envoyé (ms) — anti-répétition. */
+  preavisFinEnvoyeLe?: number;
   /** Consentement aux règles de contenu (étape 5). */
   consentAt?: number;
   submittedAt?: number;

@@ -17,7 +17,7 @@ import { getAdminFirestore } from '@/lib/firebase-admin';
 import { verifierAppelant } from '@/lib/api-auth';
 import { COLLECTIONS } from '@/lib/firebase';
 import { publierFeed } from '@/lib/sponsor-feed';
-import { libererReservations, DECISIONS_LIBERATRICES } from '@/lib/reservations';
+import { libererReservations, DECISIONS_LIBERATRICES, finExclusivite } from '@/lib/reservations';
 import type { Campaign, CampaignStatus } from '@/types';
 
 type Decision = 'activate' | 'reject' | 'pause' | 'resume' | 'end';
@@ -134,6 +134,12 @@ export async function POST(request: NextRequest) {
             viewsGoal: campagne.viewsGoal ?? 0,
             pricePerView: campagne.pricing?.perView ?? 25,
             budgetCapFcfa: campagne.budgetCapFcfa ?? 0,
+            // Fin d'exclusivité poussée jusqu'au mobile : l'entretien qui
+            // arrête la campagne est déclenché à la main, donc il peut tarder.
+            // Sans cette borne, l'habillage continuerait de s'afficher après
+            // le dernier mois payé — l'annonceur suivant verrait le créneau
+            // qu'il a acheté occupé par le précédent.
+            endAt: finExclusivite(campagne.reservationMonths),
           },
         },
         { merge: true }

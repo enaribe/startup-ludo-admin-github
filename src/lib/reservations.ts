@@ -69,3 +69,43 @@ export async function libererReservations(
  * compte — il perdrait son exclusivité pour un retard de paiement de deux jours.
  */
 export const DECISIONS_LIBERATRICES = new Set(['rejected', 'ended']);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ÉCHÉANCE D'UNE RÉSERVATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Dernier instant du mois `AAAA-MM` (23:59:59.999 local). */
+export function finDeMois(mois: string): number {
+  const [annee, m] = mois.split('-').map(Number);
+  // Jour 0 du mois SUIVANT = dernier jour de celui-ci, sans table de longueurs
+  // ni cas particulier pour février ou les bissextiles.
+  return new Date(annee, m, 0, 23, 59, 59, 999).getTime();
+}
+
+/**
+ * Fin d'exclusivité d'une campagne édition : dernier instant du DERNIER mois
+ * réservé. `null` si la campagne n'a pas de mois (format carte, ou brouillon).
+ *
+ * POURQUOI CETTE FONCTION EXISTE : `period.endAt` n'est renseigné que pour le
+ * format `card` — pour une édition il vaut `undefined`. L'entretien testait
+ * donc une échéance qui n'existait pas, et une campagne édition ne s'arrêtait
+ * JAMAIS à la fin des mois payés : elle diffusait jusqu'à épuisement du
+ * plafond ou du solde, bien au-delà de ce que l'annonceur avait acheté — et
+ * en bloquant le créneau pour le suivant.
+ */
+export function finExclusivite(months?: string[]): number | null {
+  if (!months?.length) return null;
+  const dernier = months.slice().sort().at(-1);
+  return dernier ? finDeMois(dernier) : null;
+}
+
+/**
+ * Jours restants avant la fin de l'exclusivité, arrondis au SUPÉRIEUR : le
+ * dernier jour compte tant qu'il n'est pas écoulé. `null` si pas d'échéance,
+ * `0` si elle est passée.
+ */
+export function joursRestants(finMs: number | null, maintenant = Date.now()): number | null {
+  if (finMs === null) return null;
+  if (finMs <= maintenant) return 0;
+  return Math.ceil((finMs - maintenant) / 86_400_000);
+}
