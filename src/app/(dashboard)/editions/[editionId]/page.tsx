@@ -10,7 +10,6 @@ import { getEdition, saveEdition } from '@/lib/firestore-service';
 import type { EditionData, Quiz, Duel, DuelOption, Funding, Opportunity, ChallengeEvent, DefaultProject } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ImageUploadField from '@/components/ui/ImageUploadField';
-import SponsorCardListEditor from '@/components/ui/SponsorCardListEditor';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AIGenerateModal from '@/components/ui/AIGenerateModal';
 import SectorSelectionModal from '@/components/ui/SectorSelectionModal';
@@ -930,30 +929,41 @@ Pour les projets par défaut, chaque projet doit avoir :
                     />
                   </div>
 
-                  {/* Cartes d'événements sponsor injectées en partie (~25 % de chance
-                      sur les cases opportunité/financement côté mobile) */}
-                  <div style={{ borderTop: '1px dashed var(--color-card-border)', paddingTop: 14 }}>
-                    <SponsorCardListEditor
-                      title="Opportunités sponsor"
-                      hint="Tirées à la place d'une opportunité classique (~1 fois sur 4). Logo propre à chaque carte (ex. DER)."
-                      cards={sponsor.opportunities ?? []}
-                      onChange={(cards) => updateSponsor({ opportunities: cards })}
-                      storagePathBase={`editions/${isNew ? newId.trim() : editionId}/sponsor-opp`}
-                      defaultTokens={2}
-                      disabled={isNew && !newId.trim()}
-                      disabledHint="Renseignez d'abord l'identifiant de l'édition."
-                    />
+                  {/*
+                    * Les cartes sponsor ne s'éditent PLUS ici.
+                    *
+                    * Elles vivaient dans `sponsor.opportunities` /
+                    * `sponsor.fundings` et étaient tirées directement par le
+                    * jeu. Ce circuit a été retiré : une carte est désormais une
+                    * CAMPAGNE, créée par l'annonceur dans son espace et
+                    * projetée vers le mobile par le feed. Deux chemins
+                    * alimentaient le même tirage, mais un seul était facturé,
+                    * plafonné et borné dans le temps.
+                    *
+                    * Laisser l'éditeur ici aurait permis de créer des cartes
+                    * que le jeu ne lit plus — invisibles, sans message d'erreur.
+                    * Ce qui reste sur cet écran (visuel, logo, lien,
+                    * description) constitue l'HABILLAGE de l'édition, qui lui
+                    * est toujours diffusé.
+                    */}
+                  <div
+                    style={{
+                      borderTop: '1px dashed var(--color-card-border)',
+                      paddingTop: 14,
+                      fontSize: 12.5,
+                      color: 'var(--color-text-muted)',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <strong style={{ color: 'var(--color-text-primary)' }}>
+                      Cartes sponsor : gérées en campagnes
+                    </strong>
+                    <br />
+                    Les cartes opportunité et financement d’un annonceur se créent
+                    depuis son espace (Nouvelle mise en visibilité), puis passent
+                    par la modération. Cet écran ne configure plus que l’habillage
+                    de l’édition — visuel, logo, lien et description.
                   </div>
-                  <SponsorCardListEditor
-                    title="Financements sponsor"
-                    hint="Tirés à la place d'un financement classique (~1 fois sur 4). Logo propre à chaque carte (ex. Orange Bank)."
-                    cards={sponsor.fundings ?? []}
-                    onChange={(cards) => updateSponsor({ fundings: cards })}
-                    storagePathBase={`editions/${isNew ? newId.trim() : editionId}/sponsor-fund`}
-                    defaultTokens={4}
-                    disabled={isNew && !newId.trim()}
-                    disabledHint="Renseignez d'abord l'identifiant de l'édition."
-                  />
                 </div>
               )}
             </div>

@@ -40,9 +40,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Un sponsor ne voit plus JAMAIS le chrome du dashboard : tout son espace vit
-  // sous /annonceur (lots 3-7), y compris la gestion des cartes re-logée sous
-  // /annonceur/cartes. Un vieux favori /sponsoring/... est redirigé vers son
-  // équivalent exact — même page, nouveau toit.
+  // sous /annonceur (lots 3-7).
   const sponsorOutOfScope = isSponsor;
 
   // Même principe pour les rôles scolaires : périmètre fermé, listé explicitement.
@@ -57,13 +55,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!admin) {
       router.replace('/login');
     } else if (sponsorOutOfScope) {
-      // Vieux favori /sponsoring/... → même page sous le nouveau toit ;
-      // toute autre route → l'accueil de l'Espace Annonceur.
-      router.replace(
-        pathname.startsWith('/sponsoring')
-          ? `/annonceur/cartes${pathname.slice('/sponsoring'.length)}`
-          : '/annonceur/tableau-de-bord'
-      );
+      // L'écran d'édition des cartes encastrées n'existe plus : ces cartes
+      // sont devenues des campagnes, et la page permettait encore de les
+      // réécrire à un endroit que le jeu ne lit plus. Un vieux favori
+      // /sponsoring/... arrive donc sur l'accueil de l'Espace Annonceur,
+      // d'où les campagnes se gèrent réellement.
+      router.replace('/annonceur/tableau-de-bord');
     } else if (establishmentOutOfScope) {
       router.replace('/tableau-de-bord');
     } else if (teacherOutOfScope) {
