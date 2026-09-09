@@ -28,6 +28,8 @@ import {
   type MiseEnVisibilite,
 } from '@/lib/annonceur-service';
 import { PRIX_PAR_VUE_FCFA } from '@/lib/sponsor-pricing';
+import { getMesCampagnes } from '@/lib/campaign-service';
+import type { Campaign } from '@/types';
 import { genererRapportImpactPdf, telechargerRapport, type LigneRapport } from '@/lib/annonceur-rapport-pdf';
 import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/CourbeQuotidienne';
 import RepartitionAttribution from '@/components/annonceur/RepartitionAttribution';
@@ -75,6 +77,7 @@ export default function TableauDeBordImpactPage() {
   const { loading: authLoading, isSuperAdmin, scopedEditionIds } = useAuth();
 
   const [espace, setEspace] = useState<EspaceAnnonceur | null>(null);
+  const [campagnes, setCampagnes] = useState<Campaign[]>([]);
   const [chargement, setChargement] = useState(true);
   const [exportEnCours, setExportEnCours] = useState(false);
 
@@ -86,8 +89,13 @@ export default function TableauDeBordImpactPage() {
         const editions = isSuperAdmin
           ? await getEditions()
           : await getEditionsByIds(scopedEditionIds);
-        const data = await chargerEspaceAnnonceur(editions);
-        if (!annule) setEspace(data);
+        const [data, mesCampagnes] = await Promise.all([
+          chargerEspaceAnnonceur(editions),
+          getMesCampagnes().catch(() => [] as Campaign[]),
+        ]);
+        if (annule) return;
+        setEspace(data);
+        setCampagnes(mesCampagnes);
       } catch (error) {
         console.error('Chargement du tableau de bord :', error);
       } finally {
@@ -105,6 +113,25 @@ export default function TableauDeBordImpactPage() {
   );
 
   const cible = useMemo(() => parseIdVisibilite(visibiliteId), [visibiliteId]);
+
+  /**
+   * Campagne du NOUVEAU modèle correspondant à cette édition, s'il y en a une.
+   *
+   * Le bouton « Modifier » pointait en dur vers `/sponsoring/{editionId}`,
+   * redirigé vers `/annonceur/cartes/{editionId}` — l'ANCIENNE interface, où
+   * les cartes opportunité et financement sont encastrées dans l'édition
+   * (`sponsor.opportunities` / `sponsor.fundings`). Ce modèle n'existe plus :
+   * une carte est désormais une campagne à part entière, éditée dans le
+   * wizard. Renvoyer l'annonceur vers cet écran l'invitait à modifier des
+   * données que le nouveau circuit ne lit pas.
+   */
+  const campagneLiee = useMemo(
+    () =>
+      campagnes.find(
+        (c) => c.format === 'edition' && c.editionSkin?.editionId === v?.editionId
+      ) ?? null,
+    [campagnes, v?.editionId]
+  );
   const metriquesEdition = v ? espace?.metriques[v.editionId] ?? null : null;
   const serieEdition = v ? espace?.quotidien[v.editionId] ?? [] : [];
 
@@ -328,22 +355,51 @@ export default function TableauDeBordImpactPage() {
           )}
         </div>
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          <Link
-            href={`/sponsoring/${v.editionId}`}
-            className="flex items-center gap-2"
-            style={{
-              fontSize: 12.5,
-              fontWeight: 600,
-              padding: '9px 14px',
-              borderRadius: 10,
-              border: '1px solid var(--color-card-border)',
-              color: NAVY,
-              textDecoration: 'none',
-              background: '#FFFFFF',
-            }}
-          >
-            <Pencil size={13} /> Modifier
-          </Link>
+          {/*
+            * « Modifier » ne mène au wizard que si une campagne existe. Sinon
+            * il n'y a rien à modifier côté annonceur : ce sponsoring a été
+            * installé directement sur l'édition par CONCREE, hors du circuit
+            * des campagnes. Le bouton pointait auparavant vers l'ancienne
+            * interface, qui proposait d'éditer des cartes encastrées dans
+            * l'édition — un modèle abandonné, que le nouveau circuit ne lit
+            * plus. Mieux vaut dire « contactez-nous » que d'ouvrir un écran
+            * dont les modifications resteront sans effet.
+            */}
+          {campagneLiee ? (
+            <Link
+              href={`/annonceur/nouvelle?id=${encodeURIComponent(campagneLiee.id)}`}
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                padding: '9px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--color-card-border)',
+                color: NAVY,
+                textDecoration: 'none',
+                background: '#FFFFFF',
+              }}
+            >
+              <Pencil size={13} /> Modifier
+            </Link>
+          ) : (
+            <span
+              title="Ce sponsoring a été mis en place par l’équipe CONCREE. Écrivez à annonceurs@concree.com pour le faire évoluer."
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                padding: '9px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--color-card-border)',
+                color: '#8A94A6',
+                background: '#F7F8FA',
+                cursor: 'not-allowed',
+              }}
+            >
+              <Pencil size={13} /> Géré par CONCREE
+            </span>
+          )}
           <button
             type="button"
             onClick={() => void exporterPdf()}
