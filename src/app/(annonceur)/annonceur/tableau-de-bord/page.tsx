@@ -268,7 +268,10 @@ export default function TableauDeBordAnnonceurPage() {
             uniques30: uniques,
             clics30: clics,
             depense30: depense,
-            href: null,
+            // Les lignes « Carte » n'étaient pas cliquables faute d'écran de
+            // destination : l'annonceur voyait ses campagnes sans pouvoir les
+            // ouvrir, alors que les lignes « Édition » menaient à leur rapport.
+            href: `/annonceur/campagne/${encodeURIComponent(c.id)}`,
           });
         }
 

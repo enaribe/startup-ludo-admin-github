@@ -319,6 +319,22 @@ function LigneCampagne({ c }: { c: Campaign }) {
         >
           {statut.libelle}
         </span>
+        {/*
+          * Un brouillon se REPREND (wizard, écriture autorisée) ; une campagne
+          * déjà soumise s'OUVRE en rapport (lecture seule — les règles
+          * Firestore refusent l'écriture au-delà de `in_review`).
+          */}
+        {c.status !== 'draft' && (
+          <Link
+            href={`/annonceur/campagne/${encodeURIComponent(c.id)}`}
+            style={{
+              fontSize: 12, fontWeight: 600, color: NAVY, textDecoration: 'none',
+              border: '1px solid var(--color-card-border)', borderRadius: 8, padding: '5px 10px',
+            }}
+          >
+            Voir le rapport
+          </Link>
+        )}
         {c.status === 'draft' && (
           <Link
             href={`/annonceur/nouvelle?id=${encodeURIComponent(c.id)}`}
