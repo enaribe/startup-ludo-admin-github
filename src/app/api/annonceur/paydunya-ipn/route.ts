@@ -47,6 +47,18 @@ async function lireCallback(request: NextRequest): Promise<Record<string, string
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    return await traiterCallback(request);
+  } catch (error) {
+    // Filet de sécurité : AUCUNE exception ne doit sortir d'ici. Un 500 fait
+    // rejouer PayDunya en boucle sur un problème qui n'est pas le sien, et le
+    // rejeu ne répare rien. On journalise et on acquitte.
+    console.error('[paydunya-ipn] Erreur non gérée :', error);
+    return NextResponse.json({ ok: true });
+  }
+}
+
+async function traiterCallback(request: NextRequest) {
   const donnees = await lireCallback(request);
 
   // ── Barrière 1 : le hash ──

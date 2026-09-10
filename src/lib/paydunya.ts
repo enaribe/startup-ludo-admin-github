@@ -219,6 +219,14 @@ export async function confirmerFacture(token: string): Promise<FactureConfirmee>
  */
 export async function hashCallbackValide(hashRecu: string): Promise<boolean> {
   if (!hashRecu) return false;
+  // Clés absentes : on REFUSE, sans lever. `cles()` jetait une exception que
+  // la route ne rattrapait pas, transformant un webhook non configuré en
+  // HTTP 500 — PayDunya rejoue alors en boucle une requête qui ne peut pas
+  // aboutir. Un refus explicite est la seule réponse honnête.
+  if (!paydunyaConfigure()) {
+    console.warn('[paydunya] callback reçu mais aucune clé configurée sur cette instance.');
+    return false;
+  }
   const { master } = cles();
   const { createHash, timingSafeEqual } = await import('node:crypto');
   const attendu = createHash('sha512').update(master).digest('hex');
