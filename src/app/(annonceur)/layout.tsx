@@ -41,6 +41,18 @@ function SidebarAnnonceur() {
   const pathname = usePathname();
   const { admin, logout } = useAuth();
 
+  const [solde, setSolde] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!admin?.uid) return;
+    getDoc(doc(firestore, COLLECTIONS.advertisers, admin.uid))
+      .then((snap) => {
+        const s = snap.data()?.balanceFcfa;
+        if (typeof s === 'number') setSolde(s);
+      })
+      .catch(() => {});
+  }, [admin?.uid]);
+
   const items = [
     {
       section: 'DIFFUSION',
@@ -146,7 +158,7 @@ function SidebarAnnonceur() {
         ))}
       </nav>
 
-      {/* Pied : compte + déconnexion */}
+      {/* Pied : solde + compte + déconnexion */}
       <div
         style={{
           borderTop: '1px solid rgba(255,255,255,0.10)',
@@ -154,6 +166,27 @@ function SidebarAnnonceur() {
           marginTop: 12,
         }}
       >
+        {/*
+          * Le solde vit ici plutôt que dans la barre du haut : c'est
+          * l'information qui conditionne la diffusion (à zéro, tout s'arrête),
+          * elle mérite d'être sous les yeux en permanence plutôt qu'en bout de
+          * ligne. Couleurs propres au fond navy — le chip clair de la barre
+          * supérieure y serait illisible.
+          */}
+        <div
+          className="flex items-center justify-between gap-2"
+          style={{
+            padding: '8px 10px',
+            marginBottom: 10,
+            borderRadius: 8,
+            background: 'rgba(255,255,255,0.06)',
+          }}
+        >
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>Solde</span>
+          <strong style={{ fontSize: 12.5, color: '#FFFFFF' }}>
+            {solde != null ? `${solde.toLocaleString('fr-FR')} FCFA` : '—'}
+          </strong>
+        </div>
         <div style={{ fontSize: 12.5, fontWeight: 700, padding: '0 10px' }}>
           {admin?.displayName || admin?.email || 'Annonceur'}
         </div>
@@ -231,18 +264,6 @@ function AnnonceurGuard({ children }: { children: React.ReactNode }) {
 function TopbarAnnonceur() {
   const pathname = usePathname();
   const { admin } = useAuth();
-  const [solde, setSolde] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!admin?.uid) return;
-    getDoc(doc(firestore, COLLECTIONS.advertisers, admin.uid))
-      .then((snap) => {
-        const s = snap.data()?.balanceFcfa;
-        if (typeof s === 'number') setSolde(s);
-      })
-      .catch(() => {});
-  }, [admin?.uid]);
-
   const titre = pathname.startsWith('/annonceur/tableau-de-bord')
     ? 'Tableau de bord'
     : pathname.startsWith('/annonceur/nouvelle')
@@ -269,15 +290,6 @@ function TopbarAnnonceur() {
         <span style={{ color: NAVY, fontWeight: 600 }}>{titre}</span>
       </div>
       <div className="flex items-center gap-3">
-        <div
-          className="flex items-center gap-2"
-          style={{ border: '1px solid rgba(15,28,46,0.12)', borderRadius: 10, padding: '6px 14px', background: '#FBF7EE', fontSize: 12.5 }}
-        >
-          <span style={{ color: 'var(--color-text-muted)' }}>Solde</span>
-          <strong style={{ color: NAVY }}>
-            {solde != null ? `${solde.toLocaleString('fr-FR')} FCFA` : '—'}
-          </strong>
-        </div>
         <div className="flex items-center gap-2">
           <div
             className="flex items-center justify-center"
