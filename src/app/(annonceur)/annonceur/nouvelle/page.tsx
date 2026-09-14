@@ -8,9 +8,14 @@
  * Branche B (édition) : Édition & réservation (calendrier d'exclusivité) →
  * Habillage → Ciblage réduit → Budget → Validation.
  *
- * LE BROUILLON EST LE DOCUMENT : `creerBrouillonCampagne` au choix du format,
- * puis chaque « Suivant » sauvegarde (`sauvegarderBrouillon`). Fermer l'onglet
- * ne perd rien — le brouillon réapparaîtra dans la liste (statut Brouillon).
+ * LE BROUILLON EST LE DOCUMENT, MAIS IL NAÎT TARD : le document n'est créé
+ * qu'à la PREMIÈRE SAISIE RÉELLE (`aDuContenu`), pas au choix du format.
+ * Ouvrir le wizard puis se raviser ne laisse donc plus rien derrière soi.
+ * Ensuite, l'autosave (2 s) et chaque « Suivant » écrivent
+ * (`sauvegarderBrouillon`) : fermer l'onglet ne perd rien — le brouillon
+ * réapparaît dans la liste (statut Brouillon).
+ * Les dépôts d'image restent fermés tant qu'aucun identifiant n'existe : leur
+ * chemin Storage est `campaigns/{id}/…`, il ne peut pas être calculé avant.
  * La soumission passe en `in_review` : cartes via une écriture directe (les
  * règles l'autorisent), éditions via la TRANSACTION serveur qui pose aussi
  * l'exclusivité des mois — les deux doivent être atomiques.
@@ -229,25 +234,72 @@ export default function NouvelleMiseEnVisibilitePage() {
     };
   }, [format, editions]);
 
-  /** Choix du format = création du brouillon (la sauvegarde auto commence là). */
-  const choisirFormat = async (f: 'card' | 'edition') => {
-    setEnCours(true);
-    try {
-      const id = await creerBrouillonCampagne(f);
-      setCampaignId(id);
-      setFormat(f);
-      setEtape(0);
-      if (f === 'edition') setViewsGoal(40_000);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Création impossible');
-    } finally {
-      setEnCours(false);
-    }
+  /**
+   * Choix du format : le wizard s'ouvre EN MÉMOIRE, rien n'est encore écrit.
+   *
+   * Le document était créé ici même, au clic sur « Carte » ou « Édition » —
+   * donc avant toute saisie. Ouvrir le wizard puis se raviser laissait un
+   * brouillon vide et définitif dans la liste de l'annonceur : 16 des
+   * 28 brouillons en base n'avaient ni texte, ni édition, ni image.
+   *
+   * La création est désormais différée jusqu'à la première saisie réelle
+   * (voir `sauvegarder`).
+   */
+  const choisirFormat = (f: 'card' | 'edition') => {
+    setFormat(f);
+    setEtape(0);
+    if (f === 'edition') setViewsGoal(40_000);
   };
+
+  /**
+   * Y a-t-il de quoi justifier un document ?
+   *
+   * Le seuil est volontairement bas — un message commencé, une édition
+   * choisie, une image déposée : dès que l'annonceur a produit quelque chose
+   * qu'il serait fâché de perdre. Un ciblage ou un budget laissés à leur
+   * valeur par défaut ne comptent pas : ils sont préremplis, les retenir
+   * recréerait exactement les brouillons vides qu'on veut éviter.
+   */
+  const aDuContenu = useCallback((): boolean => {
+    if (format === 'edition') {
+      return Boolean(
+        editionId.trim() ||
+          skin.structure?.trim() ||
+          skin.photoUrl?.trim() ||
+          skin.logoUrl?.trim() ||
+          skin.shortText?.trim() ||
+          skin.linkUrl?.trim() ||
+          moisChoisis.length > 0
+      );
+    }
+    return Boolean(
+      card?.rectoText?.trim() ||
+        card?.logoUrl?.trim() ||
+        card?.verso?.description?.trim() ||
+        card?.cta?.url?.trim()
+    );
+  }, [format, editionId, skin, moisChoisis, card]);
 
   /** Sauvegarde le brouillon avec l'état courant (appelée à chaque « Suivant »). */
   const sauvegarder = useCallback(async () => {
-    if (!campaignId) return;
+    // Rien de saisi : on n'écrit pas. C'est ce qui empêche un wizard ouvert
+    // puis abandonné de laisser un document derrière lui.
+    if (!campaignId && !aDuContenu()) return;
+
+    // Première saisie réelle : le document naît maintenant, pas au choix du
+    // format. `format` est forcément défini ici (le wizard n'est ouvert
+    // qu'après l'avoir choisi).
+    let id = campaignId;
+    if (!id) {
+      if (!format) return;
+      try {
+        id = await creerBrouillonCampagne(format);
+        setCampaignId(id);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Création impossible');
+        return;
+      }
+    }
     // Le tirage mobile ne lit que `regions` : la zone choisie s'y traduit.
     const regionsPourMobile =
       targeting.zone === 'diaspora' ? ['diaspora']
@@ -267,10 +319,10 @@ export default function NouvelleMiseEnVisibilitePage() {
             }
           : undefined,
     };
-    await sauvegarderBrouillon(campaignId, patch).catch(() => {
+    await sauvegarderBrouillon(id, patch).catch(() => {
       // La sauvegarde auto ne bloque jamais la navigation : la suivante rattrapera.
     });
-  }, [campaignId, card, format, skin, editionId, targeting, viewsGoal, budgetCap, debut, fin]);
+  }, [campaignId, aDuContenu, card, format, skin, editionId, targeting, viewsGoal, budgetCap, debut, fin]);
 
   const suivant = async () => {
     await sauvegarder();
@@ -281,12 +333,16 @@ export default function NouvelleMiseEnVisibilitePage() {
   // Sauvegarde automatique : 2 s après la dernière modification (maquette :
   // « Brouillon enregistré automatiquement · il y a X min »).
   useEffect(() => {
-    if (!campaignId) return;
+    // Plus de garde sur `campaignId` : c'est justement cette sauvegarde qui
+    // crée le document, dès qu'il y a quelque chose à enregistrer.
+    if (!format) return;
     const minuteur = setTimeout(() => {
-      void sauvegarder().then(() => setDernierEnregistrement(Date.now()));
+      void sauvegarder().then(() => {
+        if (campaignId || aDuContenu()) setDernierEnregistrement(Date.now());
+      });
     }, 2000);
     return () => clearTimeout(minuteur);
-  }, [campaignId, sauvegarder]);
+  }, [format, campaignId, aDuContenu, sauvegarder]);
 
   /** Enregistre et retourne à la liste (bouton du footer). */
   const enregistrerEtQuitter = async () => {
@@ -451,7 +507,7 @@ export default function NouvelleMiseEnVisibilitePage() {
           }}
           card={card}
           onCard={setCard}
-          campaignId={campaignId!}
+          campaignId={campaignId}
           targeting={targeting}
           onTargeting={setTargeting}
           viewsGoal={viewsGoal}
@@ -479,7 +535,7 @@ export default function NouvelleMiseEnVisibilitePage() {
           onMois={setMoisChoisis}
           skin={skin}
           onSkin={setSkin}
-          campaignId={campaignId!}
+          campaignId={campaignId}
           targeting={targeting}
           onTargeting={setTargeting}
           totalJoueurs={totalJoueurs}
@@ -573,7 +629,7 @@ function BrancheCarte(props: {
   onObjectif: (o: CampaignObjectif) => void;
   card: CampaignCard | null;
   onCard: (c: CampaignCard) => void;
-  campaignId: string;
+  campaignId: string | null;
   targeting: CampaignTargeting;
   onTargeting: (t: CampaignTargeting) => void;
   viewsGoal: number;
@@ -689,8 +745,10 @@ function BrancheCarte(props: {
                 label="Logo (PNG fond transparent conseillé)"
                 value={card.logoUrl ?? ''}
                 onChange={(url) => majCard({ logoUrl: url })}
-                storagePath={`campaigns/${props.campaignId}/logo`}
+                storagePath={`campaigns/${props.campaignId ?? 'brouillon'}/logo`}
                 aspectRatio="square"
+                disabled={!props.campaignId}
+                disabledHint="Écrivez d’abord un mot — le dépôt d’image a besoin d’un brouillon enregistré."
               />
             </div>
           </Bloc>
@@ -1054,7 +1112,7 @@ function BrancheEdition(props: {
   onMois: (m: string[]) => void;
   skin: CampaignEditionSkin;
   onSkin: (s: CampaignEditionSkin) => void;
-  campaignId: string;
+  campaignId: string | null;
   targeting: CampaignTargeting;
   onTargeting: (t: CampaignTargeting) => void;
   totalJoueurs: number | null;
@@ -1330,8 +1388,10 @@ function BrancheEdition(props: {
               label="Logo — posé automatiquement sur cartouche blanc · PNG ou SVG"
               value={skin.logoUrl ?? ''}
               onChange={(url) => majSkin({ logoUrl: url })}
-              storagePath={`campaigns/${props.campaignId}/logo`}
+              storagePath={`campaigns/${props.campaignId ?? 'brouillon'}/logo`}
               aspectRatio="square"
+              disabled={!props.campaignId}
+              disabledHint="Écrivez d’abord un mot — le dépôt d’image a besoin d’un brouillon enregistré."
             />
           </div>
 
@@ -1345,8 +1405,10 @@ function BrancheEdition(props: {
               label="Photo de l’écran sponsor"
               value={skin.photoUrl ?? ''}
               onChange={(url) => majSkin({ photoUrl: url })}
-              storagePath={`campaigns/${props.campaignId}/photo`}
+              storagePath={`campaigns/${props.campaignId ?? 'brouillon'}/photo`}
               aspectRatio="banner"
+              disabled={!props.campaignId}
+              disabledHint="Écrivez d’abord un mot — le dépôt d’image a besoin d’un brouillon enregistré."
             />
           </div>
 
