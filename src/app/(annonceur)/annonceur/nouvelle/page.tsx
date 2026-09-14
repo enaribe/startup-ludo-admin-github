@@ -1087,7 +1087,7 @@ function BrancheEdition(props: {
         const [an, m] = mois.split('-').map(Number);
         const finMois = new Date(an, m, 0, 23, 59, 59, 999).getTime();
         if ((typeof fin !== 'number' || finMois <= fin) && !prisPar.has(mois)) {
-          prisPar.set(mois, sponsorEnPlace.name || 'une autre structure');
+          prisPar.set(mois, sponsorEnPlace.name || 'Structure en place');
         }
       }
     }
@@ -1112,6 +1112,13 @@ function BrancheEdition(props: {
                 e.sponsor
               );
               const occupee = dispo.complete;
+              // Qui occupe l'édition, quand elle est prise. Le nom vient de
+              // l'habillage en place ; une édition bloquée par de vraies
+              // réservations n'en a pas ici (le calendrier le dit mois par mois).
+              const occupantNom =
+                dispo.complete && e.sponsor?.enabled && e.sponsor.paused !== true
+                  ? e.sponsor.name?.trim() || null
+                  : null;
               const partielle = !dispo.entierementLibre && !dispo.complete;
               const badge = dispo.complete
                 ? 'Complète'
@@ -1125,7 +1132,9 @@ function BrancheEdition(props: {
                   onClick={() => props.onEdition(e.id)}
                   title={
                     dispo.complete
-                      ? 'Tous les mois du calendrier sont réservés sur cette édition.'
+                      ? occupantNom
+                        ? `Édition déjà sponsorisée par ${occupantNom} sur toute la période affichée.`
+                        : 'Tous les mois du calendrier sont pris sur cette édition.'
                       : dispo.prochainLibre
                         ? `Prochain mois libre : ${libelleMois(dispo.prochainLibre)}`
                         : undefined
@@ -1181,6 +1190,16 @@ function BrancheEdition(props: {
                         dès {libelleMois(dispo.prochainLibre)}
                       </span>
                     )}
+                    {occupantNom && (
+                      <span
+                        style={{
+                          display: 'block', fontSize: 9.5, color: 'var(--color-text-muted)', fontWeight: 600,
+                          marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}
+                      >
+                        par {occupantNom}
+                      </span>
+                    )}
                   </span>
                 </button>
               );
@@ -1223,8 +1242,21 @@ function BrancheEdition(props: {
                       }}
                     >
                       <div style={{ fontSize: 12, fontWeight: 700, color: pris ? '#8A94A6' : NAVY }}>{moisCourt(mois)}</div>
-                      <div style={{ fontSize: 10, fontWeight: choisi ? 700 : 400, color: pris ? '#8A94A6' : choisi ? '#B87A0C' : 'var(--color-text-muted)', marginTop: 2 }}>
-                        {pris ? 'Réservé' : choisi ? 'Sélectionné' : 'Disponible'}
+                      {/*
+                        * Le nom de l'occupant plutôt qu'un « Réservé » muet : le
+                        * nom est connu dans tous les cas (réservation ou habillage
+                        * déjà en place), et sans lui l'annonceur ne peut pas
+                        * savoir s'il est bloqué par un concurrent ou par une
+                        * marque avec laquelle il travaille déjà.
+                        */}
+                      <div
+                        style={{
+                          fontSize: 10, fontWeight: choisi ? 700 : 400,
+                          color: pris ? '#8A94A6' : choisi ? '#B87A0C' : 'var(--color-text-muted)',
+                          marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {pris || (choisi ? 'Sélectionné' : 'Disponible')}
                       </div>
                     </button>
                   );
@@ -1238,7 +1270,7 @@ function BrancheEdition(props: {
                   <span style={{ width: 10, height: 10, borderRadius: 3, border: '1.5px solid rgba(15,28,46,0.25)', display: 'inline-block' }} /> Disponible
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span style={{ width: 10, height: 10, borderRadius: 3, background: '#D5DAE2', display: 'inline-block' }} /> Réservé par une autre structure
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: '#D5DAE2', display: 'inline-block' }} /> Déjà pris — le nom indiqué est celui de la structure en place
                 </span>
               </div>
             </div>
