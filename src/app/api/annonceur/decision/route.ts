@@ -140,6 +140,14 @@ export async function POST(request: NextRequest) {
             // le dernier mois payé — l'annonceur suivant verrait le créneau
             // qu'il a acheté occupé par le précédent.
             endAt: finExclusivite(campagne.reservationMonths),
+            // À QUI attribuer les vues de cet habillage.
+            //
+            // Le mobile ne connaît que l'`editionId` : il comptait donc sous
+            // `sponsorMetrics/{editionId}`, une clé PARTAGÉE par tous les
+            // annonceurs qui se succèdent sur l'édition. Le tableau de bord,
+            // lui, lit les métriques par campagne — il ne trouvait rien et
+            // affichait 0 vue sur une campagne qui diffusait réellement.
+            campaignId: campagne.id,
           },
         },
         { merge: true }

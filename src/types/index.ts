@@ -443,6 +443,15 @@ export interface EditionSponsor {
    * créneau parfois déjà revendu au suivant.
    */
   endAt?: number | null;
+  /**
+   * Campagne à laquelle attribuer les vues de cet habillage.
+   *
+   * Sans lui, le mobile ne connaît que l'`editionId` et compte sous
+   * `sponsorMetrics/{editionId}` — une clé partagée par tous les annonceurs
+   * qui se succèdent sur l'édition, que le tableau de bord (qui lit par
+   * campagne) ne sait pas rattacher.
+   */
+  campaignId?: string;
 }
 
 export interface EditionData {
