@@ -239,15 +239,21 @@ export default function TableauDeBordAnnonceurPage() {
           let vues = 0;
           let uniques = 0;
           let clics = 0;
+          // Une campagne d'ÉDITION se mesure en `editionPopupViews` (impression
+          // de l'écran sponsor), une campagne de CARTE en `views` (carte tirée
+          // en partie). Lire `views` pour les deux laissait un habillage
+          // pourtant diffusé à 0 vue : les deux compteurs sont distincts.
+          const vuesDuJour = (t: SponsorDailyMetrics['totals']) =>
+            c.format === 'edition' ? t.editionPopupViews : t.views;
           for (const jour of serie) {
             if (jour.date >= j30) {
-              vues += jour.totals.views;
+              vues += vuesDuJour(jour.totals);
               uniques += jour.totals.uniqueViews;
               clics += jour.totals.clicks;
             } else {
-              vuesPrec += jour.totals.views;
+              vuesPrec += vuesDuJour(jour.totals);
             }
-            cumulerJour(jour.date, jour.totals.views, jour.totals.clicks);
+            cumulerJour(jour.date, vuesDuJour(jour.totals), jour.totals.clicks);
           }
           const depense = vues * c.pricing.perView + clics * c.pricing.perClick;
           vues30 += vues;

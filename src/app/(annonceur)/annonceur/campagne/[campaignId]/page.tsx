@@ -64,7 +64,15 @@ export default function RapportCampagnePage() {
           // mécanique que pour une édition, clé différente.
           const jours = await getSponsorDailyMetrics(c.id, 30);
           if (!annule) {
-            setSerie(jours.map((j) => ({ date: j.date, vues: j.totals.views, clics: j.totals.clicks })));
+            // Même distinction qu'au tableau de bord : un habillage d'édition
+            // se mesure en `editionPopupViews`, une carte en `views`.
+            setSerie(
+              jours.map((j) => ({
+                date: j.date,
+                vues: c.format === 'edition' ? j.totals.editionPopupViews : j.totals.views,
+                clics: j.totals.clicks,
+              }))
+            );
           }
         }
       } catch (error) {
