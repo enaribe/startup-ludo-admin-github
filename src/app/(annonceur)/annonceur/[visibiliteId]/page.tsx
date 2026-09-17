@@ -29,6 +29,12 @@ import {
 } from '@/lib/annonceur-service';
 import { PRIX_PAR_VUE_FCFA } from '@/lib/sponsor-pricing';
 import { getMesCampagnes } from '@/lib/campaign-service';
+import {
+  getSponsorDailyMetrics,
+  getSponsorMetrics,
+  type SponsorDailyMetrics,
+  type SponsorMetricsDocument,
+} from '@/lib/sponsor-metrics-service';
 import { auth } from '@/lib/firebase';
 import type { Campaign } from '@/types';
 import { genererRapportImpactPdf, telechargerRapport, type LigneRapport } from '@/lib/annonceur-rapport-pdf';
@@ -133,8 +139,50 @@ export default function TableauDeBordImpactPage() {
       ) ?? null,
     [campagnes, v?.editionId]
   );
-  const metriquesEdition = v ? espace?.metriques[v.editionId] ?? null : null;
-  const serieEdition = v ? espace?.quotidien[v.editionId] ?? [] : [];
+  /**
+   * Métriques de LA CAMPAGNE, quand une campagne pilote l'habillage.
+   *
+   * L'écran lisait `sponsorMetrics/{editionId}` — le cumul de l'édition, TOUS
+   * ANNONCEURS CONFONDUS depuis toujours. Une campagne activée aujourd'hui
+   * héritait donc des vues de ses prédécesseurs : 33 vues et 825 FCFA affichés
+   * pour une campagne qui n'en avait servi qu'une seule. C'est une erreur de
+   * facturation, pas d'affichage.
+   *
+   * L'édition reste la bonne clé pour un habillage posé à la main par CONCREE,
+   * qui n'a pas de campagne : là, le cumul EST sa mesure.
+   */
+  const [metriquesCampagne, setMetriquesCampagne] = useState<SponsorMetricsDocument | null>(null);
+  const [serieCampagne, setSerieCampagne] = useState<SponsorDailyMetrics[]>([]);
+  useEffect(() => {
+    if (!campagneLiee) {
+      setMetriquesCampagne(null);
+      setSerieCampagne([]);
+      return;
+    }
+    let annule = false;
+    void Promise.all([
+      getSponsorMetrics(campagneLiee.id).catch(() => null),
+      getSponsorDailyMetrics(campagneLiee.id, 60).catch(() => [] as SponsorDailyMetrics[]),
+    ]).then(([m, jours]) => {
+      if (annule) return;
+      setMetriquesCampagne(m);
+      setSerieCampagne(jours);
+    });
+    return () => {
+      annule = true;
+    };
+  }, [campagneLiee]);
+
+  const metriquesEdition = campagneLiee
+    ? metriquesCampagne
+    : v
+      ? espace?.metriques[v.editionId] ?? null
+      : null;
+  const serieEdition = campagneLiee
+    ? serieCampagne
+    : v
+      ? espace?.quotidien[v.editionId] ?? []
+      : [];
 
   /** Série 14 jours de LA mise en visibilité (carte : ses compteurs à elle). */
   const serie14: PointJour[] = useMemo(() => {
