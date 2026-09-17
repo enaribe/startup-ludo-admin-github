@@ -32,7 +32,7 @@ import toast from 'react-hot-toast';
 import { firestore, COLLECTIONS } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { getEditions, getEditionsByIds } from '@/lib/firestore-service';
-import { chargerEspaceAnnonceur, fcfa } from '@/lib/annonceur-service';
+import { idVisibiliteEdition, chargerEspaceAnnonceur, fcfa } from '@/lib/annonceur-service';
 import { getMesCampagnes } from '@/lib/campaign-service';
 import {
   getSponsorDailyMetrics,
@@ -289,7 +289,16 @@ export default function TableauDeBordAnnonceurPage() {
             // Les lignes « Carte » n'étaient pas cliquables faute d'écran de
             // destination : l'annonceur voyait ses campagnes sans pouvoir les
             // ouvrir, alors que les lignes « Édition » menaient à leur rapport.
-            href: `/annonceur/campagne/${encodeURIComponent(c.id)}`,
+            // Une campagne d'ÉDITION mène à l'écran de détail de la mise en
+            // visibilité (vues de l'écran sponsor, personnes uniques, parties
+            // jouées, durée moyenne, jours restants, coût par personne, courbe
+            // et répartition par région). L'écran `/annonceur/campagne/...`
+            // est le rapport minimal des campagnes CARTE : y envoyer un
+            // habillage remplaçait un écran riche par quatre tuiles.
+            href:
+              c.format === 'edition' && c.editionSkin?.editionId
+                ? `/annonceur/${encodeURIComponent(idVisibiliteEdition(c.editionSkin.editionId))}`
+                : `/annonceur/campagne/${encodeURIComponent(c.id)}`,
           });
         }
 

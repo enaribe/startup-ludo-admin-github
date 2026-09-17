@@ -326,7 +326,14 @@ function LigneCampagne({ c }: { c: Campaign }) {
           */}
         {c.status !== 'draft' && (
           <Link
-            href={`/annonceur/campagne/${encodeURIComponent(c.id)}`}
+            // Même règle qu'au tableau de bord : un habillage d'édition a son
+            // écran de détail complet ; `/annonceur/campagne/...` est le
+            // rapport minimal réservé aux campagnes carte.
+            href={
+              c.format === 'edition' && c.editionSkin?.editionId
+                ? `/annonceur/${encodeURIComponent(`${c.editionSkin.editionId}~edition`)}`
+                : `/annonceur/campagne/${encodeURIComponent(c.id)}`
+            }
             style={{
               fontSize: 12, fontWeight: 600, color: NAVY, textDecoration: 'none',
               border: '1px solid var(--color-card-border)', borderRadius: 8, padding: '5px 10px',
