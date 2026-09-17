@@ -733,13 +733,20 @@ function construireIndicateurs(
   const reservation = calculerReservation(v.debutMs, v.finMs);
 
   if (v.format === 'edition') {
-    const popup = v.vues;
+    // `m` porte les métriques de LA CAMPAGNE quand une campagne pilote
+    // l'habillage (voir `metriquesEdition` plus haut). `v.vues`, lui, vient
+    // toujours du cumul de l'édition, tous annonceurs confondus : le lire ici
+    // rendait à la tuile les vues des prédécesseurs que le reste de l'écran
+    // venait d'écarter — 33 vues affichées pour une campagne qui en a servi 1.
+    const popup = m ? m.totals.editionPopupViews : v.vues;
     const parties = m?.totals.gamesPlayed ?? 0;
     const clics = v.clics;
     const ctrEdition = popup > 0 ? (clics / popup) * 100 : null;
     // L'habillage d'édition n'est pas facturé aujourd'hui (`depenseFcfa` nul) :
     // les deux dernières tuiles ne s'affichent donc QUE s'il l'est réellement.
-    const depenseEdition = v.depenseFcfa;
+    // La dépense suit la même source que les vues : facturer `v.depenseFcfa`
+    // (calculé sur le cumul de l'édition) contredirait la tuile juste à côté.
+    const depenseEdition = m ? popup * prix : v.depenseFcfa;
     const coutParPersonne = depenseEdition != null && uniques > 0 ? depenseEdition / uniques : null;
 
     return [
