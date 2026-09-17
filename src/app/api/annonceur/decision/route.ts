@@ -107,6 +107,35 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ═══ PAS D'ACTIVATION SANS DE QUOI PAYER ═══
+  //
+  // Activer une campagne sur un compte prépayé à solde nul revenait à la
+  // lancer pour rien : elle diffusait, consommait, et l'entretien la
+  // suspendait au passage suivant avec « solde épuisé ». L'annonceur voyait sa
+  // campagne validée puis arrêtée sans l'avoir demandé, et les vues servies
+  // entre-temps creusaient une dette que le prépayé existe pour empêcher.
+  //
+  // Mieux vaut refuser tout de suite, en disant quoi faire.
+  //
+  // `postpaid` n'est PAS concerné : ces comptes (institutionnels réglant par
+  // virement) ont un solde négatif par construction — leur réclamer une avance
+  // n'aurait aucun sens. Même règle que la suspension automatique.
+  if (transition.vers === 'active') {
+    const compte = (
+      await db.collection(COLLECTIONS.advertisers).doc(campagne.ownerUid).get()
+    ).data() as { balanceFcfa?: number; billingMode?: string } | undefined;
+    const prepaye = (compte?.billingMode ?? 'prepaid') === 'prepaid';
+    if (prepaye && (compte?.balanceFcfa ?? 0) <= 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Solde insuffisant : ce compte prépayé ne peut pas financer la diffusion. Demandez à l’annonceur d’alimenter son compte, ou passez-le en facturation différée avant d’activer.',
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   if (!transition.depuis.includes(campagne.status)) {
     return NextResponse.json(
       { error: `Impossible : la campagne est « ${campagne.status} ».` },

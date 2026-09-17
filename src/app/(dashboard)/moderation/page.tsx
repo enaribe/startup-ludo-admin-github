@@ -58,6 +58,14 @@ export default function ModerationPage() {
   const { isSuperAdmin, loading: authLoading } = useAuth();
   const [onglet, setOnglet] = useState<Onglet>('a_traiter');
   const [enAttente, setEnAttente] = useState<Campaign[]>([]);
+  /**
+   * Solde par annonceur — pour AVERTIR avant le clic.
+   *
+   * Le serveur refuse désormais d'activer une campagne sur un compte prépayé
+   * à solde nul. Sans cette lecture, le modérateur ne l'apprendrait qu'en
+   * cliquant, sur une erreur.
+   */
+  const [soldes, setSoldes] = useState<Record<string, { solde: number; prepaye: boolean }>>({});
   const [actives, setActives] = useState<Campaign[]>([]);
   /**
    * Campagnes REFUSÉES ou TERMINÉES — la trace des décisions passées.
@@ -87,6 +95,25 @@ export default function ModerationPage() {
         chargerParStatut(['rejected', 'ended']),
       ]);
       setEnAttente(attente);
+
+      // Soldes des seuls annonceurs concernés par la file d'attente.
+      const uids = [...new Set(attente.map((c) => c.ownerUid).filter(Boolean))];
+      const paires = await Promise.all(
+        uids.map(async (uid) => {
+          const d = await getDoc(doc(firestore, COLLECTIONS.advertisers, uid)).catch(() => null);
+          const data = d?.data() as { balanceFcfa?: number; billingMode?: string } | undefined;
+          return [
+            uid,
+            {
+              solde: Number(data?.balanceFcfa ?? 0),
+              // Compte absent = prépayé à 0 : c'est exactement le cas que le
+              // serveur refuse, il doit être signalé comme tel.
+              prepaye: (data?.billingMode ?? 'prepaid') === 'prepaid',
+            },
+          ] as const;
+        })
+      );
+      setSoldes(Object.fromEntries(paires));
       setActives(act);
       // Décision la plus RÉCENTE en tête : l'historique se consulte à rebours.
       setHistorique(
@@ -328,6 +355,9 @@ export default function ModerationPage() {
                   key={c.id}
                   campagne={c}
                   enCours={actionSur === c.id}
+                  soldeInsuffisant={
+                    soldes[c.ownerUid]?.prepaye !== false && (soldes[c.ownerUid]?.solde ?? 0) <= 0
+                  }
                   onDecision={decider}
                 />
               ))}
@@ -1133,10 +1163,12 @@ function DemandesInscription() {
 function CarteModeration({
   campagne,
   enCours,
+  soldeInsuffisant,
   onDecision,
 }: {
   campagne: Campaign;
   enCours: boolean;
+  soldeInsuffisant: boolean;
   onDecision: (id: string, d: Decision, motif?: string) => Promise<void>;
 }) {
   const [motif, setMotif] = useState('');
@@ -1193,14 +1225,30 @@ function CarteModeration({
 
         {/* Décision */}
         <div className="flex flex-col gap-2">
+          {/*
+            * Le bouton est ÉTEINT, pas masqué : le modérateur doit voir qu'une
+            * validation est possible, et ce qui l'empêche. Le serveur refuse
+            * de toute façon — ceci évite de l'apprendre par une erreur.
+            */}
           <button
             className="btn-primary flex items-center justify-center gap-2"
-            style={{ fontSize: 13, opacity: enCours ? 0.6 : 1 }}
-            disabled={enCours}
+            style={{ fontSize: 13, opacity: enCours || soldeInsuffisant ? 0.6 : 1 }}
+            disabled={enCours || soldeInsuffisant}
+            title={
+              soldeInsuffisant
+                ? 'Solde insuffisant : ce compte prépayé ne peut pas financer la diffusion.'
+                : undefined
+            }
             onClick={() => void onDecision(campagne.id, 'activate')}
           >
             <CheckCircle2 size={14} /> Valider et diffuser
           </button>
+          {soldeInsuffisant && (
+            <p style={{ fontSize: 11.5, color: '#C9302C', lineHeight: 1.5 }}>
+              Solde à 0 — la campagne serait suspendue dès le premier passage d’entretien.
+              Demandez à l’annonceur d’alimenter son compte, ou passez-le en facturation différée.
+            </p>
+          )}
           {!refusOuvert ? (
             <button
               className="btn-secondary flex items-center justify-center gap-2"
