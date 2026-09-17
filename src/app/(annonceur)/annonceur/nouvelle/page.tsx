@@ -272,11 +272,20 @@ export default function NouvelleMiseEnVisibilitePage() {
           moisChoisis.length > 0
       );
     }
+    // `structure` — le « Nom affiché sur la carte » — manquait ici : un
+    // annonceur qui remplissait ce champ en premier, puis voulait déposer son
+    // logo, se voyait répondre « écrivez d'abord un mot » alors qu'il venait
+    // justement d'en écrire un. Même oubli pour les champs du verso.
     return Boolean(
-      card?.rectoText?.trim() ||
+      card?.structure?.trim() ||
+        card?.rectoText?.trim() ||
         card?.logoUrl?.trim() ||
         card?.verso?.description?.trim() ||
-        card?.cta?.url?.trim()
+        card?.verso?.avantage?.trim() ||
+        card?.verso?.criteres?.trim() ||
+        card?.verso?.dateLimite?.trim() ||
+        card?.cta?.url?.trim() ||
+        card?.cta?.libelle?.trim()
     );
   }, [format, editionId, skin, moisChoisis, card]);
 
@@ -332,6 +341,31 @@ export default function NouvelleMiseEnVisibilitePage() {
 
   // Sauvegarde automatique : 2 s après la dernière modification (maquette :
   // « Brouillon enregistré automatiquement · il y a X min »).
+  /**
+   * Création ANTICIPÉE du brouillon, dès la première saisie.
+   *
+   * L'autosave attend 2 s après la dernière frappe. Pendant ce délai
+   * `campaignId` reste nul et les dépôts d'image restent fermés : un annonceur
+   * qui écrit son nom de structure puis va déposer son logo trouvait un champ
+   * grisé lui demandant d'« écrire d'abord un mot ». Le document naît
+   * désormais dès qu'il y a de quoi le justifier.
+   */
+  useEffect(() => {
+    if (!format || campaignId || !aDuContenu()) return;
+    let annule = false;
+    void creerBrouillonCampagne(format)
+      .then((id) => {
+        if (!annule) setCampaignId(id);
+      })
+      .catch(() => {
+        // Silencieux : l'autosave réessaiera dans la foulée, et c'est elle qui
+        // signale l'échec à l'annonceur.
+      });
+    return () => {
+      annule = true;
+    };
+  }, [format, campaignId, aDuContenu]);
+
   useEffect(() => {
     // Plus de garde sur `campaignId` : c'est justement cette sauvegarde qui
     // crée le document, dès qu'il y a quelque chose à enregistrer.
@@ -748,7 +782,7 @@ function BrancheCarte(props: {
                 storagePath={`campaigns/${props.campaignId ?? 'brouillon'}/logo`}
                 aspectRatio="square"
                 disabled={!props.campaignId}
-                disabledHint="Écrivez d’abord un mot — le dépôt d’image a besoin d’un brouillon enregistré."
+                disabledHint="Renseignez d’abord un champ texte — le dépôt d’image attend l’enregistrement du brouillon."
               />
             </div>
           </Bloc>
@@ -1391,7 +1425,7 @@ function BrancheEdition(props: {
               storagePath={`campaigns/${props.campaignId ?? 'brouillon'}/logo`}
               aspectRatio="square"
               disabled={!props.campaignId}
-              disabledHint="Écrivez d’abord un mot — le dépôt d’image a besoin d’un brouillon enregistré."
+              disabledHint="Renseignez d’abord un champ texte — le dépôt d’image attend l’enregistrement du brouillon."
             />
           </div>
 
@@ -1408,7 +1442,7 @@ function BrancheEdition(props: {
               storagePath={`campaigns/${props.campaignId ?? 'brouillon'}/photo`}
               aspectRatio="banner"
               disabled={!props.campaignId}
-              disabledHint="Écrivez d’abord un mot — le dépôt d’image a besoin d’un brouillon enregistré."
+              disabledHint="Renseignez d’abord un champ texte — le dépôt d’image attend l’enregistrement du brouillon."
             />
           </div>
 
