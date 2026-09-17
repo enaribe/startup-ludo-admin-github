@@ -207,6 +207,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ═══ UN COMPTE ANNONCEUR EXISTE DÈS LA PREMIÈRE DIFFUSION ═══
+  //
+  // `advertisers/{uid}` n'était créé qu'à la première ALIMENTATION. Une
+  // campagne pouvait donc diffuser et consommer sans qu'aucun compte ne
+  // puisse être débité : la clôture mensuelle n'avait rien à facturer, et
+  // l'écran affichait « — » là où l'annonceur attend un solde.
+  //
+  // Créé à solde nul, jamais écrasé (`balanceFcfa` seulement si absent) : un
+  // compte déjà alimenté ne doit pas être remis à zéro par une réactivation.
+  if (transition.vers === 'active') {
+    const refCompte = db.collection(COLLECTIONS.advertisers).doc(campagne.ownerUid);
+    const compte = await refCompte.get();
+    if (!compte.exists) {
+      await refCompte.set({
+        ownerUid: campagne.ownerUid,
+        ownerEmail: campagne.ownerEmail ?? null,
+        balanceFcfa: 0,
+        billingMode: 'prepaid',
+        createdAt: maintenant,
+        updatedAt: maintenant,
+      });
+    }
+  }
+
   // Feed toujours reconstruit — y compris sur reject/pause/end : une carte qui
   // sort du feed est exactement le but de ces décisions.
   const cartesPubliees = await publierFeed(db);
