@@ -157,6 +157,24 @@ export async function POST(request: NextRequest) {
     } else if (transition.vers === 'ended' || transition.vers === 'rejected') {
       await editionRef.set({ sponsor: { enabled: false, paused: true } }, { merge: true });
     }
+
+    // ═══ L'ANNONCEUR DOIT POUVOIR SUIVRE CE QU'IL DIFFUSE ═══
+    //
+    // Tout l'espace annonceur charge les éditions du PÉRIMÈTRE du compte
+    // (`editionIds`). Sans cette ligne, un annonceur dont la campagne vient
+    // d'être activée sur une édition hors de son périmètre ne voit ni la mise
+    // en visibilité, ni son écran de détail : son habillage diffuse, et son
+    // espace reste vide.
+    //
+    // Le périmètre n'est JAMAIS réduit en retour (fin ou refus) : les
+    // métriques passées doivent rester consultables, et une édition retirée
+    // du périmètre emporterait tout l'historique avec elle.
+    if (transition.vers === 'active') {
+      await db
+        .collection(COLLECTIONS.users)
+        .doc(campagne.ownerUid)
+        .set({ editionIds: FieldValue.arrayUnion(skin.editionId) }, { merge: true });
+    }
   }
 
   // Feed toujours reconstruit — y compris sur reject/pause/end : une carte qui
