@@ -208,6 +208,18 @@ export default function TableauDeBordAnnonceurPage() {
               href: `/annonceur/${encodeURIComponent(v.id)}`,
             });
           } else if (v.format === 'edition') {
+            // ═══ UNE SEULE LIGNE PAR DIFFUSION ═══
+            //
+            // Un habillage installé par une campagne apparaissait DEUX FOIS :
+            // ici (dérivé de `editions/{id}.sponsor`) et plus bas avec les
+            // campagnes. Même diffusion, deux lignes, et une dépense comptée
+            // en double dans le total.
+            //
+            // La ligne campagne est la bonne : elle porte le statut, la
+            // grille figée et l'échéance. On saute donc l'édition dès qu'une
+            // campagne la pilote — les habillages posés à la main par CONCREE,
+            // eux, n'ont pas de campagne et gardent leur ligne.
+            if (campagnes.some((c) => c.editionSkin?.editionId === v.editionId)) continue;
             let vuesPopup = 0;
             for (const jour of serie) {
               if (jour.date >= j30) vuesPopup += jour.totals.editionPopupViews;
