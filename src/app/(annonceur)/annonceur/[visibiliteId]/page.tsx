@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Pencil } from 'lucide-react';
+import { ArrowLeft, Download, Pause, Pencil, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth-context';
 import { getEditions, getEditionsByIds } from '@/lib/firestore-service';
@@ -29,6 +29,7 @@ import {
 } from '@/lib/annonceur-service';
 import { PRIX_PAR_VUE_FCFA } from '@/lib/sponsor-pricing';
 import { getMesCampagnes } from '@/lib/campaign-service';
+import { auth } from '@/lib/firebase';
 import type { Campaign } from '@/types';
 import { genererRapportImpactPdf, telechargerRapport, type LigneRapport } from '@/lib/annonceur-rapport-pdf';
 import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/CourbeQuotidienne';
@@ -148,6 +149,44 @@ export default function TableauDeBordImpactPage() {
       clics: j.cards[cible.cardId]?.clicks ?? 0,
     }));
   }, [serieEdition, cible]);
+
+  /**
+   * Pause / reprise de SA diffusion, sans passer par CONCREE.
+   *
+   * Réversible et sans conséquence sur le créneau : les mois réservés restent
+   * siens, seul l'affichage s'arrête. L'arrêt DÉFINITIF n'est pas ici — il
+   * libère les mois, qui redeviennent vendables, et reste une demande adressée
+   * à CONCREE.
+   */
+  const [enCoursPause, setEnCoursPause] = useState(false);
+  const basculerPause = useCallback(async () => {
+    if (!campagneLiee) return;
+    const versPause = campagneLiee.status === 'active';
+    setEnCoursPause(true);
+    try {
+      const jeton = await auth.currentUser?.getIdToken();
+      const reponse = await fetch('/api/annonceur/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jeton}` },
+        body: JSON.stringify({
+          campaignId: campagneLiee.id,
+          decision: versPause ? 'pause' : 'resume',
+        }),
+      });
+      const data = (await reponse.json()) as { error?: string };
+      if (!reponse.ok) throw new Error(data.error || 'Action impossible.');
+      toast.success(versPause ? 'Diffusion mise en pause.' : 'Diffusion reprise.');
+      setCampagnes((liste) =>
+        liste.map((c) =>
+          c.id === campagneLiee.id ? { ...c, status: versPause ? 'paused' : 'active' } : c
+        )
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Action impossible.');
+    } finally {
+      setEnCoursPause(false);
+    }
+  }, [campagneLiee]);
 
   const exporterPdf = useCallback(async () => {
     if (!v) return;
@@ -365,6 +404,35 @@ export default function TableauDeBordImpactPage() {
             * plus. Mieux vaut dire « contactez-nous » que d'ouvrir un écran
             * dont les modifications resteront sans effet.
             */}
+          {campagneLiee && (campagneLiee.status === 'active' || campagneLiee.status === 'paused') && (
+            <button
+              type="button"
+              onClick={() => void basculerPause()}
+              disabled={enCoursPause}
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                padding: '9px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--color-card-border)',
+                color: NAVY,
+                background: '#FFFFFF',
+                cursor: enCoursPause ? 'default' : 'pointer',
+                opacity: enCoursPause ? 0.6 : 1,
+              }}
+            >
+              {campagneLiee.status === 'active' ? (
+                <>
+                  <Pause size={13} /> Mettre en pause
+                </>
+              ) : (
+                <>
+                  <Play size={13} /> Reprendre la diffusion
+                </>
+              )}
+            </button>
+          )}
           {campagneLiee ? (
             <Link
               href={`/annonceur/nouvelle?id=${encodeURIComponent(campagneLiee.id)}`}

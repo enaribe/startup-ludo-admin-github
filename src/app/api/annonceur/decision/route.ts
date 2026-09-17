@@ -41,9 +41,18 @@ export async function POST(request: NextRequest) {
   if (!appelant) {
     return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
   }
-  if (!appelant.isSuper) {
-    return NextResponse.json({ error: 'Réservé à l’équipe CONCREE.' }, { status: 403 });
-  }
+  // L'ANNONCEUR PILOTE SA PROPRE DIFFUSION — pause et reprise uniquement.
+  //
+  // Jusqu'ici tout passait par CONCREE, alors que la page d'aide promet déjà
+  // « Mettre en pause, en revanche, est immédiat ». Suspendre sa diffusion est
+  // réversible et n'engage rien : la refuser obligeait l'annonceur à écrire un
+  // e-mail et à attendre, pendant que son habillage continuait de tourner et
+  // de consommer son budget.
+  //
+  // L'ARRÊT DÉFINITIF reste à CONCREE : il libère les mois réservés, qui
+  // redeviennent vendables à un concurrent. Un clic de trop rendrait un
+  // créneau payé sans retour possible.
+  const decisionsAnnonceur = new Set<Decision>(['pause', 'resume']);
 
   let campaignId = '';
   let decision: Decision | '' = '';
@@ -77,6 +86,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Campagne introuvable.' }, { status: 404 });
   }
   const campagne = snap.data() as Campaign;
+
+  // Contrôle de droits, une fois la campagne connue : la propriété ne peut se
+  // vérifier qu'ici. Un annonceur ne pilote QUE ses propres campagnes, et
+  // seulement en pause/reprise.
+  if (!appelant.isSuper) {
+    if (!decisionsAnnonceur.has(decision as Decision)) {
+      return NextResponse.json(
+        {
+          error:
+            'Seules la mise en pause et la reprise sont à votre main. Pour arrêter définitivement une diffusion, écrivez à annonceurs@concree.com — l’arrêt libère vos mois réservés, qui redeviennent disponibles.',
+        },
+        { status: 403 }
+      );
+    }
+    if (campagne.ownerUid !== appelant.uid) {
+      // Même réponse qu'une campagne inexistante : dire « elle ne vous
+      // appartient pas » confirmerait son existence à qui la cherche.
+      return NextResponse.json({ error: 'Campagne introuvable.' }, { status: 404 });
+    }
+  }
+
   if (!transition.depuis.includes(campagne.status)) {
     return NextResponse.json(
       { error: `Impossible : la campagne est « ${campagne.status} ».` },
