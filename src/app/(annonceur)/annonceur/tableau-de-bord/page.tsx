@@ -336,8 +336,12 @@ export default function TableauDeBordAnnonceurPage() {
           actives: activesLegacy + activesCampagnes,
           detailStatuts: detail.join(' · '),
           solde,
+          // Autonomie sur le solde DISPONIBLE, pas sur `balanceFcfa` : le
+          // solde en base ne bouge qu'à la clôture, donc le brut annonçait
+          // des jours de diffusion déjà consommés. La soustraction se fait
+          // ici, à partir de la dépense déjà calculée — rien n'est stocké.
           autonomieJours: autonomieEnJours({
-            soldeFcfa: solde,
+            soldeFcfa: solde != null ? solde - depense30 : null,
             consommationFcfa: depense30,
             fenetreJours: 30,
           }),

@@ -164,8 +164,21 @@ export default function FacturationPage() {
   const totalMois = lignesMois.reduce((s, l) => s + l.montant, 0);
   const joursEcoules = new Date().getDate();
   const rythmeJournalier = joursEcoules > 0 ? totalMois / joursEcoules : 0;
+  /**
+   * Solde DISPONIBLE — calculé ici, jamais stocké.
+   *
+   * Le solde en base ne bouge qu'à la clôture : `balanceFcfa` reste donc
+   * intact tout le mois alors que la diffusion consomme. La soustraction se
+   * fait à l'affichage, à partir des buckets déjà chargés pour la ligne
+   * « Engagé ce mois » — aucune écriture supplémentaire, et pas de champ
+   * dérivé qui pourrait diverger de la réalité.
+   */
+  const soldeDisponible = solde != null ? solde - totalMois : null;
+
+  // L'autonomie se calcule sur ce qui reste VRAIMENT : sur le solde brut, elle
+  // annonçait des jours de diffusion déjà consommés.
   const autonomieJours = autonomieEnJours({
-    soldeFcfa: solde,
+    soldeFcfa: soldeDisponible,
     consommationFcfa: totalMois,
     fenetreJours: joursEcoules,
   });
@@ -483,8 +496,8 @@ export default function FacturationPage() {
                   >
                     Solde après clôture
                   </span>
-                  <strong style={{ color: solde - totalMois <= 0 ? '#FFBC40' : undefined }}>
-                    {fcfa(solde - totalMois)}
+                  <strong style={{ color: (soldeDisponible ?? 0) <= 0 ? '#FFBC40' : undefined }}>
+                    {fcfa(soldeDisponible ?? 0)}
                   </strong>
                 </div>
               )}
