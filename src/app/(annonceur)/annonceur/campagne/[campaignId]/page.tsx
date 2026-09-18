@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Pause, Play } from 'lucide-react';
+import { ArrowLeft, Download, Pause, Pencil, Play } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { getCampagne } from '@/lib/campaign-service';
 import { auth } from '@/lib/firebase';
@@ -35,6 +35,8 @@ import { finExclusivite, joursRestants } from '@/lib/reservations';
 import ApercuCarteCampagne from '@/components/annonceur/ApercuCarteCampagne';
 import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/CourbeQuotidienne';
 import RepartitionAttribution from '@/components/annonceur/RepartitionAttribution';
+import FunnelImpact from '@/components/annonceur/FunnelImpact';
+import { genererRapportImpactPdf, telechargerRapport } from '@/lib/annonceur-rapport-pdf';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import type { Campaign } from '@/types';
 
@@ -150,6 +152,50 @@ export default function RapportCampagnePage() {
     }
   }, [campagne]);
 
+  /**
+   * Export PDF — le même générateur que l'écran d'une mise en visibilité.
+   *
+   * Il attend une `MiseEnVisibilite` mais n'en lit que cinq champs (titre,
+   * structure, format, kind, editionName) : on les dérive de la campagne
+   * plutôt que de dupliquer 250 lignes de mise en page PDF.
+   */
+  const [exportEnCours, setExportEnCours] = useState(false);
+  const exporterPdf = useCallback(async () => {
+    if (!campagne) return;
+    setExportEnCours(true);
+    try {
+      const octets = await genererRapportImpactPdf({
+        visibilite: {
+          titre: campagne.card?.rectoText?.trim() || `Édition ${campagne.editionSkin?.editionId ?? ''}`,
+          structure: campagne.card?.structure || campagne.editionSkin?.structure || '—',
+          format: campagne.format === 'edition' ? 'edition' : 'carte',
+          kind: campagne.card?.kind === 'financement' ? 'funding' : 'opportunity',
+          editionName: campagne.editionSkin?.editionId || '—',
+        } as never,
+        indicateurs: [
+          { libelle: 'Vues totales', valeur: cumul.vues.toLocaleString('fr-FR') },
+          { libelle: 'Personnes uniques touchées', valeur: cumul.uniques.toLocaleString('fr-FR') },
+          { libelle: 'Flips de la carte', valeur: cumul.flips.toLocaleString('fr-FR') },
+          { libelle: 'Clics sur le CTA', valeur: cumul.clics.toLocaleString('fr-FR') },
+          { libelle: 'Cartes sauvegardées', valeur: cumul.saves.toLocaleString('fr-FR') },
+          { libelle: 'Dépense engagée', valeur: fcfa(cumul.depense) },
+        ],
+        funnel: [
+          { libelle: 'Vues', valeur: cumul.vues },
+          { libelle: 'Flips de la carte', valeur: cumul.flips },
+          { libelle: 'Clics sur le CTA', valeur: cumul.clics },
+          { libelle: 'Sauvegardes', valeur: cumul.saves },
+        ],
+        serie14j: serie.slice(-14),
+      });
+      telechargerRapport(octets, `rapport-${campagne.id}.pdf`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Export impossible.');
+    } finally {
+      setExportEnCours(false);
+    }
+  }, [campagne, cumul, serie]);
+
   const totaux = useMemo(() => {
     const vues = serie.reduce((s, j) => s + j.vues, 0);
     const clics = serie.reduce((s, j) => s + j.clics, 0);
@@ -198,7 +244,26 @@ export default function RapportCampagnePage() {
         <ArrowLeft size={14} /> Tableau de bord
       </Link>
 
-      <div className="flex items-start justify-between gap-3 flex-wrap" style={{ marginTop: 12 }}>
+      {/*
+        * BANDEAU : la carte telle qu'elle est tirée en partie, à côté de son
+        * nom. L'annonceur reconnaît sa campagne d'un coup d'œil — un titre
+        * seul l'oblige à se souvenir de ce qu'il a écrit.
+        */}
+      <div
+        className="flex items-start gap-4 flex-wrap"
+        style={{
+          marginTop: 12, background: '#FFFFFF', border: '1px solid var(--color-card-border)',
+          borderRadius: 14, padding: '16px 18px',
+        }}
+      >
+        {campagne.card && (
+          <div style={{ width: 110, flexShrink: 0 }}>
+            <div style={{ transform: 'scale(0.42)', transformOrigin: 'top left', width: 260, height: 160 }}>
+              <ApercuCarteCampagne card={campagne.card} />
+            </div>
+          </div>
+        )}
+        <div className="flex items-start justify-between gap-3 flex-wrap" style={{ flex: 1, minWidth: 260 }}>
         <div style={{ minWidth: 0 }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: NAVY, maxWidth: 620 }}>{titre}</h1>
           <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 3 }}>
@@ -232,6 +297,47 @@ export default function RapportCampagnePage() {
               )}
             </button>
           )}
+          {campagne.status === 'draft' || campagne.status === 'in_review' ? (
+            <Link
+              href={`/annonceur/nouvelle?id=${encodeURIComponent(campagne.id)}`}
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5, fontWeight: 600, padding: '7px 13px', borderRadius: 10,
+                border: '1px solid var(--color-card-border)', color: NAVY,
+                background: '#FFFFFF', textDecoration: 'none',
+              }}
+            >
+              <Pencil size={13} /> Modifier
+            </Link>
+          ) : (
+            // Une campagne diffusée n'est plus modifiable : les règles
+            // Firestore n'autorisent l'écriture que sur `draft`/`in_review`.
+            // Ouvrir le wizard ici produirait des erreurs de sauvegarde.
+            <span
+              title="Une campagne en diffusion ne se modifie plus. Écrivez à annonceurs@concree.com pour la faire évoluer."
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5, fontWeight: 600, padding: '7px 13px', borderRadius: 10,
+                border: '1px solid var(--color-card-border)', color: '#8A94A6',
+                background: '#F7F8FA', cursor: 'not-allowed',
+              }}
+            >
+              <Pencil size={13} /> Modifier
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => void exporterPdf()}
+            disabled={exportEnCours}
+            className="flex items-center gap-2"
+            style={{
+              fontSize: 12.5, fontWeight: 700, padding: '7px 14px', borderRadius: 10,
+              border: 'none', background: ORANGE, color: '#FFFFFF',
+              cursor: exportEnCours ? 'default' : 'pointer', opacity: exportEnCours ? 0.6 : 1,
+            }}
+          >
+            <Download size={13} /> {exportEnCours ? 'Export…' : 'Exporter le rapport (PDF)'}
+          </button>
           <span
             style={{
               fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 10,
@@ -240,6 +346,7 @@ export default function RapportCampagnePage() {
           >
             {statut.libelle}
           </span>
+        </div>
         </div>
       </div>
 
@@ -359,6 +466,28 @@ export default function RapportCampagnePage() {
         * habillage d'édition, l'écran s'affiche avant que le joueur n'ait joué,
         * donc la bascule est masquée.
         */}
+      {/*
+        * « Du regard à l'action » : ce que les joueurs FONT de la carte, pas
+        * seulement combien l'ont vue. Le composant se protège lui-même des
+        * petits volumes — un entonnoir dessiné sur 3 vues inverse ses marches.
+        */}
+      {campagne.format === 'card' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ marginTop: 18 }}>
+          <div className="lg:col-span-2">
+            <Carte titre="Du regard à l’action" sous="Ce que les joueurs font de votre carte">
+              <FunnelImpact
+                etapes={[
+                  { libelle: 'Vues', valeur: vuesCumul },
+                  { libelle: 'Flips de la carte', valeur: flips, aVenir: flips === 0 },
+                  { libelle: 'Clics sur le CTA', valeur: clicsCumul },
+                  { libelle: 'Sauvegardes', valeur: saves },
+                ]}
+              />
+            </Carte>
+          </div>
+        </div>
+      )}
+
       <div style={{ marginTop: 18 }}>
         <Carte titre="Personnes touchées" sous="Ventilation des vues par profil de joueur">
           <RepartitionAttribution
