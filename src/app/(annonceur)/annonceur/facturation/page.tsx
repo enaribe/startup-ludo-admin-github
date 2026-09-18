@@ -463,6 +463,31 @@ export default function FacturationPage() {
 
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', marginTop: 12, paddingTop: 10, fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div className="flex justify-between"><span style={{ color: 'rgba(255,255,255,0.6)' }}>Engagé ce mois</span><strong>{fcfa(totalMois)}</strong></div>
+              {/*
+                * SOLDE APRÈS CLÔTURE — le lien entre les deux lignes du dessus.
+                *
+                * « Solde 30 000 » et « Engagé 250 » se lisaient comme deux
+                * chiffres indépendants : rien ne disait que le second serait
+                * retiré du premier. La consommation n'est prélevée qu'à la
+                * clôture (spec §6), donc le solde ne bouge pas pendant le mois
+                * — ce qui donne l'impression que la diffusion est gratuite.
+                *
+                * Affiché seulement s'il y a quelque chose d'engagé : sinon la
+                * ligne répéterait le solde et n'apprendrait rien.
+                */}
+              {totalMois > 0 && solde != null && (
+                <div className="flex justify-between">
+                  <span
+                    style={{ color: 'rgba(255,255,255,0.6)' }}
+                    title="La consommation du mois est prélevée en une fois à la clôture, pas au fil des vues."
+                  >
+                    Solde après clôture
+                  </span>
+                  <strong style={{ color: solde - totalMois <= 0 ? '#FFBC40' : undefined }}>
+                    {fcfa(solde - totalMois)}
+                  </strong>
+                </div>
+              )}
               {plafondsActifs > 0 && (
                 <div className="flex justify-between">
                   <span style={{ color: 'rgba(255,255,255,0.6)' }} title="Somme des budgets plafonds de vos mises en visibilité actives — ce que vous pourriez engager au maximum si elles allaient toutes à leur terme.">

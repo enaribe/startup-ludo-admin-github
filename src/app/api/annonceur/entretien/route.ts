@@ -327,7 +327,15 @@ export async function POST(request: NextRequest) {
     // rien ne permet de désigner « la » campagne fautive, donc on les arrête
     // toutes. En laisser diffuser une creuserait une dette sur un compte
     // prépayé, ce que ce modèle existe précisément pour empêcher.
-    const soldeEpuise = (compte.balanceFcfa ?? 0) <= 0;
+    //
+    // LE SOLDE DISPONIBLE, PAS LE SOLDE BRUT : la consommation du mois n'est
+    // prélevée qu'à la clôture (spec §6). Comparer `balanceFcfa` seul laissait
+    // diffuser un compte à 100 F ayant déjà consommé 5 000 F — la clôture le
+    // passait alors à −4 900 F, soit exactement la dette que le prépayé existe
+    // pour empêcher. On retranche donc ce qui est engagé mais pas encore
+    // facturé.
+    const soldeDisponible = (compte.balanceFcfa ?? 0) - consomme;
+    const soldeEpuise = soldeDisponible <= 0;
     if (soldeEpuise) {
       for (const docSnap of snap.docs) {
         const c = { ...(docSnap.data() as Campaign), id: docSnap.id };
@@ -355,8 +363,10 @@ export async function POST(request: NextRequest) {
     // La consommation cumulée sert de proxy de rythme sur la durée de vie des
     // campagnes ; faute de date de début fiable pour toutes, on retient la
     // fenêtre de 30 jours, la même que le tableau de bord.
+    // Même base que la suspension : l'autonomie se calcule sur ce qui reste
+    // VRAIMENT, sinon elle annonce des jours de diffusion déjà consommés.
     const jours = autonomieEnJours({
-      soldeFcfa: compte.balanceFcfa,
+      soldeFcfa: soldeDisponible,
       consommationFcfa: consomme,
       fenetreJours: 30,
     });
