@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { CheckCircle2, CreditCard, Pause, Play, ShieldCheck, StopCircle, Wrench, XCircle } from 'lucide-react';
+import { CalendarRange, CheckCircle2, CreditCard, Pause, Play, ShieldCheck, StopCircle, Wrench, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { auth, firestore, COLLECTIONS } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
@@ -66,6 +66,8 @@ export default function ModerationPage() {
    * cliquant, sur une erreur.
    */
   const [soldes, setSoldes] = useState<Record<string, { solde: number; prepaye: boolean }>>({});
+  /** Campagne dont on édite la période (null = modale fermée). */
+  const [periodeSur, setPeriodeSur] = useState<Campaign | null>(null);
   const [actives, setActives] = useState<Campaign[]>([]);
   /**
    * Campagnes REFUSÉES ou TERMINÉES — la trace des décisions passées.
@@ -325,6 +327,17 @@ export default function ModerationPage() {
         })}
       </div>
 
+      {periodeSur && (
+        <ModalePeriode
+          campagne={periodeSur}
+          onFermer={() => setPeriodeSur(null)}
+          onEnregistre={() => {
+            setPeriodeSur(null);
+            void charger();
+          }}
+        />
+      )}
+
       {onglet === 'a_traiter' && (
         <>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 10 }}>
@@ -452,6 +465,20 @@ export default function ModerationPage() {
                       <Play size={13} /> Reprendre
                     </button>
                   )}
+                  {/*
+                    * La période reste modifiable APRÈS activation : une
+                    * campagne validée avec de mauvaises dates diffusait dans le
+                    * vide, et la seule issue était de tout refaire. Le contenu,
+                    * lui, reste verrouillé — c'est ce qui a été validé.
+                    */}
+                  <button
+                    className="btn-secondary flex items-center gap-1.5"
+                    style={{ fontSize: 12 }}
+                    disabled={actionSur === c.id}
+                    onClick={() => setPeriodeSur(c)}
+                  >
+                    <CalendarRange size={13} /> Période
+                  </button>
                   <button
                     className="btn-secondary flex items-center gap-1.5"
                     style={{ fontSize: 12, color: 'var(--color-danger)' }}
@@ -1160,6 +1187,137 @@ function DemandesInscription() {
 }
 
 /** Une campagne en attente : aperçu joueur + décision motivée. */
+/**
+ * Édition de la période de diffusion.
+ *
+ * Deux champs date, vides = « en continu ». La correction la plus fréquente
+ * est un début mal saisi : une campagne activée pour le mois suivant reste
+ * « active » sans rien diffuser, et rien à l'écran ne l'explique.
+ */
+function ModalePeriode({
+  campagne,
+  onFermer,
+  onEnregistre,
+}: {
+  campagne: Campaign;
+  onFermer: () => void;
+  onEnregistre: () => void;
+}) {
+  const enDate = (ms?: number | null) =>
+    ms ? new Date(ms).toISOString().slice(0, 10) : '';
+  const [debut, setDebut] = useState(enDate(campagne.period?.startAt));
+  const [fin, setFin] = useState(enDate(campagne.period?.endAt));
+  const [enCours, setEnCours] = useState(false);
+
+  const enregistrer = async () => {
+    setEnCours(true);
+    try {
+      const jeton = await auth.currentUser?.getIdToken();
+      const reponse = await fetch('/api/annonceur/periode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jeton}` },
+        body: JSON.stringify({
+          campaignId: campagne.id,
+          startAt: debut ? new Date(`${debut}T00:00:00`).getTime() : null,
+          // Fin de journée : une date de fin au 25 doit couvrir tout le 25.
+          endAt: fin ? new Date(`${fin}T23:59:59`).getTime() : null,
+        }),
+      });
+      const data = (await reponse.json()) as { error?: string };
+      if (!reponse.ok) throw new Error(data.error || 'Enregistrement impossible.');
+      toast.success('Période mise à jour.');
+      onEnregistre();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible.');
+    } finally {
+      setEnCours(false);
+    }
+  };
+
+  const maintenant = Date.now();
+  const debutMs = debut ? new Date(`${debut}T00:00:00`).getTime() : null;
+  const finMs = fin ? new Date(`${fin}T23:59:59`).getTime() : null;
+  const diffuseAujourdhui =
+    (debutMs == null || maintenant >= debutMs) && (finMs == null || maintenant <= finMs);
+
+  return (
+    <div
+      className="flex items-center justify-center"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,28,46,0.45)', zIndex: 50, padding: 16 }}
+      onClick={onFermer}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#FFFFFF', borderRadius: 14, padding: '20px 22px',
+          width: '100%', maxWidth: 420,
+        }}
+      >
+        <h3 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          Période de diffusion
+        </h3>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+          Laissez vide pour une diffusion en continu. Le contenu de la campagne,
+          lui, n’est pas modifiable après validation.
+        </p>
+
+        <div className="flex gap-3" style={{ marginTop: 14 }}>
+          <label style={{ flex: 1, fontSize: 12, color: 'var(--color-text-muted)' }}>
+            Début
+            <input
+              type="date"
+              className="input-field"
+              value={debut}
+              onChange={(e) => setDebut(e.target.value)}
+              style={{ marginTop: 4 }}
+            />
+          </label>
+          <label style={{ flex: 1, fontSize: 12, color: 'var(--color-text-muted)' }}>
+            Fin
+            <input
+              type="date"
+              className="input-field"
+              value={fin}
+              onChange={(e) => setFin(e.target.value)}
+              style={{ marginTop: 4 }}
+            />
+          </label>
+        </div>
+
+        {/* Dit tout de suite si la campagne diffuse AUJOURD'HUI : c'est la
+            question qu'on se pose en ouvrant cette modale. */}
+        <p
+          style={{
+            fontSize: 11.5, marginTop: 12, padding: '8px 10px', borderRadius: 8,
+            background: diffuseAujourdhui ? 'rgba(46,160,67,0.10)' : 'rgba(245,166,35,0.12)',
+            color: diffuseAujourdhui ? '#2EA043' : '#B87A0C',
+          }}
+        >
+          {diffuseAujourdhui
+            ? 'Avec ces dates, la campagne peut diffuser dès aujourd’hui.'
+            : debutMs != null && maintenant < debutMs
+              ? `Diffusion à partir du ${new Date(debutMs).toLocaleDateString('fr-FR')} — rien ne sortira avant.`
+              : 'Ces dates sont déjà passées : la campagne ne diffusera plus.'}
+        </p>
+
+        <div className="flex justify-end gap-2" style={{ marginTop: 16 }}>
+          <button className="btn-secondary" style={{ fontSize: 13 }} onClick={onFermer}>
+            Annuler
+          </button>
+          <button
+            className="btn-primary"
+            style={{ fontSize: 13, opacity: enCours ? 0.6 : 1 }}
+            disabled={enCours}
+            onClick={() => void enregistrer()}
+          >
+            {enCours ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CarteModeration({
   campagne,
   enCours,
