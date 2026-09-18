@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { firestore, COLLECTIONS } from '@/lib/firebase';
+import { getMesCampagnes } from '@/lib/campaign-service';
+import { getSponsorDailyMetrics } from '@/lib/sponsor-metrics-service';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
@@ -45,12 +47,54 @@ function SidebarAnnonceur() {
 
   useEffect(() => {
     if (!admin?.uid) return;
-    getDoc(doc(firestore, COLLECTIONS.advertisers, admin.uid))
-      .then((snap) => {
-        const s = snap.data()?.balanceFcfa;
-        if (typeof s === 'number') setSolde(s);
-      })
-      .catch(() => {});
+    void (async () => {
+      const snap = await getDoc(doc(firestore, COLLECTIONS.advertisers, admin.uid)).catch(() => null);
+      const brut = snap?.data()?.balanceFcfa;
+      if (typeof brut !== 'number') return;
+
+      // ─────────────────────────────────────────────────────────────────────
+      // LE DISPONIBLE, PAS LE VERSÉ.
+      //
+      // `balanceFcfa` ne bouge qu'à la clôture du mois : affiché brut, il
+      // reste figé pendant que la diffusion consomme, et laisse croire
+      // qu'elle ne coûte rien. On retranche donc l'engagé du mois, calculé
+      // ici depuis les buckets — aucune écriture, aucun champ dérivé qui
+      // pourrait diverger.
+      //
+      // Cette barre est visible sur TOUS les écrans : si elle montrait le
+      // brut, elle contredirait le tableau de bord et la facturation.
+      // ─────────────────────────────────────────────────────────────────────
+      try {
+        const campagnes = await getMesCampagnes();
+        const diffusees = campagnes.filter((c) =>
+          ['active', 'paused', 'ended', 'suspended'].includes(c.status)
+        );
+        const debut = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
+        const engage = (
+          await Promise.all(
+            diffusees.map(async (c) => {
+              const jours = await getSponsorDailyMetrics(c.id, 31).catch(() => []);
+              return jours
+                .filter((j) => j.date >= debut)
+                .reduce((somme, j) => {
+                  const vues =
+                    c.format === 'edition' ? j.totals.editionPopupViews : j.totals.views;
+                  return (
+                    somme +
+                    vues * (c.pricing?.perView ?? 0) +
+                    j.totals.clicks * (c.pricing?.perClick ?? 0)
+                  );
+                }, 0);
+            })
+          )
+        ).reduce((a, b) => a + b, 0);
+        setSolde(brut - engage);
+      } catch {
+        // Consommation illisible : on montre le versé plutôt que rien. Le
+        // chiffre est alors trop optimiste, jamais alarmiste à tort.
+        setSolde(brut);
+      }
+    })();
   }, [admin?.uid]);
 
   const items = [
@@ -182,7 +226,7 @@ function SidebarAnnonceur() {
             background: 'rgba(255,255,255,0.06)',
           }}
         >
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>Solde</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>Disponible</span>
           <strong style={{ fontSize: 12.5, color: '#FFFFFF' }}>
             {solde != null ? `${solde.toLocaleString('fr-FR')} FCFA` : '—'}
           </strong>

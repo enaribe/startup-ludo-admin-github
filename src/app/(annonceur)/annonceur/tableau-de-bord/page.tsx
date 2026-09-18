@@ -76,6 +76,8 @@ interface DonneesDash {
   actives: number;
   detailStatuts: string;
   solde: number | null;
+  /** Solde moins l'engagé du mois — ce qui reste vraiment, jamais stocké. */
+  soldeDisponible: number | null;
   autonomieJours: number | null;
   serie14: PointJour[];
   lignes: LigneDash[];
@@ -340,6 +342,9 @@ export default function TableauDeBordAnnonceurPage() {
           // solde en base ne bouge qu'à la clôture, donc le brut annonçait
           // des jours de diffusion déjà consommés. La soustraction se fait
           // ici, à partir de la dépense déjà calculée — rien n'est stocké.
+          // Ce qui reste VRAIMENT : le solde en base ne bouge qu'à la clôture,
+          // donc l'afficher brut laisse croire que la diffusion est gratuite.
+          soldeDisponible: solde != null ? solde - depense30 : null,
           autonomieJours: autonomieEnJours({
             soldeFcfa: solde != null ? solde - depense30 : null,
             consommationFcfa: depense30,
@@ -538,9 +543,9 @@ export default function TableauDeBordAnnonceurPage() {
         />
         <Tuile
           Icon={Wallet}
-          libelle="Solde du compte"
-          valeur={d.solde != null ? d.solde.toLocaleString('fr-FR') : '—'}
-          suffixe={d.solde != null ? 'FCFA' : undefined}
+          libelle="Solde disponible"
+          valeur={d.soldeDisponible != null ? d.soldeDisponible.toLocaleString('fr-FR') : '—'}
+          suffixe={d.soldeDisponible != null ? 'FCFA' : undefined}
           detail={
             d.autonomieJours != null ? (
               <>

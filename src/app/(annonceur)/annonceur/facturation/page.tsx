@@ -437,10 +437,28 @@ export default function FacturationPage() {
         {/* ===== Colonne droite : solde + infos ===== */}
         <div className="flex flex-col gap-4">
           <div style={{ background: NAVY, borderRadius: 14, padding: '18px 18px', color: '#FFF' }}>
-            <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)' }}>Solde du compte</div>
+            {/*
+              * CE QUI RESTE, pas ce qui a été versé.
+              *
+              * Le grand chiffre montrait `balanceFcfa`, qui ne bouge qu'à la
+              * clôture : l'annonceur voyait « 30 000 FCFA » immuable pendant
+              * que sa diffusion consommait, et en concluait qu'elle ne coûtait
+              * rien. Or « Solde » se lit « ce qu'il me reste ».
+              *
+              * On montre donc le disponible — solde moins l'engagé du mois,
+              * calculé à l'affichage — et le versé passe en second plan. La
+              * facturation ne change pas : le prélèvement reste une écriture
+              * unique à la clôture.
+              */}
+            <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)' }}>Solde disponible</div>
             <div style={{ fontSize: 26, fontWeight: 800, marginTop: 4 }}>
-              {solde != null ? fcfa(solde) : '—'}
+              {soldeDisponible != null ? fcfa(soldeDisponible) : '—'}
             </div>
+            {solde != null && totalMois > 0 && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
+                {fcfa(solde)} versés − {fcfa(totalMois)} consommés ce mois
+              </div>
+            )}
             <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.7)', marginTop: 8, lineHeight: 1.5 }}>
               {autonomieJours != null
                 ? <>Au rythme actuel, votre solde couvre encore <strong>environ {autonomieJours} jours</strong> de diffusion.</>
@@ -453,23 +471,25 @@ export default function FacturationPage() {
               jusqu'à la clôture ? ». Elle n'apparaît que si le rythme est
               mesurable, sinon elle afficherait une prévision sortie de nulle part.
             */}
-            {consommationPrevue != null && solde != null && solde > 0 && (
+            {consommationPrevue != null && soldeDisponible != null && soldeDisponible > 0 && (
               <div style={{ marginTop: 12 }}>
                 <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
                   <div
                     style={{
-                      width: `${Math.min(100, (consommationPrevue / solde) * 100)}%`,
+                      width: `${Math.min(100, (consommationPrevue / soldeDisponible) * 100)}%`,
                       height: '100%',
                       borderRadius: 3,
-                      // Rouge au-delà du solde : la diffusion s'arrêtera avant
-                      // la fin du mois, c'est une alerte, pas une information.
-                      background: consommationPrevue > solde ? '#E5644E' : ORANGE,
+                      // Rouge au-delà du DISPONIBLE : comparer au versé
+                      // repoussait l'alerte, puisque l'engagé du mois était
+                      // compté deux fois — une fois dans la projection, une
+                      // fois dans le solde qui ne l'avait pas encore déduit.
+                      background: consommationPrevue > soldeDisponible ? '#E5644E' : ORANGE,
                     }}
                   />
                 </div>
                 <div className="flex justify-between" style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.55)', marginTop: 6 }}>
                   <span>Consommation prévue · 30 j : {fcfa(consommationPrevue)}</span>
-                  <span>{Math.round((consommationPrevue / solde) * 100)} %</span>
+                  <span>{Math.round((consommationPrevue / soldeDisponible) * 100)} %</span>
                 </div>
               </div>
             )}
@@ -488,19 +508,9 @@ export default function FacturationPage() {
                 * Affiché seulement s'il y a quelque chose d'engagé : sinon la
                 * ligne répéterait le solde et n'apprendrait rien.
                 */}
-              {totalMois > 0 && solde != null && (
-                <div className="flex justify-between">
-                  <span
-                    style={{ color: 'rgba(255,255,255,0.6)' }}
-                    title="La consommation du mois est prélevée en une fois à la clôture, pas au fil des vues."
-                  >
-                    Solde après clôture
-                  </span>
-                  <strong style={{ color: (soldeDisponible ?? 0) <= 0 ? '#FFBC40' : undefined }}>
-                    {fcfa(soldeDisponible ?? 0)}
-                  </strong>
-                </div>
-              )}
+              {/* « Solde après clôture » a disparu : c'est désormais le grand
+                  chiffre du haut. La répéter ici aurait fait douter qu'il
+                  s'agisse du même montant. */}
               {plafondsActifs > 0 && (
                 <div className="flex justify-between">
                   <span style={{ color: 'rgba(255,255,255,0.6)' }} title="Somme des budgets plafonds de vos mises en visibilité actives — ce que vous pourriez engager au maximum si elles allaient toutes à leur terme.">
