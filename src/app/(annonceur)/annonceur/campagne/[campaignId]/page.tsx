@@ -16,17 +16,25 @@
  * simplement rendre compte. La modification passe par la modération.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
 import { useParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Pause, Play } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { getCampagne } from '@/lib/campaign-service';
-import { getSponsorDailyMetrics, jourLocal } from '@/lib/sponsor-metrics-service';
+import { auth } from '@/lib/firebase';
+import {
+  getSponsorDailyMetrics,
+  getSponsorMetrics,
+  jourLocal,
+  type SponsorMetricsDocument,
+} from '@/lib/sponsor-metrics-service';
 import { fcfa } from '@/lib/annonceur-service';
 import { finExclusivite, joursRestants } from '@/lib/reservations';
 import ApercuCarteCampagne from '@/components/annonceur/ApercuCarteCampagne';
 import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/CourbeQuotidienne';
+import RepartitionAttribution from '@/components/annonceur/RepartitionAttribution';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import type { Campaign } from '@/types';
 
@@ -49,6 +57,8 @@ export default function RapportCampagnePage() {
   const { admin, loading: authLoading } = useAuth();
   const [campagne, setCampagne] = useState<Campaign | null>(null);
   const [serie, setSerie] = useState<PointJour[]>([]);
+  /** Totaux cumulés — uniques, flips, saves et ventilation ne vivent que là. */
+  const [metriques, setMetriques] = useState<SponsorMetricsDocument | null>(null);
   const [chargement, setChargement] = useState(true);
 
   useEffect(() => {
@@ -62,8 +72,12 @@ export default function RapportCampagnePage() {
         if (c) {
           // Les métriques d'une campagne sont indexées par SON id — même
           // mécanique que pour une édition, clé différente.
-          const jours = await getSponsorDailyMetrics(c.id, 30);
+          const [jours, cumul] = await Promise.all([
+            getSponsorDailyMetrics(c.id, 30),
+            getSponsorMetrics(c.id).catch(() => null),
+          ]);
           if (!annule) {
+            setMetriques(cumul);
             // Même distinction qu'au tableau de bord : un habillage d'édition
             // se mesure en `editionPopupViews`, une carte en `views`.
             setSerie(
@@ -85,6 +99,56 @@ export default function RapportCampagnePage() {
       annule = true;
     };
   }, [authLoading, admin, campaignId]);
+
+  /**
+   * Cumulés depuis le début de la campagne.
+   *
+   * Distincts de `totaux`, qui porte la fenêtre 30 jours : « personnes uniques
+   * touchées » ne se recalcule pas sur une fenêtre glissante — un joueur revu
+   * après 30 jours ne redevient pas une nouvelle personne. Le compteur
+   * `uniqueViews` est tenu côté mobile par un marqueur create-only par uid.
+   */
+  const cumul = useMemo(() => {
+    const t = metriques?.totals;
+    const estEdition = campagne?.format === 'edition';
+    const vues = estEdition ? (t?.editionPopupViews ?? 0) : (t?.views ?? 0);
+    const clics = t?.clicks ?? 0;
+    return {
+      vues,
+      clics,
+      uniques: t?.uniqueViews ?? 0,
+      flips: t?.flips ?? 0,
+      saves: t?.saves ?? 0,
+      depense: vues * (campagne?.pricing?.perView ?? 0) + clics * (campagne?.pricing?.perClick ?? 0),
+    };
+  }, [metriques, campagne]);
+
+  /**
+   * Pause / reprise, comme sur l'écran d'une mise en visibilité : réversible,
+   * sans effet sur le créneau. L'arrêt définitif reste à CONCREE.
+   */
+  const [enCoursPause, setEnCoursPause] = useState(false);
+  const basculerPause = useCallback(async () => {
+    if (!campagne) return;
+    const versPause = campagne.status === 'active';
+    setEnCoursPause(true);
+    try {
+      const jeton = await auth.currentUser?.getIdToken();
+      const reponse = await fetch('/api/annonceur/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jeton}` },
+        body: JSON.stringify({ campaignId: campagne.id, decision: versPause ? 'pause' : 'resume' }),
+      });
+      const data = (await reponse.json()) as { error?: string };
+      if (!reponse.ok) throw new Error(data.error || 'Action impossible.');
+      toast.success(versPause ? 'Diffusion mise en pause.' : 'Diffusion reprise.');
+      setCampagne((c) => (c ? { ...c, status: versPause ? 'paused' : 'active' } : c));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Action impossible.');
+    } finally {
+      setEnCoursPause(false);
+    }
+  }, [campagne]);
 
   const totaux = useMemo(() => {
     const vues = serie.reduce((s, j) => s + j.vues, 0);
@@ -115,6 +179,8 @@ export default function RapportCampagnePage() {
     );
   }
 
+  const { vues: vuesCumul, clics: clicsCumul, uniques, flips, saves, depense: depenseCumul } = cumul;
+
   const statut = STATUTS[campagne.status] ?? STATUTS.draft;
   const fin = campagne.period?.endAt ?? finExclusivite(campagne.reservationMonths);
   const jours = joursRestants(fin);
@@ -142,14 +208,39 @@ export default function RapportCampagnePage() {
             {jours !== null && jours > 0 ? ` · encore ${jours} jour${jours > 1 ? 's' : ''}` : ''}
           </p>
         </div>
-        <span
-          style={{
-            fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 10,
-            background: statut.fond, color: statut.texte, flexShrink: 0,
-          }}
-        >
-          {statut.libelle}
-        </span>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          {(campagne.status === 'active' || campagne.status === 'paused') && (
+            <button
+              type="button"
+              onClick={() => void basculerPause()}
+              disabled={enCoursPause}
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5, fontWeight: 600, padding: '7px 13px', borderRadius: 10,
+                border: '1px solid var(--color-card-border)', color: NAVY, background: '#FFFFFF',
+                cursor: enCoursPause ? 'default' : 'pointer', opacity: enCoursPause ? 0.6 : 1,
+              }}
+            >
+              {campagne.status === 'active' ? (
+                <>
+                  <Pause size={13} /> Mettre en pause
+                </>
+              ) : (
+                <>
+                  <Play size={13} /> Reprendre
+                </>
+              )}
+            </button>
+          )}
+          <span
+            style={{
+              fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 10,
+              background: statut.fond, color: statut.texte,
+            }}
+          >
+            {statut.libelle}
+          </span>
+        </div>
       </div>
 
       {campagne.status === 'suspended' && campagne.suspension && (
@@ -160,14 +251,87 @@ export default function RapportCampagnePage() {
         </p>
       )}
 
+      {/*
+        * Les huit indicateurs de la maquette. Les cumulés (uniques, flips,
+        * saves) viennent des TOTAUX de la campagne, pas de la fenêtre 30 jours :
+        * « personnes uniques » n'a de sens que depuis le début — un joueur revu
+        * après 30 jours ne redevient pas une nouvelle personne.
+        */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" style={{ marginTop: 18 }}>
-        <Tuile libelle="Vues (30 j)" valeur={totaux.vues.toLocaleString('fr-FR')} />
-        <Tuile libelle="Clics (30 j)" valeur={totaux.clics.toLocaleString('fr-FR')} />
         <Tuile
-          libelle="CTR"
-          valeur={totaux.vues > 0 ? `${((totaux.clics / totaux.vues) * 100).toFixed(1)} %` : '—'}
+          libelle="Vues totales"
+          valeur={vuesCumul.toLocaleString('fr-FR')}
+          detail={
+            campagne.viewsGoal > 0
+              ? `objectif ${campagne.viewsGoal.toLocaleString('fr-FR')} · ${Math.round((vuesCumul / campagne.viewsGoal) * 100)} % atteint`
+              : 'pas d’objectif défini'
+          }
+          jaugePct={campagne.viewsGoal > 0 ? (vuesCumul / campagne.viewsGoal) * 100 : null}
         />
-        <Tuile libelle="Dépense (30 j)" valeur={fcfa(totaux.depense)} accent />
+        <Tuile
+          libelle="Personnes uniques touchées"
+          valeur={uniques.toLocaleString('fr-FR')}
+          detail={
+            uniques > 0
+              ? `${(vuesCumul / uniques).toFixed(2).replace('.', ',')} vue par joueur en moyenne`
+              : 'en attente de la mise à jour de l’app'
+          }
+        />
+        <Tuile
+          libelle="Flips de la carte"
+          valeur={flips.toLocaleString('fr-FR')}
+          detail={
+            flips > 0 && vuesCumul > 0
+              ? `taux de curiosité ${((flips / vuesCumul) * 100).toFixed(1).replace('.', ',')} %`
+              : 'retournements pour voir le verso'
+          }
+        />
+        <Tuile
+          libelle="Clics sur le CTA"
+          valeur={clicsCumul.toLocaleString('fr-FR')}
+          detail={
+            vuesCumul > 0
+              ? `CTR ${((clicsCumul / vuesCumul) * 100).toFixed(1).replace('.', ',')} %`
+              : '—'
+          }
+        />
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" style={{ marginTop: 12 }}>
+        <Tuile
+          libelle="Cartes sauvegardées"
+          valeur={saves.toLocaleString('fr-FR')}
+          detail="gardées pour après la partie"
+        />
+        <Tuile
+          libelle="Dépense engagée"
+          valeur={fcfa(depenseCumul)}
+          detail={`${vuesCumul.toLocaleString('fr-FR')} vues × ${campagne.pricing.perView} FCFA${
+            clicsCumul > 0 ? ` + ${clicsCumul} clics × ${campagne.pricing.perClick} FCFA` : ''
+          }`}
+          accent
+        />
+        <Tuile
+          libelle="Coût par personne touchée"
+          valeur={uniques > 0 ? fcfa(Math.round(depenseCumul / uniques)) : '—'}
+          detail={
+            clicsCumul > 0
+              ? `coût par clic réel : ${fcfa(Math.round(depenseCumul / clicsCumul))}`
+              : 'aucun clic pour l’instant'
+          }
+        />
+        <Tuile
+          libelle="Reste du plafond"
+          valeur={campagne.budgetCapFcfa > 0 ? fcfa(Math.max(0, campagne.budgetCapFcfa - depenseCumul)) : '—'}
+          detail={
+            campagne.budgetCapFcfa > 0
+              ? `plafond de ${fcfa(campagne.budgetCapFcfa)}`
+              : 'pas de plafond défini'
+          }
+          jaugePct={
+            campagne.budgetCapFcfa > 0 ? (depenseCumul / campagne.budgetCapFcfa) * 100 : null
+          }
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ marginTop: 18 }}>
@@ -188,16 +352,48 @@ export default function RapportCampagnePage() {
           </Carte>
         )}
       </div>
+
+      {/*
+        * Ventilation des vues. Le secteur est celui de la startup du joueur :
+        * il n'a de sens que pour une CARTE, tirée en cours de partie. Sur un
+        * habillage d'édition, l'écran s'affiche avant que le joueur n'ait joué,
+        * donc la bascule est masquée.
+        */}
+      <div style={{ marginTop: 18 }}>
+        <Carte titre="Personnes touchées" sous="Ventilation des vues par profil de joueur">
+          <RepartitionAttribution
+            bySector={metriques?.bySector ?? {}}
+            byRegion={metriques?.byRegion ?? {}}
+            avecSecteur={campagne.format === 'card'}
+          />
+        </Carte>
+      </div>
     </div>
   );
 }
 
-function Tuile({ libelle, valeur, accent }: { libelle: string; valeur: string; accent?: boolean }) {
+function Tuile({
+  libelle,
+  valeur,
+  detail,
+  jaugePct,
+  accent,
+}: {
+  libelle: string;
+  valeur: string;
+  /** Ligne d'explication sous le chiffre — le contexte sans lequel il ne dit rien. */
+  detail?: string;
+  /** Progression vers un objectif ou un plafond, en pourcentage. */
+  jaugePct?: number | null;
+  accent?: boolean;
+}) {
   return (
     <div
       style={{
-        background: '#FFFFFF', border: '1px solid var(--color-card-border)',
-        borderRadius: 12, padding: '14px 16px',
+        background: accent ? 'rgba(245,166,35,0.07)' : '#FFFFFF',
+        border: `1px solid ${accent ? 'rgba(245,166,35,0.35)' : 'var(--color-card-border)'}`,
+        borderRadius: 12,
+        padding: '14px 16px',
       }}
     >
       <div style={{ fontSize: 10.5, letterSpacing: 0.6, color: 'var(--color-text-muted)', fontWeight: 600 }}>
@@ -206,6 +402,27 @@ function Tuile({ libelle, valeur, accent }: { libelle: string; valeur: string; a
       <div style={{ fontSize: 21, fontWeight: 800, color: accent ? ORANGE : NAVY, marginTop: 4 }}>
         {valeur}
       </div>
+      {detail && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 3, lineHeight: 1.4 }}>
+          {detail}
+        </div>
+      )}
+      {jaugePct != null && (
+        <div
+          style={{
+            height: 5, borderRadius: 3, background: 'var(--color-surface)',
+            overflow: 'hidden', marginTop: 8,
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, Math.max(1, jaugePct))}%`,
+              height: '100%',
+              background: accent ? ORANGE : NAVY,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
