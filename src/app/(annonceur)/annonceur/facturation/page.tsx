@@ -349,7 +349,7 @@ export default function FacturationPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="lg:col-span-2 flex flex-col gap-4">
           {/* ===== Consommation du mois ===== */}
           <Carte titre="Consommation du mois en cours" sous={`1ᵉʳ → ${new Date().toLocaleDateString('fr-FR')} · campagnes du nouveau modèle`}>

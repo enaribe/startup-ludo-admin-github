@@ -253,7 +253,7 @@ export default function TableauDeBordEcolePage() {
       )}
 
       {/* ═══ Deux colonnes : sessions + enseignants ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="lg:col-span-2" style={{ background: '#FFF', border: '1px solid rgba(15,28,46,0.1)', borderRadius: 16, padding: '16px 20px' }}>
           <h2 style={{ fontSize: 15.5, fontWeight: 700, color: NAVY }}>
             {vueEnseignant ? 'Vos dernières sessions' : 'Dernières sessions de l’établissement'}

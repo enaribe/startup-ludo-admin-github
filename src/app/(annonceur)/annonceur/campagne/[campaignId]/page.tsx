@@ -441,7 +441,7 @@ export default function RapportCampagnePage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ marginTop: 18 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start" style={{ marginTop: 18 }}>
         <div className="lg:col-span-2">
           <Carte titre="Vues et clics par jour" sous="30 derniers jours">
             {serie.length > 0 ? (
@@ -472,7 +472,7 @@ export default function RapportCampagnePage() {
         * petits volumes — un entonnoir dessiné sur 3 vues inverse ses marches.
         */}
       {campagne.format === 'card' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ marginTop: 18 }}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start" style={{ marginTop: 18 }}>
           <div className="lg:col-span-2">
             <Carte titre="Du regard à l’action" sous="Ce que les joueurs font de votre carte">
               <FunnelImpact

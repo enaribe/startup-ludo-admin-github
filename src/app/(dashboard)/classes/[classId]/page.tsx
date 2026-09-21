@@ -765,7 +765,10 @@ export default function ClasseDetailPage() {
       </div>
 
       {/* ═══ Engagement séance après séance + notions travaillées ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      {/* `items-start` : la courbe et la progression du curriculum n'ont aucune
+          raison d'avoir la même hauteur — étirer la plus courte creuse un vide
+          sous son contenu. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
         <section className="glass-card p-5">
           <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 3 }}>
             Engagement séance après séance

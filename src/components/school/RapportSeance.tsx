@@ -259,7 +259,16 @@ export default function RapportSeance({
         />
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/*
+        * `items-start` : chaque colonne prend SA hauteur.
+        *
+        * Par défaut une grille étire ses cellules à la hauteur de la plus
+        * haute. Quand la colonne gauche perd ses sections conditionnelles —
+        * suggestion, carte la plus manquée, absentes tant qu'aucun quiz n'a
+        * été joué — elle restait étirée sur la hauteur de la droite, laissant
+        * un grand vide sous « Notions rencontrées ».
+        */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="lg:col-span-2 flex flex-col gap-4">
       {/* ═══ NOTIONS MAÎTRISÉES — le cœur du rapport ═══ */}
       <section className="glass-card p-5">
