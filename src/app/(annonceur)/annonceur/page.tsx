@@ -15,7 +15,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Eye, LayoutGrid, MousePointerClick, Plus, Wallet } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Eye, LayoutGrid, MousePointerClick, Plus, Trash2, Wallet } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { getEditions, getEditionsByIds } from '@/lib/firestore-service';
 import {
@@ -25,7 +26,7 @@ import {
   type MiseEnVisibilite,
   type StatutVisibilite,
 } from '@/lib/annonceur-service';
-import { getMesCampagnes } from '@/lib/campaign-service';
+import { getMesCampagnes, supprimerBrouillon } from '@/lib/campaign-service';
 import { finExclusivite, joursRestants } from '@/lib/reservations';
 import type { Campaign, CampaignStatus } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -228,7 +229,11 @@ export default function AnnonceurListePage() {
           </p>
           <div className="flex flex-col gap-2">
             {campagnes.map((c) => (
-              <LigneCampagne key={c.id} c={c} />
+              <LigneCampagne
+                key={c.id}
+                c={c}
+                onSupprime={(id) => setCampagnes((liste) => liste.filter((x) => x.id !== id))}
+              />
             ))}
           </div>
         </div>
@@ -250,8 +255,30 @@ const STATUTS_CAMPAGNE: Record<CampaignStatus, { libelle: string; fond: string; 
   ended: { libelle: 'Terminée', fond: 'rgba(15,28,46,0.06)', texte: '#5A6A7E' },
 };
 
-function LigneCampagne({ c }: { c: Campaign }) {
+function LigneCampagne({ c, onSupprime }: { c: Campaign; onSupprime: (id: string) => void }) {
   const statut = STATUTS_CAMPAGNE[c.status];
+  const [suppression, setSuppression] = useState(false);
+
+  /**
+   * Supprime un BROUILLON — le seul état que les règles Firestore laissent
+   * effacer à l'annonceur. Une campagne soumise ou diffusée garde sa trace :
+   * elle a été vue par CONCREE, et pour une diffusée, facturée.
+   *
+   * Confirmation explicite : un brouillon peut représenter un long travail de
+   * rédaction, et rien ne permet de le récupérer ensuite.
+   */
+  const supprimer = async () => {
+    if (!window.confirm(`Supprimer définitivement ce brouillon ?\n\nCette action est irréversible.`)) return;
+    setSuppression(true);
+    try {
+      await supprimerBrouillon(c.id);
+      toast.success('Brouillon supprimé.');
+      onSupprime(c.id);
+    } catch {
+      toast.error('Suppression impossible.');
+      setSuppression(false);
+    }
+  };
   const titre =
     c.format === 'edition'
       ? `Édition ${c.editionSkin?.editionId || '—'} — ${c.editionSkin?.structure || 'habillage'}`
@@ -352,6 +379,22 @@ function LigneCampagne({ c }: { c: Campaign }) {
           >
             Reprendre
           </Link>
+        )}
+        {c.status === 'draft' && (
+          <button
+            type="button"
+            onClick={() => void supprimer()}
+            disabled={suppression}
+            title="Supprimer ce brouillon"
+            style={{
+              fontSize: 12, fontWeight: 600, color: '#C0392B', background: '#FFFFFF',
+              border: '1px solid rgba(192,57,43,0.25)', borderRadius: 8, padding: '5px 9px',
+              cursor: suppression ? 'default' : 'pointer', opacity: suppression ? 0.5 : 1,
+              display: 'inline-flex', alignItems: 'center',
+            }}
+          >
+            <Trash2 size={13} />
+          </button>
         )}
       </div>
     </div>
