@@ -123,10 +123,16 @@ export default function RapportsSessionsPage() {
     };
   }, [authLoading, admin, vueEnseignant, scopedEstablishmentId, scopedClassIds]);
 
-  const filtrees = useMemo(
-    () => (filtre === 'toutes' ? lignes : lignes.filter((l) => l.classId === filtre)),
-    [lignes, filtre]
-  );
+  const filtrees = useMemo(() => {
+    const base = filtre === 'toutes' ? lignes : lignes.filter((l) => l.classId === filtre);
+    // TRI par date, la plus récente en tête. Sans lui, l'ordre était celui que
+    // Firestore renvoyait : la liste sautait du 24 août au 19, puis remontait
+    // au 12 — on ne pouvait pas lire « les dernières séances » d'un coup d'œil.
+    // Même date que la colonne affichée, sinon le tri contredirait ce qu'on lit.
+    return base
+      .slice()
+      .sort((a, b) => (b.endedAt ?? b.startedAt ?? b.createdAt ?? 0) - (a.endedAt ?? a.startedAt ?? a.createdAt ?? 0));
+  }, [lignes, filtre]);
 
   // ── Tuiles : agrégées sur ce qui est réellement calculé ──
   const synthese = useMemo(() => {
