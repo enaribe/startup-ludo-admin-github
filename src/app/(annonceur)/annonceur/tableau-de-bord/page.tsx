@@ -65,6 +65,15 @@ interface LigneDash {
   depense30: number;
   /** Rapport d'impact détaillé — null quand la ligne n'a pas de page dédiée. */
   href: string | null;
+  /**
+   * Diffusion achevée (terminée ou refusée).
+   *
+   * Ces lignes sont masquées par défaut : elles ne demandent plus aucune
+   * décision, mais restent consultables — elles portent une dépense du mois
+   * qui apparaîtra sur la facture, et la masquer définitivement priverait
+   * l'annonceur de ce qu'il doit payer.
+   */
+  terminee: boolean;
 }
 
 interface DonneesDash {
@@ -121,6 +130,15 @@ function compact(n: number): string {
 export default function TableauDeBordAnnonceurPage() {
   const { admin, loading: authLoading, isSuperAdmin, scopedEditionIds } = useAuth();
   const [donnees, setDonnees] = useState<DonneesDash | null>(null);
+  /**
+   * Afficher aussi les diffusions achevées.
+   *
+   * Masquées par défaut : une campagne terminée ne demande plus de décision
+   * et noie celles qui en demandent une. Elle reste accessible d'un clic —
+   * sa dépense du mois figurera sur la facture, la cacher pour de bon
+   * priverait l'annonceur de ce qu'il doit payer.
+   */
+  const [avecTerminees, setAvecTerminees] = useState(false);
   const [chargement, setChargement] = useState(true);
   const [exportEnCours, setExportEnCours] = useState(false);
 
@@ -208,6 +226,9 @@ export default function TableauDeBordAnnonceurPage() {
               clics30: clics,
               depense30: vues * (v.pricePerView ?? PRIX_PAR_VUE_FCFA),
               href: `/annonceur/${encodeURIComponent(v.id)}`,
+              // Visibilité dérivée d'une édition : `statut` vaut « terminée »
+              // quand l'objectif de vues est atteint.
+              terminee: v.statut === 'objectif_atteint',
             });
           } else if (v.format === 'edition') {
             // ═══ UNE SEULE LIGNE PAR DIFFUSION ═══
@@ -243,6 +264,7 @@ export default function TableauDeBordAnnonceurPage() {
               clics30: 0,
               depense30: depensePopup,
               href: `/annonceur/${encodeURIComponent(v.id)}`,
+              terminee: v.statut === 'objectif_atteint',
             });
           }
         }
@@ -301,6 +323,7 @@ export default function TableauDeBordAnnonceurPage() {
               c.format === 'edition' && c.editionSkin?.editionId
                 ? `/annonceur/${encodeURIComponent(idVisibiliteEdition(c.editionSkin.editionId))}`
                 : `/annonceur/campagne/${encodeURIComponent(c.id)}`,
+            terminee: c.status === 'ended' || c.status === 'rejected',
           });
         }
 
@@ -428,6 +451,8 @@ export default function TableauDeBordAnnonceurPage() {
   }
 
   const d = donnees;
+  const nbTerminees = d.lignes.filter((l) => l.terminee).length;
+  const lignesAffichees = avecTerminees ? d.lignes : d.lignes.filter((l) => !l.terminee);
   const totalDepense = repartition.reduce((s, l) => s + l.depense30, 0);
   const maxDepense = Math.max(...repartition.map((l) => l.depense30), 1);
   const prochaineCloture = (() => {
@@ -623,17 +648,58 @@ export default function TableauDeBordAnnonceurPage() {
               Les lignes avec rapport détaillé s’ouvrent au clic.
             </p>
           </div>
-          <Link href="/annonceur" style={{ fontSize: 12.5, fontWeight: 700, color: '#B87A0C', textDecoration: 'none' }}>
-            Toutes les mises en visibilité
-          </Link>
-        </div>
-        {d.lignes.length === 0 ? (
-          <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 10 }}>
-            Aucune diffusion sur les 30 derniers jours —{' '}
-            <Link href="/annonceur/nouvelle" style={{ color: '#B87A0C', fontWeight: 700 }}>
-              lancez votre première mise en visibilité
+          <div className="flex items-center gap-3 flex-wrap">
+            {nbTerminees > 0 && (
+              <button
+                type="button"
+                onClick={() => setAvecTerminees((v) => !v)}
+                className="flex items-center gap-2"
+                style={{
+                  fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 8,
+                  border: '1px solid var(--color-card-border)',
+                  background: avecTerminees ? 'rgba(245,166,35,0.10)' : '#FFFFFF',
+                  color: avecTerminees ? '#B87A0C' : 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                <span
+                  style={{
+                    width: 26, height: 15, borderRadius: 8, padding: 2, flexShrink: 0,
+                    background: avecTerminees ? ORANGE : 'rgba(15,28,46,0.15)',
+                    display: 'inline-flex',
+                    justifyContent: avecTerminees ? 'flex-end' : 'flex-start',
+                  }}
+                >
+                  <span style={{ width: 11, height: 11, borderRadius: 6, background: '#FFFFFF' }} />
+                </span>
+                {nbTerminees} terminée{nbTerminees > 1 ? 's' : ''}
+              </button>
+            )}
+            <Link href="/annonceur" style={{ fontSize: 12.5, fontWeight: 700, color: '#B87A0C', textDecoration: 'none' }}>
+              Toutes les mises en visibilité
             </Link>
-            .
+          </div>
+        </div>
+        {lignesAffichees.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 10 }}>
+            {nbTerminees > 0 ? (
+              // Ne pas dire « aucune diffusion » alors que des lignes existent
+              // et sont simplement masquées : l'annonceur croirait ses données
+              // perdues.
+              <>
+                Aucune diffusion en cours — {nbTerminees} terminée
+                {nbTerminees > 1 ? 's' : ''} sur les 30 derniers jours, affichez-la
+                {nbTerminees > 1 ? 's' : ''} avec le bouton ci-dessus.
+              </>
+            ) : (
+              <>
+                Aucune diffusion sur les 30 derniers jours —{' '}
+                <Link href="/annonceur/nouvelle" style={{ color: '#B87A0C', fontWeight: 700 }}>
+                  lancez votre première mise en visibilité
+                </Link>
+                .
+              </>
+            )}
           </p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -650,7 +716,7 @@ export default function TableauDeBordAnnonceurPage() {
                 </tr>
               </thead>
               <tbody>
-                {d.lignes.map((l) => {
+                {lignesAffichees.map((l) => {
                   const contenu = (
                     <>
                       <td style={{ padding: '11px 12px' }}>
