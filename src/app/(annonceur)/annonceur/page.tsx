@@ -30,6 +30,7 @@ import { getMesCampagnes, supprimerBrouillon } from '@/lib/campaign-service';
 import { finExclusivite, joursRestants } from '@/lib/reservations';
 import type { Campaign, CampaignStatus } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import VignetteCarte from '@/components/annonceur/VignetteCarte';
 
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
@@ -525,7 +526,19 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <td style={{ padding: '12px 20px' }}>
-        <Link href={lien} style={{ textDecoration: 'none', display: 'block' }}>
+        <Link
+          href={lien}
+          className="flex items-center gap-2.5"
+          style={{ textDecoration: 'none' }}
+        >
+          {/* Repère visuel : l'annonceur reconnaît sa campagne sans relire le
+              titre, surtout quand plusieurs commencent par « Édition… ». */}
+          <VignetteCarte
+            format={v.format}
+            kind={v.campagne?.card?.kind ?? v.kind}
+            photoUrl={v.campagne?.editionSkin?.photoUrl ?? v.sponsor?.imageUrl}
+          />
+          <span style={{ minWidth: 0 }}>
           <div
             style={{
               fontWeight: 700,
@@ -544,6 +557,7 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
               ? ` · carte ${v.kind === 'funding' ? 'FINANCEMENT' : 'OPPORTUNITÉ'}`
               : ' · écran sponsor exclusif'}
           </div>
+          </span>
         </Link>
       </td>
       <td style={{ padding: '12px 12px' }}>
