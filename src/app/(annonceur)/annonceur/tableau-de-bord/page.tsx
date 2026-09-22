@@ -47,6 +47,7 @@ import {
 } from '@/lib/annonceur-rapport-pdf';
 import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/CourbeQuotidienne';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import VignetteCarte from '@/components/annonceur/VignetteCarte';
 import type { Campaign } from '@/types';
 
 const NAVY = '#0F1C2E';
@@ -74,6 +75,10 @@ interface LigneDash {
    * l'annonceur de ce qu'il doit payer.
    */
   terminee: boolean;
+  /** Type de carte — donne sa couleur à la vignette. Absent pour une édition. */
+  kind?: string;
+  /** Visuel de l'habillage, montré en fond de vignette. */
+  photoUrl?: string | null;
 }
 
 interface DonneesDash {
@@ -229,6 +234,8 @@ export default function TableauDeBordAnnonceurPage() {
               // Visibilité dérivée d'une édition : `statut` vaut « terminée »
               // quand l'objectif de vues est atteint.
               terminee: v.statut === 'objectif_atteint',
+              kind: v.kind,
+              photoUrl: v.sponsor?.imageUrl,
             });
           } else if (v.format === 'edition') {
             // ═══ UNE SEULE LIGNE PAR DIFFUSION ═══
@@ -265,6 +272,8 @@ export default function TableauDeBordAnnonceurPage() {
               depense30: depensePopup,
               href: `/annonceur/${encodeURIComponent(v.id)}`,
               terminee: v.statut === 'objectif_atteint',
+              kind: v.kind,
+              photoUrl: v.sponsor?.imageUrl,
             });
           }
         }
@@ -324,6 +333,8 @@ export default function TableauDeBordAnnonceurPage() {
                 ? `/annonceur/${encodeURIComponent(idVisibiliteEdition(c.editionSkin.editionId))}`
                 : `/annonceur/campagne/${encodeURIComponent(c.id)}`,
             terminee: c.status === 'ended' || c.status === 'rejected',
+            kind: c.card?.kind,
+            photoUrl: c.editionSkin?.photoUrl,
           });
         }
 
@@ -720,10 +731,17 @@ export default function TableauDeBordAnnonceurPage() {
                   const contenu = (
                     <>
                       <td style={{ padding: '11px 12px' }}>
-                        <span style={{ display: 'block', fontWeight: 700, color: NAVY, maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.titre}>
-                          {l.titre}
+                        {/* Même repère qu'à la liste des mises en visibilité :
+                            les titres se ressemblent, la vignette les sépare. */}
+                        <span className="flex items-center gap-2.5">
+                          <VignetteCarte format={l.format} kind={l.kind} photoUrl={l.photoUrl} />
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: 'block', fontWeight: 700, color: NAVY, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.titre}>
+                              {l.titre}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{l.sousTitre}</span>
+                          </span>
                         </span>
-                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{l.sousTitre}</span>
                       </td>
                       <td style={{ padding: '11px 12px' }}>
                         <span

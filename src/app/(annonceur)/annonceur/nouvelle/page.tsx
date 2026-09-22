@@ -63,6 +63,7 @@ import type {
 import ApercuCarteCampagne from '@/components/annonceur/ApercuCarteCampagne';
 import ImageUploadField from '@/components/ui/ImageUploadField';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import VignetteCarte from '@/components/annonceur/VignetteCarte';
 
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
@@ -473,23 +474,45 @@ export default function NouvelleMiseEnVisibilitePage() {
           Choisissez un format, puis laissez-vous guider étape par étape. Votre brouillon est
           enregistré automatiquement.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <CarteFormat
-            titre="Mettre en avant une opportunité"
-            texte="Votre dispositif — financement, appel à candidatures, programme — devient une carte du jeu, tirée pendant les parties."
-            action="CARTE OPPORTUNITÉ CO-BRANDÉE"
-            grille={`${GRILLES.standard.perView} F/vue · ${GRILLES.standard.perClick} F/clic`}
-            disabled={enCours}
-            onClick={() => void choisirFormat('card')}
-          />
-          <CarteFormat
-            titre="Sponsoriser une édition thématique"
-            texte="Votre marque porte tout un univers de jeu : écran sponsor exclusif à chaque partie lancée dans l’édition réservée."
-            action="ÉDITION SPONSORISÉE · EXCLUSIVITÉ"
-            grille={`${GRILLES.edition.perView} F/vue · ${GRILLES.edition.perClick} F/clic`}
-            disabled={enCours}
-            onClick={() => void choisirFormat('edition')}
-          />
+        {/*
+          * Les deux formats dans UN bloc titré, plutôt que deux cartes
+          * flottantes : « Que souhaitez-vous faire ? » pose la question à
+          * laquelle les deux options répondent. Sans elle, l'annonceur doit
+          * deviner qu'il s'agit d'un choix exclusif.
+          */}
+        <div
+          style={{
+            background: '#FFFFFF', border: '1px solid var(--color-card-border)',
+            borderRadius: 16, overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--color-card-border)' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: NAVY }}>Que souhaitez-vous faire ?</h2>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+              Deux formats de mise en visibilité dans le jeu.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ padding: 16 }}>
+            <CarteFormat
+              titre="Mettre en avant une opportunité"
+              texte="Votre dispositif — financement, appel à candidatures, programme — devient une carte du jeu, tirée pendant les parties."
+              action="CARTE OPPORTUNITÉ CO-BRANDÉE"
+              grille={`${GRILLES.standard.perView} F/vue · ${GRILLES.standard.perClick} F/clic`}
+              disabled={enCours}
+              format="carte"
+              kind="opportunite"
+              onClick={() => void choisirFormat('card')}
+            />
+            <CarteFormat
+              titre="Sponsoriser une édition thématique"
+              texte="Votre marque porte tout un univers de jeu : écran sponsor exclusif à chaque partie lancée dans l’édition réservée."
+              action="ÉDITION SPONSORISÉE · EXCLUSIVITÉ"
+              grille={`${GRILLES.edition.perView} F/vue · ${GRILLES.edition.perClick} F/clic`}
+              disabled={enCours}
+              format="edition"
+              onClick={() => void choisirFormat('edition')}
+            />
+          </div>
         </div>
       </div>
     );
@@ -2161,27 +2184,38 @@ function EtapeCiblageCarte({
 }
 
 function CarteFormat({
-  titre, texte, action, grille, disabled, onClick,
+  titre, texte, action, grille, disabled, onClick, format, kind,
 }: {
   titre: string; texte: string; action: string; grille: string; disabled: boolean; onClick: () => void;
+  /** Aperçu du format proposé — on choisit mieux ce qu'on voit. */
+  format: 'carte' | 'edition'; kind?: string;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
+      className="flex items-start gap-4"
       style={{
         textAlign: 'left', padding: 20, borderRadius: 16, cursor: 'pointer',
         border: '1px solid var(--color-card-border)', background: '#FFFFFF',
-        opacity: disabled ? 0.6 : 1,
+        opacity: disabled ? 0.6 : 1, width: '100%',
       }}
     >
+      {/* Vignette agrandie : à ce stade l'annonceur ne connaît pas encore la
+          différence entre les deux formats — la montrer vaut mieux que la
+          décrire. */}
+      <span style={{ transform: 'scale(1.7)', transformOrigin: 'top left', width: 58, height: 75, flexShrink: 0 }}>
+        <VignetteCarte format={format} kind={kind} />
+      </span>
+      <span style={{ minWidth: 0 }}>
       <div style={{ fontSize: 16, fontWeight: 800, color: NAVY }}>{titre}</div>
       <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 6, lineHeight: 1.55 }}>{texte}</p>
       <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 10 }}>{grille}</div>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: '#B87A0C', marginTop: 10, letterSpacing: 0.3 }}>
         {action} →
       </div>
+      </span>
     </button>
   );
 }
