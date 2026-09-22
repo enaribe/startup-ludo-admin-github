@@ -34,6 +34,24 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 const NAVY = '#0F1C2E';
 const ORANGE = '#F5A623';
 
+/**
+ * Statut d'une campagne → statut de ligne.
+ *
+ * `StatutVisibilite` ne connaît que trois états (active, en pause, objectif
+ * atteint) : il vient du modèle habillage, qui n'a pas de cycle de validation.
+ * Les états propres au wizard (brouillon, modération, refus) sont rabattus sur
+ * le plus proche, et le libellé exact reste affiché par la ligne elle-même.
+ */
+const STATUT_DEPUIS_CAMPAGNE: Record<CampaignStatus, StatutVisibilite> = {
+  draft: 'en_pause',
+  in_review: 'en_pause',
+  active: 'active',
+  paused: 'en_pause',
+  suspended: 'en_pause',
+  rejected: 'objectif_atteint',
+  ended: 'objectif_atteint',
+};
+
 const STATUTS: Record<StatutVisibilite, { libelle: string; fond: string; texte: string }> = {
   active: { libelle: 'Active', fond: 'rgba(46, 160, 67, 0.12)', texte: '#2EA043' },
   en_pause: { libelle: 'En pause', fond: 'rgba(15, 28, 46, 0.08)', texte: '#5A6A7E' },
@@ -72,15 +90,70 @@ export default function AnnonceurListePage() {
     };
   }, [authLoading, isSuperAdmin, scopedEditionIds]);
 
-  const lignes = useMemo(
-    () =>
-      // Cartes d'abord (c'est ce qui se facture), habillages ensuite, puis par vues.
-      (espace?.visibilites ?? []).slice().sort((a, b) => {
-        if (a.format !== b.format) return a.format === 'carte' ? -1 : 1;
-        return b.vues - a.vues;
-      }),
-    [espace]
-  );
+  /**
+   * UN SEUL TABLEAU pour tout ce que l'annonceur diffuse.
+   *
+   * Les campagnes du wizard vivaient dans une section « en préparation »
+   * séparée, sous le tableau : une campagne ACTIVE y apparaissait comme une
+   * simple ligne de liste, sans période, sans progression vers l'objectif,
+   * sans dépense. Deux endroits à consulter pour une même question — « où en
+   * sont mes diffusions ? ».
+   *
+   * Chaque campagne devient donc une ligne du tableau, au même format qu'une
+   * visibilité. L'ordre suit l'urgence de lecture : ce qui diffuse d'abord,
+   * ce qui attend une action ensuite, ce qui est clos en dernier.
+   */
+  const lignes = useMemo(() => {
+    const depuisEditions = espace?.visibilites ?? [];
+
+    // Une campagne pilotant déjà un habillage est DÉJÀ dans `visibilites` :
+    // la rajouter ici la dupliquerait, comme au tableau de bord.
+    const editionsPilotees = new Set(
+      campagnes
+        .filter((c) => c.format === 'edition' && c.editionSkin?.editionId)
+        .map((c) => c.editionSkin!.editionId)
+    );
+
+    const depuisCampagnes: MiseEnVisibilite[] = campagnes.map((c) => ({
+      id: c.id,
+      format: c.format === 'edition' ? 'edition' : 'carte',
+      editionId: c.editionSkin?.editionId ?? '',
+      editionName: c.editionSkin?.editionId ?? '',
+      titre:
+        c.card?.rectoText?.trim() ||
+        `Édition ${c.editionSkin?.editionId ?? '—'} — ${c.editionSkin?.structure || 'habillage'}`,
+      structure: c.card?.structure || c.editionSkin?.structure || '—',
+      kind: c.card?.kind === 'financement' ? 'funding' : 'opportunity',
+      statut: STATUT_DEPUIS_CAMPAGNE[c.status],
+      vues: 0,
+      objectifVues: c.viewsGoal ?? null,
+      clics: 0,
+      saves: 0,
+      flips: 0,
+      pricePerView: c.pricing?.perView ?? null,
+      depenseFcfa: 0,
+      debutMs: c.period?.startAt ?? null,
+      finMs: c.period?.endAt ?? finExclusivite(c.reservationMonths),
+      card: undefined,
+      campagne: c,
+    }));
+
+    const toutes = [
+      ...depuisEditions.filter((v) => !(v.format === 'edition' && editionsPilotees.has(v.editionId))),
+      ...depuisCampagnes,
+    ];
+
+    // Ce qui diffuse en tête, ce qui demande une action ensuite, le clos après.
+    const rang = (v: MiseEnVisibilite) => {
+      const st = v.campagne?.status;
+      if (st === 'active' || v.statut === 'active') return 0;
+      if (st === 'in_review') return 1;
+      if (st === 'paused' || st === 'suspended' || v.statut === 'en_pause') return 2;
+      if (st === 'draft') return 3;
+      return 4;
+    };
+    return toutes.sort((a, b) => rang(a) - rang(b) || b.vues - a.vues);
+  }, [espace, campagnes]);
 
   if (authLoading || chargement) {
     return (
@@ -194,14 +267,19 @@ export default function AnnonceurListePage() {
                   <th style={{ padding: '8px 12px', fontWeight: 600 }}>PÉRIODE</th>
                   <th style={{ padding: '8px 12px', fontWeight: 600 }}>VUES / OBJECTIF</th>
                   <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>CLICS</th>
-                  <th style={{ padding: '8px 20px', fontWeight: 600, textAlign: 'right' }}>
+                  <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>
                     DÉPENSE ENGAGÉE
                   </th>
+                  <th style={{ padding: '8px 20px', fontWeight: 600 }} />
                 </tr>
               </thead>
               <tbody>
                 {lignes.map((v) => (
-                  <LigneVisibilite key={v.id} v={v} />
+                  <LigneVisibilite
+                    key={v.id}
+                    v={v}
+                    onSupprime={(id) => setCampagnes((liste) => liste.filter((x) => x.id !== id))}
+                  />
                 ))}
               </tbody>
             </table>
@@ -209,35 +287,6 @@ export default function AnnonceurListePage() {
         )}
       </div>
 
-      {/* ===== Campagnes du nouveau modèle (wizard 5 étapes) ===== */}
-      {campagnes.length > 0 && (
-        <div
-          style={{
-            background: '#FFFFFF',
-            borderRadius: 14,
-            border: '1px solid var(--color-card-border)',
-            marginTop: 18,
-            padding: '16px 20px',
-          }}
-        >
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: NAVY, marginBottom: 2 }}>
-            Vos campagnes en préparation
-          </h2>
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>
-            Brouillons et soumissions du wizard — elles rejoignent la diffusion après validation
-            CONCREE (48 h ouvrées).
-          </p>
-          <div className="flex flex-col gap-2">
-            {campagnes.map((c) => (
-              <LigneCampagne
-                key={c.id}
-                c={c}
-                onSupprime={(id) => setCampagnes((liste) => liste.filter((x) => x.id !== id))}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -435,10 +484,39 @@ function Tuile({
   );
 }
 
-function LigneVisibilite({ v }: { v: MiseEnVisibilite }) {
+function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (id: string) => void }) {
   const statut = STATUTS[v.statut];
   const progression =
     v.objectifVues && v.objectifVues > 0 ? Math.min(100, (v.vues / v.objectifVues) * 100) : null;
+
+  /** Campagne d'origine — absente pour une ligne dérivée d'un habillage posé à la main. */
+  const c = v.campagne;
+  const [suppression, setSuppression] = useState(false);
+
+  /**
+   * Destination du clic : l'écran de détail d'une mise en visibilité quand
+   * elle existe, le rapport de campagne sinon. Une campagne carte n'a pas
+   * d'équivalent `MiseEnVisibilite` — son identifiant ne se parse pas.
+   */
+  const lien =
+    c && c.format === 'card'
+      ? `/annonceur/campagne/${encodeURIComponent(c.id)}`
+      : `/annonceur/${encodeURIComponent(v.id)}`;
+
+  /** Suppression d'un brouillon — irréversible, d'où la confirmation. */
+  const supprimer = async () => {
+    if (!c) return;
+    if (!window.confirm('Supprimer définitivement ce brouillon ?\n\nCette action est irréversible.')) return;
+    setSuppression(true);
+    try {
+      await supprimerBrouillon(c.id);
+      toast.success('Brouillon supprimé.');
+      onSupprime(c.id);
+    } catch {
+      toast.error('Suppression impossible.');
+      setSuppression(false);
+    }
+  };
 
   return (
     <tr
@@ -447,10 +525,7 @@ function LigneVisibilite({ v }: { v: MiseEnVisibilite }) {
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <td style={{ padding: '12px 20px' }}>
-        <Link
-          href={`/annonceur/${encodeURIComponent(v.id)}`}
-          style={{ textDecoration: 'none', display: 'block' }}
-        >
+        <Link href={lien} style={{ textDecoration: 'none', display: 'block' }}>
           <div
             style={{
               fontWeight: 700,
@@ -498,7 +573,10 @@ function LigneVisibilite({ v }: { v: MiseEnVisibilite }) {
             whiteSpace: 'nowrap',
           }}
         >
-          ● {statut.libelle}
+          {/* Libellé EXACT de la campagne quand il y en a une : la table de
+              correspondance rabat « brouillon » et « en modération » sur
+              « en pause », ce qui serait faux à l'écran. */}
+          ● {c ? STATUTS_CAMPAGNE[c.status].libelle : statut.libelle}
         </span>
       </td>
       {/*
@@ -558,8 +636,53 @@ function LigneVisibilite({ v }: { v: MiseEnVisibilite }) {
       <td style={{ padding: '12px 12px', textAlign: 'right', color: NAVY, fontWeight: 600 }}>
         {v.format === 'edition' ? '—' : v.clics.toLocaleString('fr-FR')}
       </td>
-      <td style={{ padding: '12px 20px', textAlign: 'right', color: NAVY, fontWeight: 700, whiteSpace: 'nowrap' }}>
+      <td style={{ padding: '12px 12px', textAlign: 'right', color: NAVY, fontWeight: 700, whiteSpace: 'nowrap' }}>
         {v.depenseFcfa != null ? fcfa(v.depenseFcfa) : '—'}
+      </td>
+      {/*
+        * Actions de la ligne — le geste dépend de l'état, pas du format.
+        * Un brouillon se REPREND (wizard, écriture autorisée) ; tout le reste
+        * s'OUVRE en rapport. La suppression ne vaut que pour un brouillon :
+        * les règles Firestore refusent d'effacer au-delà.
+        */}
+      <td style={{ padding: '12px 20px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+        {c?.status === 'draft' ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Link
+              href={`/annonceur/nouvelle?id=${encodeURIComponent(c.id)}`}
+              style={{
+                fontSize: 12, fontWeight: 600, color: NAVY, textDecoration: 'none',
+                border: '1px solid var(--color-card-border)', borderRadius: 8, padding: '5px 10px',
+              }}
+            >
+              Reprendre
+            </Link>
+            <button
+              type="button"
+              onClick={() => void supprimer()}
+              disabled={suppression}
+              title="Supprimer ce brouillon"
+              style={{
+                fontSize: 12, fontWeight: 600, color: '#C0392B', background: '#FFFFFF',
+                border: '1px solid rgba(192,57,43,0.25)', borderRadius: 8, padding: '5px 9px',
+                cursor: suppression ? 'default' : 'pointer', opacity: suppression ? 0.5 : 1,
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </span>
+        ) : (
+          <Link
+            href={lien}
+            style={{
+              fontSize: 12, fontWeight: 600, color: NAVY, textDecoration: 'none',
+              border: '1px solid var(--color-card-border)', borderRadius: 8, padding: '5px 10px',
+            }}
+          >
+            Voir le rapport
+          </Link>
+        )}
       </td>
     </tr>
   );

@@ -365,7 +365,7 @@ export default function TableauDeBordImpactPage() {
                 flexShrink: 0,
               }}
             >
-              <SponsorPopupPreview editionName={v.editionName} sponsor={v.sponsor} />
+              {v.sponsor && <SponsorPopupPreview editionName={v.editionName} sponsor={v.sponsor} />}
             </div>
           </div>
         )}
@@ -675,7 +675,7 @@ export default function TableauDeBordImpactPage() {
               </p>
             </div>
             <div className="flex justify-center">
-              <SponsorPopupPreview editionName={v.editionName} sponsor={v.sponsor} />
+              {v.sponsor && <SponsorPopupPreview editionName={v.editionName} sponsor={v.sponsor} />}
             </div>
           </div>
         )}

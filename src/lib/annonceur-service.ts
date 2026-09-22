@@ -16,7 +16,8 @@
  * contractuelle, ne rien afficher est honnête.
  */
 
-import type { EditionData, EditionSponsor, SponsorEventCard } from '@/types';
+import type {
+  Campaign, EditionData, EditionSponsor, SponsorEventCard } from '@/types';
 import { PRIX_PAR_VUE_FCFA } from './sponsor-pricing';
 import {
   getSponsorDailyMetrics,
@@ -72,7 +73,20 @@ export interface MiseEnVisibilite {
   finMs: number | null;
   /** La carte elle-même (format carte). */
   card?: SponsorEventCard;
-  sponsor: EditionSponsor;
+  /**
+   * Campagne du wizard à l'origine de cette ligne.
+   *
+   * Présente uniquement pour les lignes construites depuis `campaigns` : elle
+   * porte le statut réel (brouillon, en modération, refusée…) que
+   * `StatutVisibilite` ne sait pas représenter, et sert aux actions de la
+   * ligne — reprendre, voir le rapport, supprimer.
+   */
+  campagne?: Campaign;
+  /**
+   * Habillage d'origine — absent pour une ligne construite depuis une
+   * campagne du wizard, qui n'en a pas (une carte n'habille aucune édition).
+   */
+  sponsor?: EditionSponsor;
 }
 
 export interface SyntheseAnnonceur {
