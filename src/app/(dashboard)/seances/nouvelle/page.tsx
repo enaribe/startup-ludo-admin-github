@@ -990,8 +990,18 @@ function EtapeSeance({
         </section>
       )}
 
-      {/* ===== Aperçu éditable — dès qu'un contenu existe ===== */}
-      {contenu && voie !== 'edition' && (
+      {/*
+        * ===== Aperçu éditable — dès qu'un contenu existe =====
+        *
+        * La condition excluait `voie === 'edition'` : cette voie signifiait
+        * « édition seule, sans contenu préparé », et l'aperçu n'aurait rien eu
+        * à montrer. Une SÉANCE PRÊTE emprunte pourtant cette même voie tout en
+        * apportant son contenu — l'enseignant la choisissait et ne voyait
+        * rien, là où les deux autres voies affichent ce qu'elles ont produit.
+        *
+        * C'est donc la présence d'un contenu qui décide, pas la voie.
+        */}
+      {contenu && compterCartes(contenu) > 0 && (
         <div className="glass-card p-4 flex flex-col gap-4">
           <ApercuContenuSeance contenu={contenu} onChange={onContenu} />
           {/* L'ajout n'a de sens que sur la voie génération : il repart du
