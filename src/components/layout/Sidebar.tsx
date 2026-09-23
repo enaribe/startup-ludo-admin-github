@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   BookOpen,
+  Zap,
   Lightbulb,
   FolderKanban,
   Award,
@@ -117,6 +118,9 @@ const NAV_SECTIONS: NavSection[] = [
       // Les quiz et duels se gèrent directement dans chaque édition : les entrées
       // dédiées /quiz et /duels (pages-redirections vides) ont été retirées.
       { label: 'Editions', href: '/editions', icon: <BookOpen size={18} /> },
+      // Catalogue des séances proposées aux enseignants — elles vivaient dans
+      // une constante du wizard, donc modifiables seulement par livraison.
+      { label: 'Séances prêtes', href: '/seances-pretes', icon: <Zap size={18} /> },
       { label: 'Ideation', href: '/ideation', icon: <Lightbulb size={18} /> },
       { label: 'Secteurs', href: '/ideation?type=sector', icon: <Map size={18} /> },
       { label: 'Projets par Defaut', href: '/default-projects', icon: <FolderKanban size={18} /> },

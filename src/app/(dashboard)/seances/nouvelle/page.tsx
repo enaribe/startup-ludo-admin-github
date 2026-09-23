@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth-context';
+import { getReadySessionsPubliees, type ReadySession } from '@/lib/ready-session-service';
 import { getClassesByIds } from '@/lib/school-service';
 import { getEditions } from '@/lib/firestore-service';
 import {
@@ -86,13 +87,14 @@ const ETAPES = ['La séance', 'La classe', 'Récapitulatif'] as const;
  * édition support, durée et difficulté — l'enseignant peut lancer dès l'étape 2.
  * Difficulté EN CLAIR (arbitrage D2) : Débutant / Intermédiaire / Avancé.
  */
-const SEANCES_PRETES = [
-  { id: 'decouvrir', titre: "Découvrir l'entrepreneuriat", duree: 30, difficulte: 'Débutant', editionId: 'classic', note: 'idéale en première séance' },
-  { id: 'marche', titre: "L'étude de marché", duree: 30, difficulte: 'Intermédiaire', editionId: 'classic', note: 'édition au choix' },
-  { id: 'bp', titre: 'Le business plan', duree: 40, difficulte: 'Avancé', editionId: 'classic', note: 'séance double conseillée' },
-  { id: 'marketing', titre: 'Marketing et clients', duree: 30, difficulte: 'Intermédiaire', editionId: 'classic', note: '' },
-  { id: 'finances', titre: 'Finances et trésorerie', duree: 35, difficulte: 'Avancé', editionId: 'fintech', note: '' },
-] as const;
+/**
+ * Les séances prêtes viennent désormais de `readySessions` (écran CONCREE).
+ *
+ * Elles étaient codées ici : en ajouter une demandait une livraison, et elles
+ * ne portaient qu'un titre et une durée — choisir « Le business plan » lançait
+ * une séance VIDE, qui tirait les cartes ordinaires de l'édition. Chacune
+ * porte maintenant son contenu de jeu, généré une fois côté admin.
+ */
 
 /** Voie choisie à l'étape 1 pour définir le contenu de la séance. */
 type VoieContenu = 'generation' | 'reutilisation' | 'edition';
@@ -119,6 +121,7 @@ export default function NouvelleSeancePage() {
    * au titre ou à la source de contenu repasse en personnalisé.
    */
   const [seancePreteId, setSeancePreteId] = useState<string | null>(null);
+  const [seancesPretes, setSeancesPretes] = useState<ReadySession[]>([]);
   const [titre, setTitre] = useState('');
   const [editionId, setEditionId] = useState('');
   const [seanceSource, setSeanceSource] = useState<ClassSession | null>(null);
@@ -193,6 +196,13 @@ export default function NouvelleSeancePage() {
         // aucun droit.
         const classeUrl = (searchParams.get('classe') ?? '').trim();
         if (classeUrl && scopedClassIds.includes(classeUrl)) setClassId(classeUrl);
+
+        // Séances prêtes PUBLIÉES : actives et pourvues d'un contenu. Une
+        // séance sans contenu n'est pas proposée — elle enverrait la classe
+        // sur une partie ordinaire en promettant l'inverse.
+        getReadySessionsPubliees()
+          .then((liste) => setSeancesPretes(liste))
+          .catch(() => setSeancesPretes([]));
 
         const titreUrl = searchParams.get('titre');
         const editionUrl = (searchParams.get('edition') ?? '').trim().toLowerCase();
@@ -454,6 +464,7 @@ export default function NouvelleSeancePage() {
         <EtapeSeance
           voie={voie}
           onVoie={setVoie}
+          seancesPretes={seancesPretes}
           seancePreteId={seancePreteId}
           onSeancePreteId={setSeancePreteId}
           titre={titre}
@@ -596,6 +607,7 @@ export default function NouvelleSeancePage() {
 function EtapeSeance({
   voie,
   onVoie,
+  seancesPretes,
   seancePreteId,
   onSeancePreteId,
   titre,
@@ -623,6 +635,8 @@ function EtapeSeance({
 }: {
   voie: VoieContenu;
   onVoie: (v: VoieContenu) => void;
+  /** Catalogue publié — chargé depuis `readySessions`. */
+  seancesPretes: ReadySession[];
   seancePreteId: string | null;
   onSeancePreteId: (v: string | null) => void;
   titre: string;
@@ -651,11 +665,18 @@ function EtapeSeance({
 }) {
   const modePerso = seancePreteId === null;
 
-  /** Un clic sur une séance prête préconfigure tout — l'enseignant peut lancer. */
-  const choisirPrete = (sp: (typeof SEANCES_PRETES)[number]) => {
+  /**
+   * Un clic sur une séance prête préconfigure tout — l'enseignant peut lancer.
+   *
+   * Le CONTENU est copié, pas référencé : la séance prête est un modèle, et
+   * une correction apportée au catalogue ne doit pas modifier une séance déjà
+   * jouée. C'est la même règle que pour la réutilisation d'une séance passée.
+   */
+  const choisirPrete = (sp: ReadySession) => {
     onSeancePreteId(sp.id);
     onVoie('edition');
     onTitre(sp.titre);
+    if (sp.contenu) onContenu(sp.contenu);
     if (editions.some((e) => e.id === sp.editionId)) onEdition(sp.editionId);
     else if (editions[0]) onEdition(editions[0].id);
     onSeancePrete(sp.duree);
@@ -688,7 +709,7 @@ function EtapeSeance({
             sousTitre="Choisissez, lancez — tout est déjà réglé."
           />
           <div className="flex flex-col gap-2">
-            {SEANCES_PRETES.map((sp) => {
+            {seancesPretes.map((sp) => {
               const actif = seancePreteId === sp.id;
               return (
                 <button

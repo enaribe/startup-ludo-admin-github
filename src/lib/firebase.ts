@@ -99,6 +99,15 @@ export const COLLECTIONS = {
   // Contenu généré, isolé du document de séance pour ne pas le faire grossir
   // (limite Firestore de 1 Mo, et la séance est lue à chaque liste).
   classSessionContent: (sessionId: string) => `classSessions/${sessionId}/content`,
+  /**
+   * Séances PRÊTES À L'EMPLOI, proposées à l'enseignant au lancement.
+   *
+   * Elles vivaient dans une constante du wizard : les modifier demandait une
+   * livraison, et elles ne portaient qu'un titre et une durée — aucun contenu
+   * de jeu. L'enseignant choisissait « Le business plan » et obtenait une
+   * séance vide.
+   */
+  readySessions: 'readySessions',
   // Participation des élèves, écrite par le MOBILE pendant la partie et lue par
   // l'enseignant (suivi en direct et rapport, lot 6). Le back-office n'y écrit
   // JAMAIS : la règle Firestore réserve l'écriture à l'élève lui-même.
