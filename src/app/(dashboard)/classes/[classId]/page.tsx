@@ -43,6 +43,7 @@ import {
   UserMinus,
   UserPlus,
   Users,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
@@ -189,6 +190,15 @@ export default function ClasseDetailPage() {
    * l'établissement.
    */
   const peutGererCumuls = isTeacher || isEstablishmentAdmin || isSuperAdmin;
+  /**
+   * Qui peut lancer une session DEPUIS cette fiche.
+   *
+   * L'enseignant affecté, ou un super admin pour tester. La direction en est
+   * exclue : le direct est le geste de l'enseignant — c'est la règle du menu
+   * (`EcoleLayout` ne lui montre ni « Lancer une session » ni « Session en
+   * direct »), un bouton ici la contredirait.
+   */
+  const peutLancerSession = (isTeacher && scopedClassIds.includes(classId)) || isSuperAdmin;
 
   const persist = useCallback(
     async (valeur: FicheClasse) => {
@@ -712,6 +722,25 @@ export default function ClasseDetailPage() {
           </div>
           <div className="flex items-center gap-3 flex-wrap" style={{ flexShrink: 0 }}>
             {peutEditerFiche && <SaveStatusIndicator status={saveStatus} />}
+            {/*
+              * « Lancer une session » sur la fiche : c'est ici que l'enseignant
+              * décide de jouer, après avoir vu où en est sa classe. L'envoyer
+              * chercher l'entrée du menu lui ferait perdre ce contexte — la
+              * classe part donc dans l'URL, déjà sélectionnée à l'arrivée.
+              *
+              * Réservé à qui pilote cette classe : la direction ne lance pas
+              * de séance (le direct est le geste de l'enseignant), et le
+              * wizard refuserait une classe hors périmètre.
+              */}
+            {peutLancerSession && (
+              <Link
+                href={`/seances/nouvelle?classe=${encodeURIComponent(classId)}`}
+                className="btn-secondary flex items-center gap-2"
+                style={{ textDecoration: 'none' }}
+              >
+                <Zap size={16} /> Lancer une session
+              </Link>
+            )}
             <button
               className="btn-primary flex items-center gap-2"
               onClick={exporterBilan}

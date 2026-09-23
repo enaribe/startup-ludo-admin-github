@@ -187,6 +187,13 @@ export default function NouvelleSeancePage() {
         // Préremplissage depuis la Communauté (« Dupliquer dans mes séances ») :
         // titre, édition (matchée par nom parmi les éditions ACTIVES) et durée
         // arrivent dans l'URL — la séance est prête à lancer en voie édition.
+        // Classe préremplie quand on arrive depuis SA fiche : l'enseignant
+        // vient de la consulter, la lui faire resélectionner serait un retour
+        // en arrière. Vérifiée contre son périmètre — un id d'URL ne donne
+        // aucun droit.
+        const classeUrl = (searchParams.get('classe') ?? '').trim();
+        if (classeUrl && scopedClassIds.includes(classeUrl)) setClassId(classeUrl);
+
         const titreUrl = searchParams.get('titre');
         const editionUrl = (searchParams.get('edition') ?? '').trim().toLowerCase();
         const dureeUrl = Number(searchParams.get('duree'));
