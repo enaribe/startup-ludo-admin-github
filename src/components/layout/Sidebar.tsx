@@ -4,11 +4,6 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
-  BookOpen,
-  Lightbulb,
-  FolderKanban,
-  Award,
-  TrendingUp,
   LogOut,
   Building2,
   Rocket,
@@ -16,19 +11,11 @@ import {
   ClipboardList,
   UserCheck,
   UserCircle,
-  ShoppingCart,
-  Mail,
   Layers3,
   Sparkles,
   BarChart3,
   MessageSquare,
   Settings,
-  Map,
-  Handshake,
-  School,
-  GraduationCap,
-  CalendarDays,
-  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -73,63 +60,6 @@ interface NavSection {
 }
 
 const NAV_SECTIONS: NavSection[] = [
-  // ===== SUPER ADMIN : gestion globale Startup Ludo =====
-  {
-    title: 'General',
-    superAdminOnly: true,
-    items: [
-      { label: 'Tableau de bord', href: '/', icon: <LayoutDashboard size={18} /> },
-      { label: 'Statistiques', href: '/app-stats', icon: <BarChart3 size={18} /> },
-      { label: 'Utilisateurs', href: '/users', icon: <Users size={18} /> },
-      // Paramètres globaux : version minimale de l'app mobile (mise à jour obligatoire), etc.
-      { label: 'Paramètres', href: '/settings', icon: <Settings size={18} /> },
-    ],
-  },
-  {
-    // Précommandes et messages envoyés depuis le site vitrine startupludo web
-    title: 'Site web',
-    superAdminOnly: true,
-    items: [
-      { label: 'Commandes', href: '/orders', icon: <ShoppingCart size={18} /> },
-      { label: 'Messages', href: '/messages', icon: <Mail size={18} /> },
-    ],
-  },
-  {
-    title: 'Catalogue',
-    superAdminOnly: true,
-    items: [
-      { label: 'Partenaires', href: '/partners', icon: <Building2 size={18} /> },
-      { label: 'Programmes', href: '/programs', icon: <Rocket size={18} /> },
-      // Parc des établissements clients (Mode Classe, lot 6) : création d'un
-      // établissement ET de son compte de direction. `superAdminOnly` est déjà
-      // porté par la section ; on le répète sur l'item pour que le filtrage
-      // reste juste si l'entrée est un jour déplacée dans une autre section.
-      { label: 'Établissements', href: '/etablissements', icon: <School size={18} />, superAdminOnly: true },
-      // File de validation des campagnes annonceurs (Espace Annonceur, lot 5).
-      { label: 'Modération annonceurs', href: '/moderation', icon: <ShieldCheck size={18} />, superAdminOnly: true },
-      { label: 'Admins', href: '/admins', icon: <Users size={18} /> },
-    ],
-  },
-  {
-    title: 'Contenu du Jeu',
-    superAdminOnly: true,
-    items: [
-      // Les quiz et duels se gèrent directement dans chaque édition : les entrées
-      // dédiées /quiz et /duels (pages-redirections vides) ont été retirées.
-      { label: 'Editions', href: '/editions', icon: <BookOpen size={18} /> },
-      { label: 'Ideation', href: '/ideation', icon: <Lightbulb size={18} /> },
-      { label: 'Secteurs', href: '/ideation?type=sector', icon: <Map size={18} /> },
-      { label: 'Projets par Defaut', href: '/default-projects', icon: <FolderKanban size={18} /> },
-    ],
-  },
-  {
-    title: 'Progression',
-    superAdminOnly: true,
-    items: [
-      { label: 'Achievements', href: '/achievements', icon: <Award size={18} /> },
-      { label: 'Rangs & XP', href: '/progression', icon: <TrendingUp size={18} /> },
-    ],
-  },
   // ===== ADMIN DE PROGRAMME : gestion de SON parcours =====
   // Ces outils concernent UN programme : ils sont masqués au super admin dans la
   // sidebar (programAdminOnly). Structure et libellés calqués sur la maquette.
@@ -174,41 +104,6 @@ const NAV_SECTIONS: NavSection[] = [
       // Délégation : l'admin partenaire crée/révoque des admins pour SES programmes.
       { label: 'Admins programme', href: '/admins', icon: <Users size={18} /> },
       { label: 'Communications', href: '/communications', icon: <MessageSquare size={18} /> },
-    ],
-  },
-  // ===== SPONSOR : gestion de SON sponsoring sur les éditions qui lui sont assignées =====
-  // Périmètre volontairement minimal : un sponsor est un partenaire externe, il
-  // ne doit voir AUCUNE autre section du back-office.
-  {
-    title: 'Sponsoring',
-    sponsorOnly: true,
-    items: [
-      { label: 'Mes éditions', href: '/sponsoring', icon: <Handshake size={18} /> },
-    ],
-  },
-  // ===== MODE CLASSE — ADMIN D'ÉTABLISSEMENT : pilotage de SON établissement =====
-  // Périmètre fermé, comme le sponsor : aucune autre section du back-office ne
-  // doit apparaître. Les écrans ciblés arrivent aux lots 2 et 3.
-  {
-    title: 'Mon établissement',
-    establishmentOnly: true,
-    items: [
-      { label: 'Tableau de bord', href: '/etablissement', icon: <LayoutDashboard size={18} /> },
-      { label: 'Classes', href: '/classes', icon: <School size={18} /> },
-      { label: 'Enseignants', href: '/enseignants', icon: <Users size={18} /> },
-      // Le directeur lit les séances de son établissement (lot 4b). `/seances`
-      // figurait déjà dans ESTABLISHMENT_ROUTES du layout : sans cette entrée,
-      // la route lui était ouverte mais inatteignable.
-      { label: 'Séances', href: '/seances', icon: <CalendarDays size={18} /> },
-    ],
-  },
-  // ===== MODE CLASSE — ENSEIGNANT : uniquement SES classes et SES séances =====
-  {
-    title: 'Ma classe',
-    teacherOnly: true,
-    items: [
-      { label: 'Mes classes', href: '/classes', icon: <GraduationCap size={18} /> },
-      { label: 'Séances', href: '/seances', icon: <CalendarDays size={18} /> },
     ],
   },
 ];
