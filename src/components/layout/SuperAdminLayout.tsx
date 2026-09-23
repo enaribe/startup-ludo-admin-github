@@ -41,6 +41,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   TrendingUp,
+  Zap,
   UserCog,
   Users,
   type LucideIcon,
@@ -91,6 +92,10 @@ const GROUPES: Array<{ titre: string; entrees: Entree[] }> = [
     titre: 'CONTENU DU JEU',
     entrees: [
       { href: '/editions', libelle: 'Éditions', Icon: BookOpen },
+      // Catalogue des séances proposées aux enseignants au lancement d'une
+      // session. Elles vivaient dans une constante du wizard — modifiables
+      // seulement par livraison, et sans contenu de jeu.
+      { href: '/seances-pretes', libelle: 'Séances prêtes', Icon: Zap },
       // « Secteurs » n'est plus une entrée : /ideation porte déjà ses onglets
       // (?type=sector). Achievements et Rangs fusionneront au lot SA-3.
       { href: '/ideation', libelle: 'Idéation & secteurs', Icon: Lightbulb },
@@ -115,6 +120,7 @@ function titreDepuisChemin(pathname: string): string {
     ['/users', 'Utilisateurs'],
     ['/admins', 'Admins & rôles'],
     ['/editions', 'Éditions'],
+    ['/seances-pretes', 'Séances prêtes'],
     ['/ideation', 'Idéation & secteurs'],
     ['/default-projects', 'Projets par défaut'],
     ['/progression', 'Rangs & XP'],
