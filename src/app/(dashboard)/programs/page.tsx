@@ -106,7 +106,7 @@ export default function ProgramsPage() {
       </div>
 
       {isSuperAdmin && noPartners && (
-        <div className="glass-card p-4 mb-6" style={{ borderLeft: '3px solid #FFB347' }}>
+        <div className="glass-card p-4 mb-6">
           <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
             Aucun partenaire défini. Créez d’abord un{' '}
             <button onClick={() => router.push('/partners/new')} style={{ background: 'none', border: 'none', color: '#FFB347', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>partenaire</button>{' '}

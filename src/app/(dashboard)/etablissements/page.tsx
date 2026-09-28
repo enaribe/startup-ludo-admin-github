@@ -544,7 +544,6 @@ export default function EtablissementsPage() {
       {/* Rappel du choix produit : aucun e-mail n'est envoyé (idem lot 3). */}
       <div
         className="glass-card p-4 mb-4 flex items-start gap-3"
-        style={{ borderLeft: '3px solid var(--color-info)' }}
       >
         <Mail size={16} style={{ color: 'var(--color-info)', flexShrink: 0, marginTop: 2 }} />
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
@@ -932,8 +931,7 @@ function CarteEtablissement({
       style={{
         cursor: 'pointer',
         // Un établissement désactivé se voit d'un coup d'œil dans la liste :
-        // liseré rouge et carte estompée, sans pour autant devenir illisible.
-        borderLeft: actif ? undefined : '3px solid var(--color-error)',
+        // carte estompée, sans pour autant devenir illisible.
         opacity: actif ? 1 : 0.72,
       }}
     >

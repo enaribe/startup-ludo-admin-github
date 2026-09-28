@@ -57,6 +57,12 @@ export interface AdminUser {
   /** True tant que l'admin doit changer son mot de passe (1re connexion / reset). */
   mustChangePassword?: boolean;
   /**
+   * Invitation envoyée, jamais suivie d'une connexion. Purement informatif —
+   * contrairement à `mustChangePassword`, il ne bloque aucun accès. Effacé à la
+   * première connexion par `/api/account/premiere-connexion`.
+   */
+  invitedAt?: number | null;
+  /**
    * COMPTE EN ATTENTE D'ACTIVATION (demande `pending`).
    *
    * Le compte peut se connecter et PARCOURIR son espace, mais n'a AUCUN claim
@@ -233,6 +239,7 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
     // Orthogonal au rôle : renseigné quel que soit `role` (double rôle directeur/enseignant).
     teachingClassIds: readClassIds(userData),
     mustChangePassword: userData.mustChangePassword === true,
+    invitedAt: typeof userData.invitedAt === 'number' ? userData.invitedAt : null,
   };
 }
 
@@ -284,6 +291,7 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
       // Orthogonal au rôle : renseigné quel que soit `role` (double rôle directeur/enseignant).
       teachingClassIds: readClassIds(userData),
       mustChangePassword: userData.mustChangePassword === true,
+    invitedAt: typeof userData.invitedAt === 'number' ? userData.invitedAt : null,
     };
   } catch {
     return null;

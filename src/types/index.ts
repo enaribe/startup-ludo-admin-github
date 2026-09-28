@@ -1181,8 +1181,20 @@ export interface ClassSession {
   attachmentUrls: string[];
   /**
    * Prolongement après la session (spec v2.1 §4.2) : un quiz que les élèves
-   * font à leur rythme sur l'app, avant la date limite. Le taux de complétion
-   * remonte au rapport. Absent = pas de prolongement.
+   * font à leur rythme sur l'app, avant la date limite.
+   *
+   * ⚠️ FONCTIONNALITÉ GELÉE — tout son affichage a été retiré le 24/09/2026.
+   * Elle n'a jamais été implémentée : aucun écran mobile ne présentait le
+   * devoir et aucun rendu n'était mesuré. Le back-office affichait un « 0 / n »
+   * et une barre à 3 % codés en dur, qui simulaient une mesure inexistante.
+   *
+   * LE CHAMP EST CONSERVÉ parce que des séances le portent déjà en base : le
+   * supprimer perdrait l'intention des enseignants qui l'ont coché. Plus rien
+   * ne le lit ni ne l'écrit aujourd'hui.
+   *
+   * Plan de reprise complet — dont la question de conception restée ouverte
+   * (sous quelle forme le devoir se joue sur le téléphone) :
+   * `startup-ludo/docs/PLAN_PROLONGEMENT.md`.
    */
   prolongement?: { actif: boolean; dateLimite?: string };
   /** Date de création, en millisecondes epoch. */

@@ -152,13 +152,6 @@ export default function NouvelleSeancePage() {
   // ===== Étape 2 : la classe =====
   const [classId, setClassId] = useState('');
   const [duree, setDuree] = useState(DUREE_SEANCE_DEFAUT);
-  // Prolongement : activé par défaut (spec §4.2), date limite J+7 par défaut.
-  const [prolongement, setProlongement] = useState(true);
-  const [prolongementDate, setProlongementDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
-  });
 
   // ===== Étape 3 : lancement =====
   // Programmation (étape 3, carte « Programmer plutôt que lancer ? ») : date et
@@ -388,9 +381,6 @@ export default function NouvelleSeancePage() {
           title: titre.trim() || `Séance du ${new Date().toLocaleDateString('fr-FR')}`,
           hasGeneratedContent: voie !== 'edition',
           ...(scheduledAt ? { scheduledAt } : {}),
-          ...(prolongement
-            ? { prolongement: { actif: true, dateLimite: prolongementDate } }
-            : {}),
           ...(seanceSource?.programId ? { programId: seanceSource.programId } : {}),
           ...(seanceSource?.contentPackId ? { contentPackId: seanceSource.contentPackId } : {}),
           ...(seanceSource?.levelIndex !== undefined ? { levelIndex: seanceSource.levelIndex } : {}),
@@ -499,10 +489,6 @@ export default function NouvelleSeancePage() {
           onClasse={setClassId}
           duree={duree}
           onDuree={setDuree}
-          prolongement={prolongement}
-          onProlongement={setProlongement}
-          prolongementDate={prolongementDate}
-          onProlongementDate={setProlongementDate}
           nomEnseignant={admin?.displayName ?? ''}
         />
       )}
@@ -518,8 +504,6 @@ export default function NouvelleSeancePage() {
           classe={classeChoisie}
           duree={duree}
           nomEnseignant={admin?.displayName ?? ''}
-          prolongement={prolongement}
-          prolongementDate={prolongementDate}
           dateProgrammee={dateProgrammee}
           onDateProgrammee={setDateProgrammee}
           heureProgrammee={heureProgrammee}
@@ -1153,7 +1137,7 @@ function OptionSource({
 /**
  * Étape 2 (maquette « Pour quelle classe ? ») : cartes de classes riches,
  * format de jeu, bandeau récapitulatif, durée — et à droite les options
- * (prolongement à interrupteur, note réseau).
+ * (note réseau).
  *
  * FORMAT INDIVIDUEL UNIQUEMENT : « En équipes » est affiché comme la maquette
  * mais marqué « Bientôt » et non cliquable — le mobile ne le gère pas encore
@@ -1165,10 +1149,6 @@ function EtapeClasse({
   onClasse,
   duree,
   onDuree,
-  prolongement,
-  onProlongement,
-  prolongementDate,
-  onProlongementDate,
   nomEnseignant,
 }: {
   classes: SchoolClass[];
@@ -1176,10 +1156,6 @@ function EtapeClasse({
   onClasse: (v: string) => void;
   duree: number;
   onDuree: (v: number) => void;
-  prolongement: boolean;
-  onProlongement: (v: boolean) => void;
-  prolongementDate: string;
-  onProlongementDate: (v: string) => void;
   nomEnseignant: string;
 }) {
   const classeChoisie = classes.find((c) => c.id === classId) ?? null;
@@ -1350,50 +1326,6 @@ function EtapeClasse({
           </h2>
         </div>
         <div className="p-5 flex flex-col gap-4">
-          {/* Prolongement — interrupteur (maquette) */}
-          <div style={{ border: '1px solid var(--color-card-border)', borderRadius: 12, padding: '14px 16px' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  Prolongement après la session
-                </div>
-                <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 3, lineHeight: 1.5 }}>
-                  Un quiz que les apprenants font à leur rythme sur l’app — le taux de complétion
-                  apparaît dans le rapport.
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={prolongement}
-                onClick={() => onProlongement(!prolongement)}
-                style={{
-                  width: 42, height: 24, borderRadius: 12, flexShrink: 0, border: 'none', cursor: 'pointer',
-                  background: prolongement ? '#F5A623' : 'rgba(15,28,46,0.15)',
-                  position: 'relative', transition: 'background 0.15s',
-                }}
-              >
-                <span
-                  style={{
-                    position: 'absolute', top: 3, left: prolongement ? 21 : 3, width: 18, height: 18,
-                    borderRadius: 9, background: '#FFFFFF', transition: 'left 0.15s',
-                    boxShadow: '0 1px 3px rgba(15,28,46,0.25)',
-                  }}
-                />
-              </button>
-            </div>
-            {prolongement && (
-              <input
-                className="input-field"
-                type="date"
-                value={prolongementDate}
-                onChange={(e) => onProlongementDate(e.target.value)}
-                style={{ width: 180, marginTop: 12 }}
-                title="Date limite de rendu du prolongement"
-              />
-            )}
-          </div>
-
           {/* Note réseau — uniquement ce que l'app fait vraiment */}
           <div
             className="flex items-start gap-2.5"
@@ -1439,8 +1371,6 @@ function EtapeRecap({
   classe,
   duree,
   nomEnseignant,
-  prolongement,
-  prolongementDate,
   dateProgrammee,
   onDateProgrammee,
   heureProgrammee,
@@ -1455,8 +1385,6 @@ function EtapeRecap({
   classe: SchoolClass | null;
   duree: number;
   nomEnseignant: string;
-  prolongement: boolean;
-  prolongementDate: string;
   dateProgrammee: string;
   onDateProgrammee: (v: string) => void;
   heureProgrammee: string;
@@ -1532,24 +1460,10 @@ function EtapeRecap({
               {nbDocs > 0 ? `${nbDocs} document${nbDocs > 1 ? 's' : ''} indexé${nbDocs > 1 ? 's' : ''}` : 'Aucun'}
             </div>
           </LigneRecap>
-          <LigneRecap libelle="Durée">
+          <LigneRecap libelle="Durée" derniere>
             <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
               {duree} minutes
             </div>
-          </LigneRecap>
-          <LigneRecap libelle="Prolongement" derniere>
-            {prolongement ? (
-              <>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  Quiz à rendre le {prolongementDate ? new Date(prolongementDate).toLocaleDateString('fr-FR') : '—'}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                  À faire à son rythme sur l’app — complétion visible dans le rapport.
-                </div>
-              </>
-            ) : (
-              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>Désactivé</div>
-            )}
           </LigneRecap>
         </div>
       </section>

@@ -105,15 +105,6 @@ export default function RapportSeance({
         })),
         ...notions.sousEchantillonnees.map((n) => ({ libelle: n.libelle, tauxPct: null })),
       ],
-      ...(seance.prolongement?.actif
-        ? {
-            prolongement: {
-              dateLimite: seance.prolongement.dateLimite,
-              faits: 0, // instrumentation mobile à venir (lot M3 mobile)
-              total: indicateurs.effectifClasse,
-            },
-          }
-        : {}),
       apprenants: lignes
         .filter((l) => l.etat !== 'absent')
         .map((l) => ({
@@ -379,7 +370,6 @@ export default function RapportSeance({
       {suggestion && (
         <section
           className="glass-card p-4 flex items-start gap-3"
-          style={{ borderLeft: '3px solid var(--color-primary)' }}
         >
           <Lightbulb size={18} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 1 }} />
           <div>
@@ -397,7 +387,7 @@ export default function RapportSeance({
         </div>
 
         {/* ═══ Colonne droite (maquette) : carte qui a fait hésiter,
-            prolongement, certificat ═══ */}
+            certificat ═══ */}
         <div className="flex flex-col gap-4">
           {carteLaPlusManquee && (
             <section
@@ -412,29 +402,6 @@ export default function RapportSeance({
               <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 8, lineHeight: 1.55 }}>
                 Manquée par {carteLaPlusManquee.manquees} joueur{carteLaPlusManquee.manquees > 1 ? 's' : ''} sur{' '}
                 {carteLaPlusManquee.total}. À reprendre en ouverture du prochain cours.
-              </p>
-            </section>
-          )}
-
-          {seance.prolongement?.actif && (
-            <section className="glass-card" style={{ padding: '16px 18px' }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
-                Prolongement assigné
-              </h3>
-              <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                Quiz à faire sur l’app
-                {seance.prolongement.dateLimite
-                  ? <> avant le <strong style={{ color: 'var(--color-text-primary)' }}>
-                      {new Date(seance.prolongement.dateLimite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
-                    </strong></>
-                  : ''}.
-              </p>
-              <div style={{ height: 7, borderRadius: 4, background: 'var(--color-surface)', overflow: 'hidden', margin: '10px 0 5px' }}>
-                <div style={{ width: '3%', height: '100%', background: '#0F1C2E', borderRadius: 4 }} />
-              </div>
-              <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-                <strong style={{ color: 'var(--color-text-primary)' }}>0</strong> / {indicateurs.effectifClasse}{' '}
-                apprenants l’ont terminé — le comptage arrive avec la prochaine version de l’app.
               </p>
             </section>
           )}

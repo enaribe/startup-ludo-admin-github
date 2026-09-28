@@ -31,6 +31,11 @@ function isWithin(pathname: string, roots: readonly string[]): boolean {
  * super admin, dont l'API est de toute façon fermée aux autres rôles.
  */
 const ESTABLISHMENT_ROUTES = ['/tableau-de-bord', '/rapports', '/etablissement', '/classes', '/enseignants', '/seances', '/session-en-direct', '/certifications', '/communaute', '/aide-ecole'] as const;
+/*
+  ⚠️ '/seances' RESTE dans les deux listes bien que la page liste ait été
+  supprimée : `isWithin` s'en sert pour ouvrir /seances/nouvelle (le wizard) et
+  /seances/{id} (le suivi d'une séance). La retirer les fermerait toutes deux.
+*/
 /** Routes ouvertes à un enseignant : ses classes et ses séances, rien d'autre. */
 const TEACHER_ROUTES = ['/tableau-de-bord', '/rapports', '/classes', '/seances', '/session-en-direct', '/certifications', '/communaute', '/aide-ecole'] as const;
 

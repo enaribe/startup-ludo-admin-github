@@ -474,7 +474,6 @@ export default function FicheElevePage() {
       {!eligibilite.eligible && (
         <div
           className="flex items-start gap-3 p-4 glass-card"
-          style={{ borderLeft: '3px solid var(--color-text-muted)' }}
         >
           <AlertCircle size={18} style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginTop: 1 }} />
           <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>

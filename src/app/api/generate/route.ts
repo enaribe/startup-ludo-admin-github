@@ -5,7 +5,7 @@ import { exigerAuteurDeContenu } from '@/lib/api-auth';
 /**
  * POST /api/generate
  * Header requis : `Authorization: Bearer <idToken>`
- * Body: { type: GenerationType, prompt: string, context?: Record<string, unknown> }
+ * Body: { type: GenerationType, prompt?: string, context?: Record<string, unknown> }
  * Returns: { data: any } — the parsed JSON from the AI
  *
  * Supports OpenAI (gpt-4o-mini) or Anthropic (Claude) depending on which key is set.
@@ -23,12 +23,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { type, prompt, context } = body as {
       type: GenerationType;
-      prompt: string;
+      prompt?: string;
       context?: Record<string, unknown>;
     };
 
-    if (!type || !prompt) {
-      return NextResponse.json({ error: 'type et prompt requis' }, { status: 400 });
+    /*
+      SEUL `type` EST REQUIS — pas `prompt`.
+
+      Le prompt est la consigne LIBRE de l'utilisateur, et plusieurs générations
+      n'en ont légitimement aucune. Cas vécu : dans « Lancer une session »,
+      l'enseignant dépose son cours et génère sans rien écrire — le champ est
+      d'ailleurs marqué « Consignes complémentaires (optionnel) ». La matière
+      première est alors `context.sourceText`, pas `prompt`, et chaque
+      `buildUserPrompt` teste déjà `if (input.trim())` avant d'ajouter la
+      section « consignes ». Exiger `prompt` renvoyait donc un 400 sur un
+      parcours nominal.
+
+      `type` reste exigé : il choisit le prompt système, et son absence ferait
+      échouer la recherche dans PROMPTS juste en dessous.
+    */
+    if (!type) {
+      return NextResponse.json({ error: 'type requis' }, { status: 400 });
     }
 
     const promptConfig = PROMPTS[type];
@@ -37,7 +52,21 @@ export async function POST(request: NextRequest) {
     }
 
     const systemPrompt = promptConfig.systemPrompt;
-    const userPrompt = promptConfig.buildUserPrompt(prompt, context);
+    const userPrompt = promptConfig.buildUserPrompt(prompt ?? '', context);
+
+    /*
+      La garde porte sur le prompt CONSTRUIT, pas sur l'entrée brute : c'est lui
+      qui part au fournisseur. Plusieurs types (`buildUserPrompt: (input) => input`)
+      n'ont que la consigne pour matière et produiraient une requête vide, payée
+      pour rien ; d'autres, comme le contenu de séance, tiennent debout sans
+      consigne parce que le contexte porte le cours.
+    */
+    if (!userPrompt.trim()) {
+      return NextResponse.json(
+        { error: 'Rien a generer : precisez une consigne ou fournissez un document source.' },
+        { status: 400 }
+      );
+    }
 
     const openaiKey = process.env.OPENAI_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;

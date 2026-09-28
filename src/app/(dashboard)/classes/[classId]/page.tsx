@@ -29,7 +29,6 @@ import {
   ArrowLeft,
   Award,
   CheckCircle2,
-  ClipboardCheck,
   Clock,
   Download,
   Eye,
@@ -320,10 +319,6 @@ export default function ClasseDetailPage() {
   // ── Agrégats du bilan — tous dérivés de données MESURÉES ──
 
   const terminees = useMemo(() => seances.filter((s) => s.status === 'ended'), [seances]);
-  const prolongementsAssignes = useMemo(
-    () => seances.filter((s) => s.prolongement?.actif).length,
-    [seances]
-  );
 
   /** Première séance terminée, pour dater la période couverte par le bilan. */
   const premiereSeanceLe = useMemo(() => {
@@ -381,7 +376,6 @@ export default function ClasseDetailPage() {
         date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
         tuiles: [
           ['Engagement moyen', engagementMoyen != null ? `${engagementMoyen} %` : '—'],
-          ['Prolongements assignés', String(prolongementsAssignes)],
           ['Éligibles au certificat', `${eligiblesCertificat}/${actifs.length}`],
           ['Séances jouées', String(terminees.length)],
         ],
@@ -406,7 +400,6 @@ export default function ClasseDetailPage() {
               derniereActivite: e.lastPlayedAt ? formatDate(e.lastPlayedAt) : '-',
             };
           }),
-        mentionProlongements: prolongementsAssignes > 0,
       });
       telechargerPdf(
         octets,
@@ -754,7 +747,7 @@ export default function ClasseDetailPage() {
       </section>
 
       {/* ═══ Tuiles — uniquement des chiffres mesurés ═══ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
         <TuileBilan
           Icon={Play}
           libelle="Engagement moyen"
@@ -767,17 +760,6 @@ export default function ClasseDetailPage() {
                 : 'aucune séance terminée à mesurer'
           }
           tendance={tendanceEngagement}
-        />
-        <TuileBilan
-          Icon={ClipboardCheck}
-          libelle="Prolongements assignés"
-          valeur={String(prolongementsAssignes)}
-          accent
-          sous={
-            prolongementsAssignes > 0
-              ? 'rendus : comptage à venir dans l’app mobile'
-              : 'aucun prolongement assigné pour l’instant'
-          }
         />
         <TuileBilan
           Icon={Award}
@@ -863,45 +845,49 @@ export default function ClasseDetailPage() {
         </section>
       </div>
 
-      {/* Fiche de la classe */}
-      <section className="glass-card p-5 mb-4">
-        <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>
-          Informations de la classe
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="label">Nom de la classe</label>
-            <input
-              className="input-field"
-              value={fiche.name}
-              readOnly={!peutEditerFiche}
-              disabled={!peutEditerFiche}
-              placeholder="Terminale S2"
-              onChange={(e) => setFiche((prev) => ({ ...prev, name: e.target.value }))}
-            />
+      {/*
+        Fiche de la classe — MONTRÉE SEULEMENT À QUI PEUT L'ÉDITER.
+
+        En lecture seule, ce bloc ne faisait que répéter dans deux champs grisés
+        le nom et le niveau déjà lus dans l'en-tête, suivis d'une phrase
+        expliquant qu'on n'y peut rien. Aucune information, deux champs morts.
+
+        C'est en revanche le SEUL endroit où la direction renomme une classe ou
+        corrige son niveau : la liste des classes ne propose que la création.
+        D'où la condition plutôt qu'une suppression.
+      */}
+      {peutEditerFiche && (
+        <section className="glass-card p-5 mb-4">
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>
+            Informations de la classe
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Nom de la classe</label>
+              <input
+                className="input-field"
+                value={fiche.name}
+                placeholder="Terminale S2"
+                onChange={(e) => setFiche((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Niveau</label>
+              <select
+                className="input-field"
+                value={fiche.level}
+                onChange={(e) => setFiche((prev) => ({ ...prev, level: e.target.value as SchoolLevel }))}
+              >
+                {SCHOOL_LEVELS.map((n) => (
+                  <option key={n} value={n}>
+                    {SCHOOL_LEVEL_LABELS[n]}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="label">Niveau</label>
-            <select
-              className="input-field"
-              value={fiche.level}
-              disabled={!peutEditerFiche}
-              onChange={(e) => setFiche((prev) => ({ ...prev, level: e.target.value as SchoolLevel }))}
-            >
-              {SCHOOL_LEVELS.map((n) => (
-                <option key={n} value={n}>
-                  {SCHOOL_LEVEL_LABELS[n]}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {!peutEditerFiche && (
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 12 }}>
-            Le nom et le niveau de la classe sont gérés par la direction de l’établissement.
-          </p>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* Élèves */}
       <section className="glass-card">

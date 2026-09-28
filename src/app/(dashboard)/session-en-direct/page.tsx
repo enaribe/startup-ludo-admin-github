@@ -193,8 +193,15 @@ export default function SessionEnDirectPage() {
         <Link href="/seances/nouvelle" className="btn-primary flex items-center gap-2" style={{ textDecoration: 'none', fontSize: 13 }}>
           <Zap size={15} /> Lancer une session
         </Link>
-        <Link href="/seances" style={{ color: 'var(--color-text-muted)' }}>
-          Historique complet des séances
+        {/*
+          L'« historique complet des séances » pointait vers /seances, une liste
+          supprimée le 24/09/2026 : elle répétait en moins riche ce que
+          /rapports affiche déjà (participation, score, filtre par classe,
+          export), sans être au menu. Le détail d'une séance reste ouvert
+          depuis ici, /rapports, le tableau de bord et la fiche élève.
+        */}
+        <Link href="/rapports" style={{ color: 'var(--color-text-muted)' }}>
+          Voir tous les rapports de séance
         </Link>
       </div>
     </div>

@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminAuth, getAdminFirestore } from '@/lib/firebase-admin';
 import { COLLECTIONS } from '@/lib/firebase';
+import { boutonEmail, envoyerEmail, gabaritEmail } from '@/lib/email-service';
 
 const SUPER_ADMIN_EMAIL = 'startupludo@concree.com';
 
@@ -105,6 +106,12 @@ export async function GET(req: NextRequest) {
         teachingClassIds: normalizeIds(data.teachingClassIds ?? data.classIds),
         // Statut « 1re connexion en attente » — affiché tel quel par /enseignants.
         mustChangePassword: data.mustChangePassword === true,
+        /*
+          Invitation envoyée, jamais suivie d'une connexion. Distinct de
+          `mustChangePassword`, qui BLOQUE l'accès : celui-ci ne fait
+          qu'informer. Effacé à la première connexion réussie.
+        */
+        invitedAt: typeof data.invitedAt === 'number' ? data.invitedAt : null,
       };
     });
 
@@ -236,7 +243,27 @@ export async function POST(req: NextRequest) {
           teachingClassIds,
           // Périmètres des autres rôles : nettoyés, pour éviter tout héritage.
           programIds: null, programId: null, partnerId: null, editionIds: null,
-          mustChangePassword: true, // 1re connexion : forcer le changement de mot de passe
+          /*
+            ⚠️ `false`, ET C'EST VOLONTAIRE — ne pas le remettre à `true`.
+
+            `mustChangePassword` déclenche `ForcePasswordChange`, un écran qui
+            réclame le mot de passe ACTUEL. Un enseignant invité ne l'a jamais
+            connu : celui posé ici est aléatoire et n'a jamais quitté le
+            serveur. Le drapeau l'enfermerait dehors — il définit son mot de
+            passe par le lien reçu, puis se ferait redemander d'en changer avec
+            un « actuel » qu'il ne peut pas fournir.
+
+            L'état « personne ne s'est encore connecté » est porté par
+            `invitedAt` ci-dessous, qui n'a lui aucun effet de blocage.
+          */
+          mustChangePassword: false,
+          /*
+            Horodatage de l'invitation, effacé à la première connexion réussie
+            (`/api/account/complete-password-change`). Sert la pastille
+            « Invité » de la liste des enseignants — une information, pas une
+            barrière.
+          */
+          invitedAt: Date.now(),
           createdAt: Date.now(), updatedAt: Date.now(),
         },
         { merge: true }
@@ -244,6 +271,26 @@ export async function POST(req: NextRequest) {
       // 3e source de vérité : la relation inverse `classes/{id}.teacherIds[]`.
       // Sans elle, la classe ignorerait qui l'enseigne (cf. SPEC §2.1).
       await synchroniserTeacherIds(uid, anciennesClasses, teachingClassIds);
+
+      /*
+        E-MAIL D'INVITATION — un compte que son titulaire ignore ne vaut rien.
+
+        Jusqu'ici la direction devait transmettre elle-même l'adresse et le mot
+        de passe temporaire, de la main à la main.
+
+        ⚠️ LE MOT DE PASSE N'EST JAMAIS ÉCRIT DANS L'E-MAIL. On envoie un lien
+        Firebase de définition de mot de passe : l'enseignant choisit le sien,
+        et le temporaire généré à la création ne sort jamais du serveur. Un mot
+        de passe en clair resterait lisible dans la boîte mail, les sauvegardes
+        et les journaux du fournisseur — pour un compte qui ouvre des données
+        d'élèves mineurs, c'est exclu.
+
+        NON BLOQUANT (`void`, cf. email-service) : le compte est créé et les
+        claims sont posés même si SendGrid échoue ou si la clé est absente. La
+        direction garde le recours manuel, et l'échec est loggé.
+      */
+      void envoyerInvitationCompte(email, displayName, role, establishmentId);
+
       return NextResponse.json({ uid, email, displayName, role, establishmentId, teachingClassIds });
     }
 
@@ -387,6 +434,31 @@ export async function PATCH(req: NextRequest) {
       if (!caller.establishmentId || targetEstablishmentId !== caller.establishmentId) {
         return NextResponse.json({ error: 'Cet enseignant ne dépend pas de votre établissement.' }, { status: 403 });
       }
+    }
+
+    /*
+      RELANCE D'INVITATION — `{ uid, action: 'reinviter' }`.
+
+      Sort ici, avant toute écriture : elle ne modifie rien, elle renvoie un
+      lien. Elle est placée APRÈS le contrôle de périmètre ci-dessus, qui est
+      justement ce qui empêche un directeur de faire envoyer un lien de
+      réinitialisation vers un compte d'un autre établissement.
+
+      Cas d'usage réel : e-mail tombé dans les indésirables, adresse mal saisie
+      corrigée depuis, ou lien expiré avant que l'enseignant ne l'ouvre.
+    */
+    if (String(body.action ?? '') === 'reinviter') {
+      const cibleEmail = String(current.email ?? '');
+      if (!cibleEmail) {
+        return NextResponse.json({ error: 'Ce compte n’a pas d’adresse e-mail.' }, { status: 400 });
+      }
+      await envoyerInvitationCompte(
+        cibleEmail,
+        String(current.displayName ?? ''),
+        currentRole === 'establishment_admin' ? 'establishment_admin' : 'teacher',
+        String(current.establishmentId ?? '')
+      );
+      return NextResponse.json({ ok: true, email: cibleEmail });
     }
 
     // Champs d'assignation cibles selon le rôle cible.
@@ -821,4 +893,119 @@ async function getPartnerProgramIds(partnerId: string | null): Promise<Set<strin
   const db = getAdminFirestore();
   const snap = await db.collection(COLLECTIONS.programs).where('partnerId', '==', partnerId).get();
   return new Set(snap.docs.map((d) => d.id));
+}
+
+/**
+ * Invite par e-mail le titulaire d'un compte scolaire qui vient d'être créé.
+ *
+ * ⚠️ AUCUN MOT DE PASSE N'EST TRANSMIS. Le lien vient de
+ * `generatePasswordResetLink()` : Firebase le signe, il est à usage unique et
+ * expire de lui-même. L'enseignant définit SON mot de passe, celui généré à la
+ * création ne quitte jamais le serveur.
+ *
+ * Ne jette jamais : un échec d'e-mail ne doit pas défaire une création de
+ * compte déjà écrite en base (claims posés, classes synchronisées). L'appelant
+ * l'invoque en `void`.
+ */
+async function envoyerInvitationCompte(
+  email: string,
+  displayName: string,
+  role: ManagedRole,
+  establishmentId: string
+): Promise<void> {
+  try {
+    const base = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '');
+    /*
+      `continueUrl` ramène l'enseignant sur la page de connexion une fois son
+      mot de passe choisi ; sans elle, Firebase le laisse sur son écran nu,
+      sans aucun chemin vers l'application.
+
+      ⚠️ MAIS ELLE EST FACULTATIVE, ET LE REPLI EST OBLIGATOIRE. Firebase exige
+      que le domaine figure dans « Authentication › Settings › Authorized
+      domains » ; sinon il rejette TOUT l'appel avec « Domain not allowlisted
+      by project » — et l'enseignant ne reçoit rien du tout, pour un simple
+      confort de navigation. Cas vécu le 25/09/2026 avec l'URL Vercel.
+
+      On réessaie donc sans `continueUrl` : le lien fonctionne, il manque juste
+      la redirection finale. Mieux vaut une invitation imparfaite qu'aucune.
+    */
+    const auth = getAdminAuth();
+    let lien: string;
+    try {
+      lien = await auth.generatePasswordResetLink(
+        email,
+        base ? { url: `${base}/login` } : undefined
+      );
+    } catch (erreurUrl) {
+      const code = (erreurUrl as { errorInfo?: { code?: string } })?.errorInfo?.code ?? '';
+      const message = erreurUrl instanceof Error ? erreurUrl.message : '';
+      // Seul le refus de domaine justifie le repli : une adresse inexistante ou
+      // un quota atteint doivent remonter, pas être masqués par un 2e essai.
+      const domaineRefuse =
+        code === 'auth/unauthorized-continue-uri' || /not allowlisted/i.test(message);
+      if (!domaineRefuse) throw erreurUrl;
+
+      console.warn(
+        `[invitation] ${base} n'est pas dans les domaines autorises du projet Firebase — ` +
+          'lien envoye sans redirection. Ajoutez-le dans Authentication > Settings > Authorized domains.'
+      );
+      lien = await auth.generatePasswordResetLink(email);
+    }
+
+    const etablissement = await nomEtablissement(establishmentId);
+    const chez = etablissement ? ` de <strong>${echapper(etablissement)}</strong>` : '';
+    const prenom = displayName.trim().split(/\s+/)[0] || '';
+    const intro = prenom ? `Bonjour ${echapper(prenom)},` : 'Bonjour,';
+    const quoi =
+      role === 'teacher'
+        ? `Votre direction vous a ouvert un compte enseignant${chez} sur Startup Ludo.`
+        : `Un compte de direction${chez} vient d'être ouvert pour vous sur Startup Ludo.`;
+
+    void envoyerEmail({
+      to: email,
+      subject: 'Votre compte Startup Ludo est prêt',
+      html: gabaritEmail(
+        'Bienvenue sur Startup Ludo',
+        `<p style="margin:0 0 10px">${intro}</p>
+         <p style="margin:0 0 10px">${quoi} Définissez votre mot de passe pour commencer — ce lien est personnel et à usage unique.</p>
+         ${boutonEmail('Définir mon mot de passe', lien)}
+         <p style="margin:18px 0 0;font-size:13px;color:#3D4C61">
+           Vous vous connecterez ensuite avec cette adresse (<strong>${echapper(email)}</strong>).
+           ${role === 'teacher' ? 'Vos classes vous attendent dans « Mes classes ».' : ''}
+         </p>`
+      ),
+    });
+  } catch (error) {
+    // Cas réel : adresse inexistante côté Auth, quota Firebase, réseau coupé.
+    console.error(`[invitation] Lien impossible pour ${email} :`, error);
+  }
+}
+
+/** Nom lisible d'un établissement, chaîne vide si introuvable. */
+async function nomEtablissement(establishmentId: string): Promise<string> {
+  if (!establishmentId) return '';
+  try {
+    const snap = await getAdminFirestore()
+      .collection(COLLECTIONS.establishments)
+      .doc(establishmentId)
+      .get();
+    return String(snap.data()?.name ?? '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Échappe ce qui part dans le HTML de l'e-mail.
+ *
+ * Le nom de l'établissement et celui de l'enseignant sont saisis dans le
+ * back-office : une apostrophe typographique ou un `&` suffit à casser le
+ * rendu, et une balise y serait injectée telle quelle.
+ */
+function echapper(texte: string): string {
+  return texte
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

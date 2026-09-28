@@ -29,8 +29,12 @@ export async function enTetesAuth(): Promise<Record<string, string>> {
 export interface RequeteGeneration {
   /** Type de prompt (clé de `PROMPTS` dans `ai-prompts.ts`). */
   type: string;
-  /** Consigne libre passée au prompt. */
-  prompt: string;
+  /**
+   * Consigne libre passée au prompt. OPTIONNELLE : certaines générations
+   * tirent toute leur matière du `context` (le cours déposé pour une séance),
+   * et leur champ de consignes est explicitement marqué « optionnel ».
+   */
+  prompt?: string;
   /** Contexte injecté par `buildUserPrompt` (nom du programme, niveau…). */
   context?: Record<string, unknown>;
 }

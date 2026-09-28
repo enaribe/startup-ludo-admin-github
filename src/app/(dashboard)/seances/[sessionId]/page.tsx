@@ -420,12 +420,14 @@ export default function SeanceDetailPage() {
     // En direct, les deux cartes (Contrôle / Progression) méritent la largeur
     // d'un vidéoprojecteur ; les fiches et rapports restent à largeur de lecture.
     <div className="flex flex-col gap-5" style={{ maxWidth: enCours ? 1440 : 1100 }}>
+      {/* Retour vers /rapports : la liste /seances a été supprimée le
+          24/09/2026, elle doublonnait cet écran en moins riche. */}
       <Link
-        href="/seances"
+        href="/rapports"
         className="flex items-center gap-2"
         style={{ fontSize: 12.5, color: 'var(--color-text-muted)', textDecoration: 'none' }}
       >
-        <ArrowLeft size={14} /> Séances
+        <ArrowLeft size={14} /> Rapports
       </Link>
 
       {/* En `running`, le suivi porte son propre en-tête « Session en direct ». */}

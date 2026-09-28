@@ -4,18 +4,13 @@
  * Mode Classe — Rapports de session (maquette du 14/08, vue établissement).
  *
  * Toutes les sessions jouées, avec pour chacune : participation (barre +
- * actifs/effectif), score moyen (réussite aux quiz) et prolongement. Filtre
+ * actifs/effectif) et score moyen (réussite aux quiz). Filtre
  * par classe en onglets, tuiles de synthèse, export consolidé PDF.
  *
  * COÛT BORNÉ : participation et score exigent une lecture de `participants`
  * par session — calculés pour les 15 sessions les plus récentes (au-delà, la
  * ligne affiche « — » et le rapport détaillé reste à un clic). Les tuiles
  * agrègent ce qui est calculé, jamais plus.
- *
- * PROLONGEMENT : le nombre de rendus n'est pas encore instrumenté côté mobile
- * — la colonne affiche « 0 / n » quand un prolongement est assigné (vérité du
- * moment) et « — » sinon. Le jour où l'app remonte les rendus, la colonne
- * vivra sans changer d'écran.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -282,7 +277,6 @@ export default function RapportsSessionsPage() {
                   <th style={{ padding: '8px 12px', fontWeight: 600 }}>DATE</th>
                   <th style={{ padding: '8px 12px', fontWeight: 600 }}>PARTICIPATION</th>
                   <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>SCORE MOYEN</th>
-                  <th style={{ padding: '8px 20px', fontWeight: 600, textAlign: 'right' }}>PROLONGEMENT</th>
                 </tr>
               </thead>
               <tbody>
@@ -340,9 +334,6 @@ function LigneTableau({ l }: { l: LigneRapport }) {
       </td>
       <td style={{ padding: '13px 12px', textAlign: 'right', fontWeight: 800, color: NAVY }}>
         {l.scorePct != null ? `${l.scorePct} %` : '—'}
-      </td>
-      <td style={{ padding: '13px 20px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>
-        {l.prolongement?.actif ? `0 / ${l.effectif}` : '—'}
       </td>
     </tr>
   );

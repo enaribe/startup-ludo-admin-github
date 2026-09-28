@@ -325,7 +325,9 @@ function titreDepuisChemin(pathname: string): string {
   if (pathname.startsWith('/seances/nouvelle')) return 'Lancer une session';
   if (pathname.startsWith('/session-en-direct')) return 'Session en direct';
   if (pathname.startsWith('/rapports')) return 'Rapports de session';
-  if (pathname.startsWith('/seances')) return 'Historique des séances';
+  // La liste /seances a été supprimée (doublon de /rapports) ; ce qui reste
+  // sous ce préfixe est le suivi d'UNE séance, /seances/{id}.
+  if (pathname.startsWith('/seances')) return 'Suivi de séance';
   if (pathname.startsWith('/classes')) return 'Classes';
   if (pathname.startsWith('/enseignants')) return 'Enseignants';
   if (pathname.startsWith('/tableau-de-bord')) return 'Tableau de bord';

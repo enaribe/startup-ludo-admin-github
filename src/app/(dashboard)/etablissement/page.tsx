@@ -250,7 +250,6 @@ export default function EtablissementPage() {
       {lectureSeule && (
         <div
           className="glass-card p-4 mb-4 flex items-start gap-3"
-          style={{ borderLeft: '3px solid var(--color-info)' }}
         >
           <Lock size={16} style={{ color: 'var(--color-info)', flexShrink: 0, marginTop: 2 }} />
           <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>

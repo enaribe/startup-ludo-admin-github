@@ -64,7 +64,7 @@ const GUIDES: Array<{
   {
     titre: 'Lire un rapport de session',
     texte:
-      'Participation, notions maîtrisées, prolongements : ce que chaque chiffre veut dire.',
+      'Participation, notions maîtrisées, score moyen : ce que chaque chiffre veut dire.',
     lien: '/rapports',
     action: 'Ouvrir les rapports →',
     Icon: BarChart3,

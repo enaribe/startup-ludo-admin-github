@@ -8,13 +8,16 @@
  * `/admins` pour le super admin, en beaucoup plus simple : un seul rôle à créer,
  * un seul périmètre à choisir (les classes), et aucune notion de programme.
  *
- * ⚠️ AUCUN E-MAIL N'EST ENVOYÉ — choix produit assumé (cf. PLAN lot 3). Introduire
- * un fournisseur d'e-mail aurait été une dépendance externe et un bloquant pour
- * une action que l'établissement fait très bien lui-même : il connaît ses
- * enseignants et les voit tous les jours. Les identifiants sont donc affichés
- * une fois, à la création, avec un bouton « Copier » — et c'est à l'établissement
- * de les transmettre. Le mot de passe est temporaire : `mustChangePassword`
- * force son changement à la première connexion (`ForcePasswordChange`).
+ * INVITATION PAR E-MAIL (SendGrid, depuis le 25/09/2026). La direction saisit
+ * un nom et une adresse ; l'enseignant reçoit un lien Firebase pour définir son
+ * mot de passe. Le circuit précédent — mot de passe temporaire saisi par la
+ * direction, affiché une fois, transmis de la main à la main — reposait sur un
+ * canal informel (WhatsApp, papier) pour un secret ouvrant des données d'élèves.
+ *
+ * ⚠️ AUCUN MOT DE PASSE NE TRANSITE. Celui posé à la création est aléatoire,
+ * jamais affiché ; seul le lien signé part par e-mail. L'envoi n'est pas
+ * bloquant : si SendGrid échoue, le compte existe quand même et la direction
+ * peut relancer l'invitation depuis la fiche de l'enseignant.
  *
  * PÉRIMÈTRE : réservé à `establishment_admin` et au super admin. Un enseignant
  * n'y accède jamais (la garde de `(dashboard)/layout.tsx` le redirige, et la
@@ -34,7 +37,6 @@ import {
   Check,
   Copy,
   GraduationCap,
-  KeyRound,
   Mail,
   Pencil,
   Plus,
@@ -62,15 +64,35 @@ interface CompteEnseignant {
   establishmentId: string | null;
   /** Classes affectées — image de `users/{uid}.teachingClassIds`. */
   teachingClassIds?: string[] | null;
-  /** True tant que l'enseignant n'a pas changé son mot de passe temporaire. */
+  /** True si un admin a réinitialisé le mot de passe : changement forcé. */
   mustChangePassword?: boolean;
+  /**
+   * Invitation envoyée, jamais suivie d'une connexion. N'empêche rien — c'est
+   * l'information « ce compte n'a pas encore été pris en main ».
+   */
+  invitedAt?: number | null;
 }
 
-/** Identifiants à transmettre, affichés une seule fois après la création. */
-interface IdentifiantsCrees {
+/** Confirmation affichée après l'envoi d'une invitation. */
+interface InvitationEnvoyee {
   displayName: string;
   email: string;
-  password: string;
+}
+
+/**
+ * Mot de passe temporaire d'un compte qu'on vient de créer.
+ *
+ * Il n'est JAMAIS affiché ni transmis : l'enseignant reçoit un lien de
+ * définition de mot de passe et choisit le sien. Cette valeur n'existe que
+ * parce que Firebase Auth exige un mot de passe à la création du compte.
+ *
+ * `crypto.getRandomValues` et non `Math.random` : ce dernier est prévisible, et
+ * la valeur reste valide tant que l'enseignant n'a pas suivi son lien.
+ */
+function motDePasseTemporaire(): string {
+  const octets = new Uint8Array(24);
+  crypto.getRandomValues(octets);
+  return Array.from(octets, (o) => o.toString(16).padStart(2, '0')).join('');
 }
 
 /** En-têtes d'appel à `/api/admins` : l'ID token de l'appelant borne le périmètre. */
@@ -125,11 +147,10 @@ export default function EnseignantsPage() {
   const [creation, setCreation] = useState(false);
   const [nom, setNom] = useState('');
   const [email, setEmail] = useState('');
-  const [motDePasse, setMotDePasse] = useState('');
   const [classesChoisies, setClassesChoisies] = useState<string[]>([]);
   const [enCreation, setEnCreation] = useState(false);
-  /** Identifiants du dernier compte créé — l'unique occasion de les lire. */
-  const [identifiants, setIdentifiants] = useState<IdentifiantsCrees | null>(null);
+  /** Destinataire de la dernière invitation — sert la confirmation d'envoi. */
+  const [invitation, setInvitation] = useState<InvitationEnvoyee | null>(null);
 
   // Modification des classes affectées
   const [cible, setCible] = useState<CompteEnseignant | null>(null);
@@ -138,6 +159,8 @@ export default function EnseignantsPage() {
 
   // Révocation
   const [revocation, setRevocation] = useState<CompteEnseignant | null>(null);
+  /** uid dont l'invitation part en ce moment — désactive son bouton. */
+  const [relanceEnCours, setRelanceEnCours] = useState<string | null>(null);
   const [enRevocation, setEnRevocation] = useState(false);
 
 
@@ -305,17 +328,16 @@ export default function EnseignantsPage() {
   const reinitialiserFormulaire = () => {
     setNom('');
     setEmail('');
-    setMotDePasse('');
     setClassesChoisies([]);
   };
 
   const creer = async () => {
-    if (!nom.trim() || !email.trim() || !motDePasse.trim()) {
-      toast.error('Nom, e-mail et mot de passe temporaire sont requis.');
+    if (!nom.trim() || !email.trim()) {
+      toast.error('Le nom et l’e-mail sont requis.');
       return;
     }
-    if (motDePasse.trim().length < 8) {
-      toast.error('Le mot de passe temporaire doit faire au moins 8 caractères.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+      toast.error('Cette adresse e-mail n’est pas valide.');
       return;
     }
     setEnCreation(true);
@@ -327,7 +349,10 @@ export default function EnseignantsPage() {
         headers: await enTetesAuth(),
         body: JSON.stringify({
           email: email.trim(),
-          password: motDePasse.trim(),
+          // Mot de passe TEMPORAIRE, jamais affiché ni transmis : l'API exige
+          // une valeur, mais l'enseignant définit la sienne via le lien reçu
+          // par e-mail. Celui-ci ne sert qu'à créer le compte Auth.
+          password: motDePasseTemporaire(),
           displayName: nom.trim(),
           role: 'teacher',
           teachingClassIds: classesChoisies,
@@ -338,9 +363,9 @@ export default function EnseignantsPage() {
       const donnees = await reponse.json();
       if (!reponse.ok) throw new Error(donnees.error || 'Création impossible');
 
-      // Les identifiants ne seront plus jamais lisibles : on les affiche AVANT
-      // de vider le formulaire.
-      setIdentifiants({ displayName: nom.trim(), email: email.trim(), password: motDePasse.trim() });
+      // Plus d'identifiants à recopier : l'enseignant reçoit un lien de
+      // définition de mot de passe. On confirme à qui l'invitation est partie.
+      setInvitation({ displayName: nom.trim(), email: email.trim() });
       setCreation(false);
       reinitialiserFormulaire();
       charger();
@@ -348,6 +373,31 @@ export default function EnseignantsPage() {
       toast.error(error instanceof Error ? error.message : 'Erreur', { duration: 6000 });
     } finally {
       setEnCreation(false);
+    }
+  };
+
+  /**
+   * Renvoie l'invitation à définir son mot de passe.
+   *
+   * Utile quand l'e-mail initial s'est perdu — indésirables, boîte pleine — ou
+   * que son lien a expiré avant d'être ouvert. L'API repose le contrôle de
+   * périmètre : un directeur ne peut relancer que SES enseignants.
+   */
+  const relancerInvitation = async (compte: CompteEnseignant) => {
+    setRelanceEnCours(compte.uid);
+    try {
+      const reponse = await fetch('/api/admins', {
+        method: 'PATCH',
+        headers: await enTetesAuth(),
+        body: JSON.stringify({ uid: compte.uid, action: 'reinviter' }),
+      });
+      const donnees = await reponse.json();
+      if (!reponse.ok) throw new Error(donnees.error || 'Relance impossible');
+      toast.success(`Invitation renvoyée à ${donnees.email ?? compte.email}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Relance impossible');
+    } finally {
+      setRelanceEnCours(null);
     }
   };
 
@@ -449,7 +499,6 @@ export default function EnseignantsPage() {
       {blocageCreation && (
         <div
           className="glass-card p-4 mb-4 flex items-start gap-3"
-          style={{ borderLeft: '3px solid var(--color-error)' }}
         >
           <ShieldAlert size={16} style={{ color: 'var(--color-error)', flexShrink: 0, marginTop: 2 }} />
           <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
@@ -462,7 +511,6 @@ export default function EnseignantsPage() {
       {!blocageCreation && licence.alerte && (
         <div
           className="glass-card p-4 mb-4 flex items-start gap-3"
-          style={{ borderLeft: '3px solid var(--color-primary)' }}
         >
           <AlertTriangle size={16} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 2 }} />
           <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
@@ -526,9 +574,9 @@ export default function EnseignantsPage() {
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        {compte.mustChangePassword ? (
+                        {compte.invitedAt ? (
                           <PastilleStatut couleur="#B87A0C" fond="rgba(245,166,35,0.12)" libelle="Invité"
-                            titre="Compte créé — l'enseignant n'a pas encore changé son mot de passe temporaire" />
+                            titre="Invitation envoyée — l'enseignant n'a pas encore défini son mot de passe" />
                         ) : (
                           <PastilleStatut couleur="#2EA043" fond="rgba(46,160,67,0.1)" libelle="Actif" />
                         )}
@@ -548,6 +596,18 @@ export default function EnseignantsPage() {
                           }}
                         >
                           <Pencil size={13} /> Affecter
+                        </button>
+                        <button
+                          onClick={() => void relancerInvitation(compte)}
+                          disabled={relanceEnCours === compte.uid}
+                          title="Renvoyer l’invitation à définir le mot de passe"
+                          style={{
+                            display: 'inline-flex', background: 'none', border: 'none',
+                            cursor: relanceEnCours === compte.uid ? 'wait' : 'pointer',
+                            color: 'var(--color-text-muted)', padding: '4px 6px', marginLeft: 6,
+                          }}
+                        >
+                          <Mail size={14} />
                         </button>
                         <button
                           onClick={() => setRevocation(compte)}
@@ -639,8 +699,8 @@ export default function EnseignantsPage() {
               Ou créez le compte vous-même
             </h3>
             <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginBottom: 10 }}>
-              Vous saisissez nom, e-mail et mot de passe temporaire, puis transmettez les
-              identifiants — aucun e-mail n’est envoyé.
+              Vous saisissez son nom et son e-mail : il reçoit une invitation pour définir
+              son mot de passe et accéder à ses classes.
             </p>
             <button
               className="btn-secondary flex items-center gap-2"
@@ -678,59 +738,45 @@ export default function EnseignantsPage() {
               placeholder="awa.diop@ism.sn"
             />
           </Champ>
-          <Champ label="Mot de passe temporaire (min. 8 caractères)">
-            <input
-              className="input-field"
-              type="text"
-              value={motDePasse}
-              onChange={(e) => setMotDePasse(e.target.value)}
-              placeholder="Mot de passe à transmettre"
-            />
-          </Champ>
           <Champ label={`Classes affectées${classesChoisies.length ? ` (${classesChoisies.length})` : ''}`}>
             <SelecteurClasses classes={classes} selection={classesChoisies} onChange={setClassesChoisies} />
           </Champ>
 
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-            Les identifiants s’afficheront à l’écran après la création — aucun e-mail ne sera envoyé.
-            L’enseignant devra changer ce mot de passe à sa première connexion. Les classes peuvent
-            être modifiées à tout moment.
+            L’enseignant recevra un e-mail pour définir son mot de passe lui-même — vous n’avez
+            rien à lui transmettre. Les classes peuvent être modifiées à tout moment.
           </p>
           <button className="btn-primary" onClick={creer} disabled={enCreation}>
-            {enCreation ? 'Création…' : 'Créer le compte'}
+            {enCreation ? 'Envoi…' : 'Créer le compte et inviter'}
           </button>
         </div>
       </Modal>
 
-      {/* ===== Identifiants à transmettre (affichés une seule fois) ===== */}
+      {/* ===== Invitation envoyée ===== */}
       <Modal
-        open={!!identifiants}
-        onClose={() => setIdentifiants(null)}
-        title="Identifiants à transmettre"
+        open={!!invitation}
+        onClose={() => setInvitation(null)}
+        title="Invitation envoyée"
       >
-        {identifiants && (
+        {invitation && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div
               className="flex items-start gap-3 p-3"
               style={{ background: 'var(--color-surface)', borderRadius: 8 }}
             >
-              <KeyRound size={16} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 2 }} />
+              <Mail size={16} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 2 }} />
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                Le compte de <strong>{identifiants.displayName}</strong> est créé. Ces identifiants ne
-                seront <strong>plus jamais affichés</strong> : copiez-les maintenant et transmettez-les
-                à l’enseignant vous-même — aucun e-mail n’est envoyé.
+                Le compte de <strong>{invitation.displayName}</strong> est créé. Un e-mail vient de
+                partir à <strong>{invitation.email}</strong> : l’enseignant y définit son mot de
+                passe lui-même, vous n’avez rien à lui transmettre.
               </p>
             </div>
-
-            <LigneIdentifiant label="E-mail" valeur={identifiants.email} />
-            <LigneIdentifiant label="Mot de passe temporaire" valeur={identifiants.password} />
-
-            <BoutonCopier
-              texte={`Identifiants Startup Ludo — ${identifiants.displayName}\nE-mail : ${identifiants.email}\nMot de passe temporaire : ${identifiants.password}\n\nÀ changer à la première connexion.`}
-              libelle="Copier les identifiants"
-            />
-            <button className="btn-secondary" onClick={() => setIdentifiants(null)}>
-              J’ai noté les identifiants
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+              Sans nouvelle de sa part, faites-lui vérifier ses indésirables. Vous pouvez relancer
+              l’invitation depuis sa fiche.
+            </p>
+            <button className="btn-secondary" onClick={() => setInvitation(null)}>
+              Fermer
             </button>
           </div>
         )}
@@ -871,31 +917,12 @@ function Champ({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Une ligne « libellé + valeur copiable » du récapitulatif d'identifiants. */
-function LigneIdentifiant({ label, valeur }: { label: string; valeur: string }) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <div className="flex items-center gap-2">
-        <input
-          className="input-field"
-          readOnly
-          value={valeur}
-          style={{ fontFamily: 'ui-monospace, monospace', flex: 1 }}
-          onFocus={(e) => e.currentTarget.select()}
-        />
-        <BoutonCopier texte={valeur} compact />
-      </div>
-    </div>
-  );
-}
-
 /**
  * Bouton « Copier » avec retour visuel.
  *
  * `navigator.clipboard` n'existe qu'en contexte sécurisé (HTTPS ou localhost) :
  * en cas d'échec on le dit, plutôt que de laisser croire que la copie a marché —
- * le directeur repartirait sans les identifiants, qui ne sont plus réaffichables.
+ * le directeur partagerait un code d'inscription qu'il n'a pas.
  */
 function BoutonCopier({
   texte,

@@ -265,7 +265,6 @@ export default function ImportLearnersModal({
               style={{
                 background: 'var(--color-warning-light)',
                 borderRadius: 8,
-                borderLeft: '3px solid var(--color-warning)',
               }}
             >
               <div className="flex items-center gap-2 mb-2">

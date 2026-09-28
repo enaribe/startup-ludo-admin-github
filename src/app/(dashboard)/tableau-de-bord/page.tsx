@@ -182,8 +182,8 @@ export default function TableauDeBordEcolePage() {
         {vueEnseignant && (
           <Link
             href="/seances/nouvelle"
-            className="flex items-center gap-2"
-            style={{ background: ORANGE, color: NAVY, fontWeight: 700, fontSize: 13, padding: '10px 16px', borderRadius: 10, textDecoration: 'none', flexShrink: 0 }}
+            className="btn-primary flex items-center gap-2"
+            style={{ textDecoration: 'none', flexShrink: 0 }}
           >
             <Zap size={14} /> Lancer une session
           </Link>

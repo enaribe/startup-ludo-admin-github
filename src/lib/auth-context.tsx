@@ -82,6 +82,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (user) {
         const adminData = await getCurrentAdmin();
         setAdmin(adminData);
+        /*
+          Clôt l'invitation du compte : la pastille « Invité » de la liste des
+          enseignants ne doit plus s'afficher une fois qu'on s'est connecté.
+
+          Sans attente et sans bruit : c'est un détail d'affichage pour la
+          direction, il ne doit jamais retarder l'entrée dans l'application ni
+          la faire échouer. Sans effet si le compte n'a pas d'invitation
+          ouverte, ce qui est le cas général.
+        */
+        if (adminData?.invitedAt) {
+          void user
+            .getIdToken()
+            .then((token) =>
+              fetch('/api/account/premiere-connexion', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              })
+            )
+            .catch(() => undefined);
+        }
       } else {
         setAdmin(null);
       }

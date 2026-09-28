@@ -5,8 +5,8 @@
  * Même socle que les certificats et les rapports annonceurs : pdf-lib,
  * Helvetica WinAnsi, caractères hors jeu remplacés avant écriture. Une page
  * A4 : bandeau navy avec le chiffre d'ouverture, indicateurs, notions
- * maîtrisées en barres, prolongement, détail par apprenant (tronqué à la
- * page — le CSV existant reste l'export exhaustif).
+ * maîtrisées en barres, détail par apprenant (tronqué à la page — le CSV
+ * existant reste l'export exhaustif).
  */
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
@@ -36,8 +36,6 @@ export interface DonneesRapportSession {
   scoreMoyenPct: number | null;
   /** Notions : libellé + taux (null = citée sans pourcentage, seuil non atteint). */
   notions: Array<{ libelle: string; tauxPct: number | null }>;
-  /** Prolongement assigné, s'il existe. */
-  prolongement?: { dateLimite?: string; faits: number; total: number };
   /** Détail par apprenant : nom, score, réponses correctes / total. */
   apprenants: Array<{ nom: string; score: number; correctes: number; total: number }>;
 }
@@ -101,18 +99,6 @@ export async function genererRapportSessionPdf(d: DonneesRapportSession): Promis
     y -= 16;
   }
   y -= 10;
-
-  // ── Prolongement ──
-  if (d.prolongement) {
-    texte('PROLONGEMENT ASSIGNE', M, 9, gras, GRIS);
-    y -= 14;
-    texte(
-      `A rendre avant le ${d.prolongement.dateLimite || '-'} - ${d.prolongement.faits}/${d.prolongement.total} apprenants l'ont termine.`,
-      M,
-      10
-    );
-    y -= 22;
-  }
 
   // ── Détail par apprenant ──
   texte('DETAIL PAR APPRENANT', M, 9, gras, GRIS);

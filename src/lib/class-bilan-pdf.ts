@@ -11,8 +11,8 @@
  *
  * TOUT ce qui est imprimé ici est MESURÉ — les chiffres arrivent déjà calculés
  * de la fiche de classe, ce fichier ne fait que les mettre en page. Les limites
- * de mesure (engagement rapporté à l'effectif actuel, rendus de prolongement
- * non comptés par l'app) sont écrites dans le document lui-même : un lecteur ne
+ * de mesure (engagement rapporté à l'effectif actuel) sont écrites dans le
+ * document lui-même : un lecteur ne
  * doit pas avoir besoin du back-office pour savoir ce qu'un chiffre vaut.
  */
 
@@ -59,8 +59,6 @@ export interface DonneesBilanClasse {
     seances: number;
     derniereActivite: string;
   }>;
-  /** Vrai si au moins un prolongement a été assigné (déclenche la mention de mesure). */
-  mentionProlongements: boolean;
 }
 
 export async function genererBilanClassePdf(d: DonneesBilanClasse): Promise<Uint8Array> {
@@ -199,9 +197,6 @@ export async function genererBilanClassePdf(d: DonneesBilanClasse): Promise<Uint
   // ── Mentions de mesure ──
   const mentions = [
     'Niveaux : N1 decouvre - N2 pratique (10 questions et plus) - N3 maitrise (25 q., 60 %) - N4 autonome (50 q., 70 %).',
-    ...(d.mentionProlongements
-      ? ['Prolongements : le comptage des rendus arrive avec la prochaine version de l\'application mobile.']
-      : []),
   ];
   let yPied = 40;
   for (const mention of [...mentions].reverse()) {

@@ -85,3 +85,20 @@ export function gabaritEmail(titre: string, corps: string): string {
     </p>
   </div></body></html>`;
 }
+
+/**
+ * Bouton d'action à insérer dans le corps d'un `gabaritEmail`.
+ *
+ * Les clients mail ignorent presque tous les feuilles de style externes et une
+ * partie d'entre eux les `<button>` : c'est donc un `<a>` stylé en ligne, avec
+ * l'URL répétée en clair juste en dessous — un lien long passe mal dans
+ * certains webmails, et l'utilisateur doit pouvoir le copier à la main.
+ */
+export function boutonEmail(libelle: string, url: string): string {
+  return `<p style="margin:22px 0 10px">
+    <a href="${url}" style="display:inline-block;background:#F5A623;color:#0F1C2E;font-weight:bold;font-size:14px;text-decoration:none;padding:12px 22px;border-radius:8px">${libelle}</a>
+  </p>
+  <p style="font-size:11.5px;color:#8A94A6;line-height:1.5;word-break:break-all;margin:0">
+    Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br>${url}
+  </p>`;
+}

@@ -114,14 +114,34 @@ body {
   border-radius: 11px;
 }
 
+/*
+  Bouton d'action principal.
+
+  POLICE DE TEXTE, PAS D'AFFICHAGE : ce bouton a longtemps porté
+  `--font-title` (Luckiest Guy), une police décorative qui rendait les libellés
+  longs — « Bilan de la classe (PDF) » — difficiles à lire et détonnait à côté
+  de `.btn-secondary`, posé juste à côté dans presque tous les écrans. Le
+  back-office est un outil de travail : les titres et les grands chiffres
+  portent l'identité (`.section-title`, `.stat-value`), les commandes restent
+  lisibles.
+
+  Les valeurs ci-dessous reprennent celles du bouton « Lancer une session » du
+  tableau de bord, qui faisait déjà exception en styles en ligne.
+*/
 .btn-primary {
   background: var(--color-primary);
-  color: var(--color-bg);
-  font-family: var(--font-title);
-  font-weight: 400;
-  letter-spacing: 0.5px;
+  /*
+    Texte NAVY, pas `--color-bg` : ce dernier vaut #F4F6F9, un gris très clair
+    qui, posé sur l'orange, donnait un contraste insuffisant (≈1.6:1, sous le
+    minimum AA de 4.5:1). Le navy sur orange atteint ≈9:1 — et c'est déjà ce
+    que faisait le bouton « Lancer une session » du tableau de bord.
+  */
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
   padding: 10px 24px;
-  border-radius: 12px;
+  border-radius: 10px;
   transition: all 0.2s;
   cursor: pointer;
   border: none;
@@ -145,8 +165,9 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-body);
   font-weight: 600;
+  font-size: 13px;
   padding: 10px 24px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--color-card-border);
   transition: all 0.2s;
   cursor: pointer;
@@ -162,8 +183,9 @@ body {
   color: white;
   font-family: var(--font-body);
   font-weight: 600;
+  font-size: 13px;
   padding: 10px 24px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: none;
   transition: all 0.2s;
   cursor: pointer;

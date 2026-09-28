@@ -193,8 +193,8 @@ export async function getSessionsByClass(classId: string): Promise<ClassSession[
 
 /**
  * Séances créées par un enseignant, toutes classes confondues — c'est
- * l'historique de `/seances`, et la source de la voie « réutiliser une séance »
- * du wizard.
+ * la source de la voie « réutiliser une séance » du wizard, et l'historique
+ * affiché sur la fiche d'un enseignant.
  *
  * C'est la raison d'être de la collection racine : une sous-collection de la
  * classe obligerait à interroger chaque classe séparément.
