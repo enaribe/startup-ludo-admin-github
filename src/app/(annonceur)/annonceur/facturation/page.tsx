@@ -120,7 +120,23 @@ export default function FacturationPage() {
           let clics = 0;
           for (const j of serie) {
             if (j.date.startsWith(moisCourant)) {
-              vues += j.totals.views;
+              /*
+                LES DEUX COMPTEURS DE VUES, PAS SEULEMENT `views`.
+
+                Une campagne CARTE incrémente `views` ; un habillage d'ÉDITION
+                incrémente `editionPopupViews` — deux compteurs distincts, par
+                construction (cf. `sponsorMetricsService`), pour ne pas mêler
+                l'exposition de marque au volume de cartes acheté.
+
+                Cette page n'additionnait que `views` : une campagne d'édition
+                affichait donc « Aucune consommation ce mois-ci » alors qu'elle
+                diffusait et que son propre tableau de bord annonçait une
+                dépense. `annonceur-service.ts:234` facture bien ces vues « au
+                même prix que les cartes » — la facturation disait le contraire.
+
+                Une campagne ne porte jamais les deux : l'addition est sûre.
+              */
+              vues += j.totals.views + (j.totals.editionPopupViews ?? 0);
               clics += j.totals.clicks;
             }
           }
