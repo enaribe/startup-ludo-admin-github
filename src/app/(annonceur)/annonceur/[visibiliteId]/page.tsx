@@ -69,6 +69,10 @@ const STATUTS = {
   active: { libelle: 'Active', fond: 'rgba(46, 160, 67, 0.12)', texte: '#2EA043' },
   en_pause: { libelle: 'En pause', fond: 'rgba(15, 28, 46, 0.08)', texte: '#5A6A7E' },
   objectif_atteint: { libelle: 'Objectif atteint', fond: 'rgba(245, 166, 35, 0.15)', texte: '#B87A0C' },
+  // `StatutVisibilite` ne connaît pas « terminée » : il décrit une diffusion
+  // en cours. Ce libellé-ci est posé à l'affichage quand la PÉRIODE est close,
+  // que l'entretien soit passé ou non (cf. `statutAffiche` plus bas).
+  terminee: { libelle: 'Terminée', fond: 'rgba(15, 28, 46, 0.06)', texte: '#5A6A7E' },
 } as const;
 
 /** Durée « 21 min » depuis des secondes cumulées et un nombre de parties. */
@@ -276,7 +280,24 @@ export default function TableauDeBordImpactPage() {
     );
   }
 
-  const statut = STATUTS[v.statut];
+  /*
+    ═══ LA PÉRIODE PRIME SUR LE STATUT STOCKÉ ═══
+
+    Le passage en `ended` vient de `/api/annonceur/entretien`, déclenché à la
+    main — aucun cron. Une campagne dont le dernier mois réservé est écoulé
+    garde donc `status: 'active'` jusqu'au prochain passage.
+
+    Constaté le 01/10/2026 : la LISTE affichait « Terminée » (elle recalcule
+    depuis la période) pendant que CETTE fiche affichait « Active », pour la
+    même campagne — deux écrans se contredisant sur l'écran où l'annonceur
+    vérifie si sa diffusion tourne encore.
+
+    Pour un habillage d'édition, l'échéance n'est pas `period.endAt` (jamais
+    renseigné pour ce format) mais la fin du DERNIER MOIS RÉSERVÉ.
+  */
+  const finDiffusion = v.finMs;
+  const periodeClose = typeof finDiffusion === 'number' && finDiffusion <= Date.now();
+  const statut = periodeClose ? STATUTS.terminee : STATUTS[v.statut];
   const kpis = construireIndicateurs(v, metriquesEdition);
 
   return (
