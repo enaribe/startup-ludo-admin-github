@@ -15,8 +15,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Eye, LayoutGrid, MousePointerClick, Plus, Trash2, Wallet } from 'lucide-react';
+import { Eye, LayoutGrid, MousePointerClick, Plus, RotateCcw, Trash2, Wallet } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { getEditions, getEditionsByIds } from '@/lib/firestore-service';
 import {
@@ -26,7 +27,7 @@ import {
   type MiseEnVisibilite,
   type StatutVisibilite,
 } from '@/lib/annonceur-service';
-import { getMesCampagnes, supprimerBrouillon } from '@/lib/campaign-service';
+import { getMesCampagnes, relancerCampagne, supprimerBrouillon } from '@/lib/campaign-service';
 import { finExclusivite, joursRestants } from '@/lib/reservations';
 import type { Campaign, CampaignStatus } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -139,10 +140,44 @@ export default function AnnonceurListePage() {
       campagne: c,
     }));
 
+    /*
+      ═══ REPLIAGE DES RELANCES ═══
+
+      Relancer une campagne terminée en crée une copie (`relanceDe` pointe vers
+      l'originale). Sans ce repliage, la liste affichait DEUX lignes au titre
+      identique — l'ancienne « Terminée » et la copie « En modération » — sans
+      rien pour les distinguer : l'annonceur ne pouvait pas savoir laquelle
+      diffuse.
+
+      On ne supprime PAS l'ancienne : ses vues et sa dépense sont la trace de
+      ce qui lui a été facturé, et la supprimer effacerait une facture. On la
+      retire de la liste principale et on la rattache à sa relance, qui affiche
+      alors « 2e diffusion » — l'historique reste accessible par le rapport.
+
+      `relanceDe` pointe toujours vers la campagne SOURCE (cf.
+      `relancerCampagne`), donc une campagne relancée trois fois replie trois
+      lignes en une, sans escalier.
+    */
+    const relanceesVers = new Map<string, number>();
+    for (const c of campagnes) {
+      if (!c.relanceDe) continue;
+      relanceesVers.set(c.relanceDe, (relanceesVers.get(c.relanceDe) ?? 0) + 1);
+    }
+
     const toutes = [
       ...depuisEditions.filter((v) => !(v.format === 'edition' && editionsPilotees.has(v.editionId))),
       ...depuisCampagnes,
-    ];
+    ]
+      // Une campagne qui a été relancée sort de la liste : sa relance la
+      // représente désormais.
+      .filter((v) => !(v.campagne && relanceesVers.has(v.campagne.id)))
+      // La relance porte son rang de diffusion (2e, 3e…) pour que l'annonceur
+      // sache qu'il s'agit d'une reprise et non d'un doublon.
+      .map((v) =>
+        v.campagne?.relanceDe
+          ? { ...v, rangRelance: (relanceesVers.get(v.campagne.relanceDe) ?? 0) + 1 }
+          : v
+      );
 
     // Ce qui diffuse en tête, ce qui demande une action ensuite, le clos après.
     const rang = (v: MiseEnVisibilite) => {
@@ -493,6 +528,9 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
   /** Campagne d'origine — absente pour une ligne dérivée d'un habillage posé à la main. */
   const c = v.campagne;
   const [suppression, setSuppression] = useState(false);
+  /** Copie en cours : désactive le bouton le temps de l'écriture. */
+  const [enRelance, setEnRelance] = useState(false);
+  const router = useRouter();
 
   /**
    * Destination du clic : l'écran de détail d'une mise en visibilité quand
@@ -518,6 +556,52 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
       setSuppression(false);
     }
   };
+
+  /*
+    ═══ LE STATUT STOCKÉ PEUT MENTIR — on le corrige à l'affichage ═══
+
+    Le passage en `ended` est posé par `/api/annonceur/entretien`, déclenché à
+    la main : aucun cron ne l'appelle. Une campagne dont la période s'est
+    terminée garde donc `status: 'active'` jusqu'à ce que quelqu'un pense à
+    lancer l'entretien.
+
+    Résultat constaté le 28/09/2026 : une ligne affichait « ● Active » dans la
+    colonne STATUT et « Terminée » dans la colonne PÉRIODE — deux colonnes de
+    la même ligne se contredisant, sur l'écran où l'annonceur vérifie si sa
+    diffusion tourne encore.
+
+    On fait donc dire à l'affichage ce qui est VRAI : période close = terminée.
+    Ce n'est pas un pansement sur l'entretien — le feed filtre lui aussi sur la
+    période désormais (cf. `publierFeed`), donc rien ne diffuse plus. C'est
+    simplement l'écran qui cesse d'affirmer le contraire.
+  */
+  /**
+   * Relance : copie le contenu dans un brouillon, puis ouvre le wizard dessus.
+   *
+   * On n'envoie PAS directement en modération : l'annonceur doit choisir ses
+   * nouvelles dates (pour une édition, le créneau d'origine peut être pris) et
+   * garde l'occasion de corriger un texte avant de resoumettre.
+   */
+  const relancer = async () => {
+    if (!c || enRelance) return;
+    setEnRelance(true);
+    try {
+      const nouvelId = await relancerCampagne(c);
+      toast.success('Copie créée — choisissez vos nouvelles dates.');
+      router.push(`/annonceur/nouvelle?id=${encodeURIComponent(nouvelId)}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Relance impossible.');
+      setEnRelance(false);
+    }
+  };
+
+  const finCampagne = v.finMs;
+  const periodeClose = typeof finCampagne === 'number' && finCampagne < Date.now();
+  const statutReel = c?.status ?? null;
+  const statutAffiche: CampaignStatus | null =
+    periodeClose && (statutReel === 'active' || statutReel === 'paused') ? 'ended' : statutReel;
+  const statutMeta = statutAffiche ? STATUTS_CAMPAGNE[statutAffiche] : statut;
+  const libelleStatut = statutMeta.libelle;
 
   return (
     <tr
@@ -556,6 +640,14 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
             {v.format === 'carte'
               ? ` · carte ${v.kind === 'funding' ? 'FINANCEMENT' : 'OPPORTUNITÉ'}`
               : ' · écran sponsor exclusif'}
+            {/* Reprise d'une campagne terminée : sans cette mention, la ligne
+                est indiscernable d'une campagne créée de zéro, alors que ses
+                compteurs repartent bien à zéro pour cette diffusion-ci. */}
+            {v.rangRelance && (
+              <span style={{ color: '#B87A0C', fontWeight: 600 }}>
+                {' '}· {v.rangRelance}<sup>e</sup> diffusion
+              </span>
+            )}
           </div>
           </span>
         </Link>
@@ -582,15 +674,15 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
             fontWeight: 700,
             padding: '3px 10px',
             borderRadius: 10,
-            background: statut.fond,
-            color: statut.texte,
+            background: statutMeta.fond,
+            color: statutMeta.texte,
             whiteSpace: 'nowrap',
           }}
         >
           {/* Libellé EXACT de la campagne quand il y en a une : la table de
               correspondance rabat « brouillon » et « en modération » sur
               « en pause », ce qui serait faux à l'écran. */}
-          ● {c ? STATUTS_CAMPAGNE[c.status].libelle : statut.libelle}
+          ● {libelleStatut}
         </span>
       </td>
       {/*
@@ -687,15 +779,44 @@ function LigneVisibilite({ v, onSupprime }: { v: MiseEnVisibilite; onSupprime: (
             </button>
           </span>
         ) : (
-          <Link
-            href={lien}
-            style={{
-              fontSize: 12, fontWeight: 600, color: NAVY, textDecoration: 'none',
-              border: '1px solid var(--color-card-border)', borderRadius: 8, padding: '5px 10px',
-            }}
-          >
-            Voir le rapport
-          </Link>
+          <span className="flex items-center gap-2" style={{ justifyContent: 'flex-end' }}>
+            {/*
+              RELANCER — visible seulement quand la diffusion est réellement
+              finie (`statutAffiche`, qui tient compte d'une période close même
+              si l'entretien n'est pas passé).
+
+              On duplique au lieu de prolonger : repousser la date de fin d'une
+              campagne close mélangerait ses vues et sa dépense passées à une
+              nouvelle diffusion, rendant son rapport illisible. Cf.
+              `relancerCampagne()`.
+            */}
+            {c && statutAffiche === 'ended' && (
+              <button
+                type="button"
+                onClick={() => void relancer()}
+                disabled={enRelance}
+                className="flex items-center gap-1.5"
+                style={{
+                  fontSize: 12, fontWeight: 600, color: NAVY,
+                  border: '1px solid var(--color-card-border)', borderRadius: 8,
+                  padding: '5px 10px', background: '#FFFFFF',
+                  cursor: enRelance ? 'default' : 'pointer', opacity: enRelance ? 0.6 : 1,
+                }}
+                title="Créer une nouvelle campagne reprenant ce contenu, avec de nouvelles dates"
+              >
+                <RotateCcw size={13} /> {enRelance ? 'Copie…' : 'Relancer'}
+              </button>
+            )}
+            <Link
+              href={lien}
+              style={{
+                fontSize: 12, fontWeight: 600, color: NAVY, textDecoration: 'none',
+                border: '1px solid var(--color-card-border)', borderRadius: 8, padding: '5px 10px',
+              }}
+            >
+              Voir le rapport
+            </Link>
+          </span>
         )}
       </td>
     </tr>

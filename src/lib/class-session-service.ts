@@ -167,7 +167,64 @@ export async function createClassSession(
   const { id: _id, ...aEcrire } = session;
   void _id;
   await setDoc(doc(firestore, COLLECTIONS.classSessions, sessionId), sansIndefinis(aEcrire));
+
+  // Index du code APRÈS la séance : un index pointant vers une séance qui
+  // n'existe pas encore enverrait le mobile sur un document introuvable.
+  if (lancer && joinCode) {
+    await publierCodeSeance(joinCode, sessionId, data.classId, session.joinCodeExpiresAt as number);
+  }
   return session;
+}
+
+/**
+ * Publie le document d'index d'un code de salle d'attente.
+ *
+ * Le mobile lit `sessionCodes/{CODE}` par son ID pour résoudre un QR scanné,
+ * au lieu d'appeler `/api/session/join/<code>` — cf. le commentaire de
+ * `COLLECTIONS.sessionCodes` pour le pourquoi.
+ *
+ * ⚠️ PROJECTION MINIMALE, ET C'EST UNE RÈGLE. Ce document est lisible par tout
+ * compte authentifié qui connaît le code : il ne porte QUE de quoi désigner la
+ * séance. Aucun nom d'élève, aucun `establishmentId`, aucun titre. La liste des
+ * prénoms reste servie par l'API, seule à disposer d'un limiteur par IP — c'est
+ * la seule donnée nominative du parcours.
+ *
+ * Silencieux en cas d'échec : l'index est un CONFORT — le code dicté et la
+ * route API fonctionnent sans lui. Une écriture ratée ne doit pas empêcher une
+ * séance de s'ouvrir devant une classe entière.
+ */
+async function publierCodeSeance(
+  code: string,
+  sessionId: string,
+  classId: string,
+  expireLe: number
+): Promise<void> {
+  try {
+    await setDoc(doc(firestore, COLLECTIONS.sessionCodes, code), {
+      sessionId,
+      classId,
+      expiresAt: expireLe,
+      createdAt: Date.now(),
+    });
+  } catch (error) {
+    console.warn('[sessionCodes] publication impossible :', error);
+  }
+}
+
+/**
+ * Retire l'index d'un code — à la clôture de la séance.
+ *
+ * Le document porte `expiresAt`, que le mobile vérifie : même laissé en place,
+ * un index périmé n'ouvre rien. Cette suppression libère le code pour une autre
+ * séance et évite de laisser grossir la collection.
+ */
+async function retirerCodeSeance(code: string | null | undefined): Promise<void> {
+  if (!code) return;
+  try {
+    await deleteDoc(doc(firestore, COLLECTIONS.sessionCodes, code));
+  } catch (error) {
+    console.warn('[sessionCodes] suppression impossible :', error);
+  }
 }
 
 /** Charge une séance, ou `null` si elle n'existe pas. */
@@ -332,6 +389,15 @@ export async function startSession(sessionId: string): Promise<{ joinCode: strin
   // Déjà ouverte avec un code valide : on rend le code existant plutôt que d'en
   // tirer un nouveau — les élèves ont peut-être déjà celui qui est projeté.
   if (session.status === 'running' && session.joinCode && (session.joinCodeExpiresAt ?? 0) > Date.now()) {
+    // Republication volontaire : les séances ouvertes AVANT l'existence de
+    // l'index n'en ont pas, et leur QR resterait inutilisable en lecture
+    // directe. Réécrire un document identique ne coûte rien.
+    await publierCodeSeance(
+      session.joinCode,
+      sessionId,
+      session.classId,
+      session.joinCodeExpiresAt as number
+    );
     return { joinCode: session.joinCode, joinCodeExpiresAt: session.joinCodeExpiresAt as number };
   }
 
@@ -348,6 +414,13 @@ export async function startSession(sessionId: string): Promise<{ joinCode: strin
     joinCodeExpiresAt,
     updatedAt: maintenant,
   });
+
+  // L'ancien code ne doit plus rien ouvrir : sans ce retrait, un QR photographié
+  // à la séance précédente resterait valide jusqu'à son expiration.
+  if (session.joinCode && session.joinCode !== joinCode) {
+    await retirerCodeSeance(session.joinCode);
+  }
+  await publierCodeSeance(joinCode, sessionId, session.classId, joinCodeExpiresAt);
   return { joinCode, joinCodeExpiresAt };
 }
 
@@ -376,6 +449,10 @@ export async function demarrerPartie(sessionId: string): Promise<number> {
  * ne doit plus rien ouvrir, et il redevient disponible pour une autre séance.
  */
 export async function endSession(sessionId: string): Promise<void> {
+  // Lu AVANT l'écriture : elle efface `joinCode`, et l'index ne serait plus
+  // retrouvable ensuite — le document resterait orphelin dans la collection.
+  const avant = await getClassSession(sessionId);
+
   await updateDoc(doc(firestore, COLLECTIONS.classSessions, sessionId), {
     status: 'ended' satisfies ClassSessionStatus,
     endedAt: Date.now(),
@@ -383,6 +460,8 @@ export async function endSession(sessionId: string): Promise<void> {
     joinCodeExpiresAt: null,
     updatedAt: Date.now(),
   });
+
+  await retirerCodeSeance(avant?.joinCode);
 }
 
 /**

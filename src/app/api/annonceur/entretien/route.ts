@@ -25,6 +25,14 @@
  * campagne de ce statut la retire du feed au prochain snapshot, sans aucune
  * modification de l'app ni déploiement store.
  *
+ * ⚠️ LA FIN DE PÉRIODE NE DÉPEND PLUS DE CETTE ROUTE. Comme l'entretien est
+ * déclenché à la main (cf. LATENCE ASSUMÉE ci-dessous), une campagne expirée
+ * gardait `status: 'active'` et restait publiée jusqu'au prochain passage —
+ * constaté le 28/09/2026 sur une campagne expirée depuis trois jours, encore
+ * dans le feed. `publierFeed()` filtre désormais AUSSI sur `period.endAt` :
+ * la diffusion s'arrête à l'heure dite, et le passage en `ended` fait ici
+ * n'est plus qu'une mise à jour du statut affiché.
+ *
  * LATENCE ASSUMÉE : l'entretien est déclenché à la main en v1 (bouton de
  * modération), par un cron plus tard. Le dépassement possible est donc d'un
  * cycle. Un plafond au FCFA près exigerait une lecture Firestore à chaque

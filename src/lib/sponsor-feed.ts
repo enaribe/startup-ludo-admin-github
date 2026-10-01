@@ -77,7 +77,27 @@ export function projeterCarteFeed(campagne: Campaign): FeedCard | null {
   };
 }
 
-/** Reconstruit et écrit `sponsorFeed/cards` depuis les campagnes actives. */
+/**
+ * Reconstruit et écrit `sponsorFeed/cards` depuis les campagnes actives.
+ *
+ * ⚠️ `status === 'active'` NE SUFFIT PAS comme critère de diffusion.
+ *
+ * Le passage en `ended` est posé par `/api/annonceur/entretien`, qui n'est
+ * déclenché à la main — aucun cron ne l'appelle. Une campagne dont la période
+ * s'est terminée garde donc `status: 'active'` jusqu'à ce que quelqu'un pense
+ * à lancer l'entretien : elle restait publiée dans le feed, et l'écran de
+ * l'annonceur affichait « Active » à côté de « Terminée » (constaté le
+ * 28/09/2026 sur une campagne expirée depuis le 25).
+ *
+ * Le mobile, lui, refusait bien la carte — il teste `endAt` à chaque tirage.
+ * Le seul filtre qui fonctionnait était donc le dernier de la chaîne, ce qui
+ * est exactement l'inverse de ce qu'on veut : une carte morte n'a rien à faire
+ * dans un document public.
+ *
+ * On filtre donc AUSSI sur la période ici. Le feed redevient ce qu'il prétend
+ * être — la liste de ce qui doit réellement s'afficher — sans dépendre du
+ * passage de l'entretien.
+ */
 export async function publierFeed(db: Firestore): Promise<number> {
   const snap = await db
     .collection(COLLECTIONS.campaigns)
@@ -85,9 +105,12 @@ export async function publierFeed(db: Firestore): Promise<number> {
     .where('format', '==', 'card')
     .get();
 
+  const maintenant = Date.now();
   const cards = snap.docs
     .map((d) => projeterCarteFeed({ ...(d.data() as Campaign), id: d.id }))
-    .filter((c): c is FeedCard => c !== null);
+    .filter((c): c is FeedCard => c !== null)
+    // Bornes de diffusion : `null` = en continu, donc toujours diffusable.
+    .filter((c) => !(c.endAt && c.endAt < maintenant));
 
   await db.collection(COLLECTIONS.sponsorFeed).doc('cards').set({
     cards,

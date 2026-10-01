@@ -93,6 +93,31 @@ export const COLLECTIONS = {
   // (`where teacherId ==`), ce qu'une sous-collection interdirait sans
   // collectionGroup — donc sans règle de sécurité exprimable simplement.
   classSessions: 'classSessions',
+  /**
+   * Index des codes de SALLE D'ATTENTE — un document par code actif, dont l'ID
+   * EST le code (`sessionCodes/ABC234`).
+   *
+   * ═══ POURQUOI CETTE COLLECTION EXISTE ═══
+   *
+   * Le mobile résolvait un code scanné en appelant `/api/session/join/<code>`,
+   * donc en joignant le back-office en HTTP. C'était le SEUL point du parcours
+   * élève à dépendre d'un serveur joignable : tout le reste du jeu parle à
+   * Firestore, dont le SDK gère DNS, reconnexions et hors-ligne.
+   *
+   * En pratique cette dépendance cassait sans cesse — IP du poste de
+   * développement changée, port occupé — et l'élève voyait « impossible de
+   * rejoindre » après quinze secondes d'attente. Elle rendait aussi le
+   * rattachement impossible hors du réseau local (4G, wifi maison).
+   *
+   * Un document lu par son ID supprime tout ça : pas d'index composite, pas de
+   * requête, une seule lecture. La route API reste en place pour les clients
+   * déjà installés.
+   *
+   * ⚠️ CE DOCUMENT N'AUTORISE RIEN. Il DÉSIGNE une séance, exactement comme le
+   * faisait la route. L'entrée réelle reste bornée par `classLinks/{uid}`,
+   * écrit par le seul Admin SDK, et par la règle `estCetEleve()`.
+   */
+  sessionCodes: 'sessionCodes',
   // Cours déposés par l'enseignant : texte extrait + chunks, même forme que
   // `programs/{id}/sourceDocs` (cf. saveSourceDocText / getSourceDocsText).
   classSessionSourceDocs: (sessionId: string) => `classSessions/${sessionId}/sourceDocs`,

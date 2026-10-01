@@ -228,6 +228,20 @@ export interface Campaign {
   consentAt?: number;
   submittedAt?: number;
   review?: { reviewedAt?: number; motifRefus?: string };
+  /**
+   * Campagne dont celle-ci est la RELANCE (bouton « Relancer » d'une campagne
+   * terminée). Présent uniquement sur la copie.
+   *
+   * Sert à replier les deux lignes en une seule dans la liste : sans ce lien,
+   * relancer produisait deux entrées au titre identique — l'ancienne
+   * « Terminée » et la nouvelle « En modération » — et l'annonceur ne pouvait
+   * pas savoir laquelle diffuse.
+   *
+   * ⚠️ L'ANCIENNE N'EST NI SUPPRIMÉE NI ÉCRASÉE : ses vues et sa dépense sont
+   * la trace de ce qui a été facturé. On la range sous sa relance, on ne
+   * l'efface pas.
+   */
+  relanceDe?: string;
   createdAt: number;
   updatedAt: number;
 }

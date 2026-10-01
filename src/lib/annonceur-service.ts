@@ -83,6 +83,14 @@ export interface MiseEnVisibilite {
    */
   campagne?: Campaign;
   /**
+   * Rang de diffusion quand cette ligne est la RELANCE d'une campagne
+   * terminée : 2 pour la première reprise, 3 pour la suivante… Absent sinon.
+   *
+   * Calculé à l'assemblage de la liste, jamais stocké : il se déduit du nombre
+   * de campagnes partageant la même `relanceDe`.
+   */
+  rangRelance?: number;
+  /**
    * Habillage d'origine — absent pour une ligne construite depuis une
    * campagne du wizard, qui n'en a pas (une carte n'habille aucune édition).
    */

@@ -19,10 +19,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { useParams } from 'next/navigation';
-import { ArrowLeft, Download, Pause, Pencil, Play } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft, Download, Pause, Pencil, Play, RotateCcw } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { getCampagne } from '@/lib/campaign-service';
+import { getCampagne, relancerCampagne } from '@/lib/campaign-service';
 import { auth } from '@/lib/firebase';
 import {
   getSponsorDailyMetrics,
@@ -33,6 +33,7 @@ import {
 import { fcfa } from '@/lib/annonceur-service';
 import { finExclusivite, joursRestants } from '@/lib/reservations';
 import ApercuCarteCampagne from '@/components/annonceur/ApercuCarteCampagne';
+import VignetteCarte from '@/components/annonceur/VignetteCarte';
 import CourbeQuotidienne, { type PointJour } from '@/components/annonceur/CourbeQuotidienne';
 import RepartitionAttribution from '@/components/annonceur/RepartitionAttribution';
 import FunnelImpact from '@/components/annonceur/FunnelImpact';
@@ -130,6 +131,10 @@ export default function RapportCampagnePage() {
    * sans effet sur le créneau. L'arrêt définitif reste à CONCREE.
    */
   const [enCoursPause, setEnCoursPause] = useState(false);
+  /** Copie en cours : désactive le bouton « Relancer » le temps de l'écriture. */
+  const [enRelance, setEnRelance] = useState(false);
+  const router = useRouter();
+
   const basculerPause = useCallback(async () => {
     if (!campagne) return;
     const versPause = campagne.status === 'active';
@@ -227,9 +232,42 @@ export default function RapportCampagnePage() {
 
   const { vues: vuesCumul, clics: clicsCumul, uniques, flips, saves, depense: depenseCumul } = cumul;
 
-  const statut = STATUTS[campagne.status] ?? STATUTS.draft;
+  /**
+   * Relance : copie le contenu dans un brouillon, puis ouvre le wizard dessus.
+   * L'annonceur y choisit ses nouvelles dates — pour une édition, le créneau
+   * d'origine peut avoir été réservé entre-temps par quelqu'un d'autre.
+   */
+  const relancer = async () => {
+    if (enRelance) return;
+    setEnRelance(true);
+    try {
+      const nouvelId = await relancerCampagne(campagne);
+      toast.success('Copie créée — choisissez vos nouvelles dates.');
+      router.push(`/annonceur/nouvelle?id=${encodeURIComponent(nouvelId)}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Relance impossible.');
+      setEnRelance(false);
+    }
+  };
+
   const fin = campagne.period?.endAt ?? finExclusivite(campagne.reservationMonths);
   const jours = joursRestants(fin);
+
+  /*
+    Période close : la campagne est terminée, quoi que dise `status`.
+
+    Le passage en `ended` vient de `/api/annonceur/entretien`, déclenché à la
+    main — aucun cron. Sans ce recalcul, la fiche d'une campagne expirée
+    affichait « Active » et proposait « Mettre en pause » une diffusion déjà
+    éteinte (le feed filtre sur la période, cf. `publierFeed`). L'annonceur
+    lisait donc l'inverse de la réalité sur l'écran même où il la vérifie.
+  */
+  const periodeClose = jours === 0;
+  const statutEffectif =
+    periodeClose && (campagne.status === 'active' || campagne.status === 'paused')
+      ? 'ended'
+      : campagne.status;
+  const statut = STATUTS[statutEffectif] ?? STATUTS.draft;
   const titre =
     campagne.card?.rectoText?.trim() ||
     `Édition ${campagne.editionSkin?.editionId ?? ''} — habillage`;
@@ -256,11 +294,17 @@ export default function RapportCampagnePage() {
           borderRadius: 14, padding: '16px 18px',
         }}
       >
+        {/*
+          Repère visuel, pas un aperçu : `VignetteCarte` est fait pour ça.
+          L'ancien montage réduisait `ApercuCarteCampagne` par `scale(0.42)`
+          dans une boîte de 110 px calculée pour une carte de 260 — le texte y
+          devenait illisible, le bouton « Voir le verso » cliquable sans être
+          lisible, et la moindre variation de largeur de la carte faisait
+          déborder la vignette. L'aperçu complet reste plus bas dans la page.
+        */}
         {campagne.card && (
-          <div style={{ width: 110, flexShrink: 0 }}>
-            <div style={{ transform: 'scale(0.42)', transformOrigin: 'top left', width: 260, height: 160 }}>
-              <ApercuCarteCampagne card={campagne.card} />
-            </div>
+          <div style={{ flexShrink: 0 }}>
+            <VignetteCarte format="carte" kind={campagne.card.kind} />
           </div>
         )}
         <div className="flex items-start justify-between gap-3 flex-wrap" style={{ flex: 1, minWidth: 260 }}>
@@ -274,7 +318,10 @@ export default function RapportCampagnePage() {
           </p>
         </div>
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          {(campagne.status === 'active' || campagne.status === 'paused') && (
+          {/* `statutEffectif` et non `campagne.status` : mettre en pause une
+              diffusion déjà éteinte par la fin de période n'a aucun effet et
+              laisse croire qu'elle tournait encore. */}
+          {(statutEffectif === 'active' || statutEffectif === 'paused') && (
             <button
               type="button"
               onClick={() => void basculerPause()}
@@ -295,6 +342,27 @@ export default function RapportCampagnePage() {
                   <Play size={13} /> Reprendre
                 </>
               )}
+            </button>
+          )}
+          {/*
+            RELANCER — une campagne terminée ne se prolonge pas, elle se
+            recopie : repousser sa date de fin mélangerait ses vues et sa
+            dépense passées à une nouvelle diffusion. Cf. `relancerCampagne()`.
+          */}
+          {statutEffectif === 'ended' && (
+            <button
+              type="button"
+              onClick={() => void relancer()}
+              disabled={enRelance}
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 12.5, fontWeight: 600, padding: '7px 13px', borderRadius: 10,
+                border: '1px solid var(--color-card-border)', color: NAVY, background: '#FFFFFF',
+                cursor: enRelance ? 'default' : 'pointer', opacity: enRelance ? 0.6 : 1,
+              }}
+              title="Créer une nouvelle campagne reprenant ce contenu, avec de nouvelles dates"
+            >
+              <RotateCcw size={13} /> {enRelance ? 'Copie…' : 'Relancer'}
             </button>
           )}
           {campagne.status === 'draft' || campagne.status === 'in_review' ? (

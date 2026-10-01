@@ -107,6 +107,90 @@ export async function creerBrouillonCampagne(format: CampaignFormat): Promise<st
   return id;
 }
 
+/**
+ * Relance une campagne terminée : crée un BROUILLON reprenant son contenu.
+ *
+ * ═══ POURQUOI DUPLIQUER PLUTÔT QUE PROLONGER ═══
+ *
+ * Repousser la date de fin d'une campagne close reviendrait à réécrire le
+ * passé : les vues, la dépense engagée et la facturation d'une période déjà
+ * arrêtée se mélangeraient à une nouvelle diffusion. Le rapport de l'annonceur
+ * additionnerait deux campagnes sans pouvoir les séparer — c'est exactement la
+ * confusion qui avait produit le bug du « 33 vues » sur une campagne neuve.
+ *
+ * Une copie garde l'ancienne intacte (son historique reste lisible) et repart
+ * avec ses propres compteurs. Elle repasse par la modération, ce qui est
+ * normal : c'est une nouvelle diffusion, même si le contenu est identique.
+ * Pour une ÉDITION, c'est aussi ce qui garantit que le créneau demandé est
+ * réellement libre — la duplication ne contourne pas la transaction de
+ * réservation, elle y repasse.
+ *
+ * ═══ CE QUI N'EST PAS COPIÉ, ET POURQUOI ═══
+ *
+ *   - `period`        : c'est précisément ce que l'annonceur vient changer ;
+ *   - `reservationMonths` : les règles Firestore interdisent au client de les
+ *     écrire, et un mois déjà pris doit être refusé par la transaction ;
+ *   - métriques, dépense, facturation : la nouvelle campagne part à zéro ;
+ *   - `review`, `suspension` : l'historique de modération appartient à
+ *     l'ancienne campagne, pas à celle-ci.
+ *
+ * Le PLAFOND de budget et l'objectif de vues, eux, sont repris : ce sont des
+ * réglages, pas des compteurs. L'annonceur peut les ajuster dans le wizard.
+ *
+ * @returns l'id du brouillon créé, à ouvrir dans le wizard (`?id=`).
+ */
+export async function relancerCampagne(source: Campaign): Promise<string> {
+  const uid = uidCourant();
+  if (source.ownerUid !== uid) {
+    throw new Error('Cette campagne ne vous appartient pas.');
+  }
+
+  const id = `camp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const maintenant = Date.now();
+  const grille = source.format === 'edition' ? 'edition' : 'standard';
+
+  const copie: Campaign = {
+    id,
+    ownerUid: uid,
+    ownerEmail: auth.currentUser?.email ?? undefined,
+    format: source.format,
+    status: 'draft',
+    // Contenu : c'est tout l'intérêt de la relance.
+    ...(source.card ? { card: source.card } : {}),
+    ...(source.editionSkin ? { editionSkin: source.editionSkin } : {}),
+    targeting: source.targeting ?? { sectors: [], regions: [], contexts: [] },
+    viewsGoal: source.viewsGoal || 10_000,
+    budgetCapFcfa: source.budgetCapFcfa || 0,
+    /*
+      Tarifs RELUS de la grille, jamais recopiés de la source.
+
+      Le prix est figé sur la campagne au moment de sa soumission : recopier
+      celui d'une campagne de l'an dernier ferait diffuser au tarif d'alors.
+      La nouvelle campagne prend la grille en vigueur aujourd'hui.
+    */
+    pricing: { ...GRILLES[grille], grid: grille },
+    /*
+      Lien vers la campagne d'origine.
+
+      Sans lui, la liste affichait deux entrées au titre identique — l'ancienne
+      « Terminée » et la copie « En modération » — sans rien pour les
+      distinguer. La liste replie désormais la paire : on voit la relance, et
+      l'ancienne est rangée dessous comme historique.
+
+      Pointe toujours vers la campagne SOURCE la plus ancienne : relancer une
+      relance ne crée pas une chaîne à trois maillons, mais raccroche au même
+      tronc. Sinon une campagne relancée trois fois produirait un escalier
+      illisible.
+    */
+    relanceDe: source.relanceDe ?? source.id,
+    createdAt: maintenant,
+    updatedAt: maintenant,
+  };
+
+  await setDoc(doc(firestore, COLLECTIONS.campaigns, id), sansIndefinis(copie));
+  return id;
+}
+
 export async function getCampagne(id: string): Promise<Campaign | null> {
   const snap = await getDoc(doc(firestore, COLLECTIONS.campaigns, id));
   if (!snap.exists()) return null;
