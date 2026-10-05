@@ -335,7 +335,11 @@ export function calculerSynthese(
         vues30Prec += jour.totals.views;
       }
       if (jour.date.startsWith(moisCourant)) {
-        depenseMois += jour.totals.views * prix;
+        // Les DEUX compteurs : une carte incrémente `views`, un habillage
+        // d'édition `editionPopupViews` — et les deux sont facturés au même
+        // prix. N'additionner que `views` affichait « 0 FCFA » au tableau de
+        // bord pendant que la facturation annonçait un montant.
+        depenseMois += (jour.totals.views + (jour.totals.editionPopupViews ?? 0)) * prix;
       }
     }
   }
