@@ -39,7 +39,14 @@ const BANDEAU: Record<CampaignCard['kind'], { libelle: string; couleur: string }
 const VERT = '#4CAF50';
 const VERT_FONCE = '#2E7D32';
 /** Fond des encarts de contenu (`descriptionBox` mobile). */
-const FOND_ENCART = '#F8F9FA';
+/**
+ * Défauts du jeu, repris quand l'annonceur n'a rien choisi.
+ *
+ * Ces deux valeurs sont les mêmes des deux côtés : elles doivent rester
+ * alignées sur `SponsorEventPopup` (mobile), sinon l'aperçu ment.
+ */
+const FOND_ENCART_DEFAUT = '#F8F9FA';
+const TEXTE_DEFAUT = '#2C3E50';
 
 /**
  * 300 px et non les 360 du mobile : l'aperçu vit dans une colonne de
@@ -54,6 +61,10 @@ const HAUTEUR = 392;
 export default function ApercuCarteCampagne({ card }: { card: CampaignCard }) {
   const [verso, setVerso] = useState(false);
   const meta = BANDEAU[card.kind];
+  // Couleurs de l'annonceur, défauts du jeu à défaut. `||` et non `??` : une
+  // chaîne vide (champ effacé dans le formulaire) doit retomber sur le défaut.
+  const fondEncart = card.logoBgColor || FOND_ENCART_DEFAUT;
+  const couleurTexte = card.textColor || TEXTE_DEFAUT;
   const jetons = JETONS_PAR_KIND[card.kind];
 
   return (
@@ -100,8 +111,8 @@ export default function ApercuCarteCampagne({ card }: { card: CampaignCard }) {
             )}
 
             {/* `descriptionBox` — encart clair détaché du fond de la carte. */}
-            <div style={encart}>
-              <p style={texteDescription}>
+            <div style={encart(fondEncart)}>
+              <p style={texteDescription(couleurTexte)}>
                 {card.rectoText ||
                   'Votre message, écrit comme un événement que le joueur vient de vivre.'}
               </p>
@@ -125,7 +136,7 @@ export default function ApercuCarteCampagne({ card }: { card: CampaignCard }) {
           <Bandeau libelle={meta.libelle} couleur={meta.couleur} />
 
           <div style={corps}>
-            <div style={encartVerso}>
+            <div style={encartVerso(fondEncart)}>
               {card.logoUrl ? (
                 // `sponsorLogoSmall` : 50 % de large, 36 de haut.
                 // eslint-disable-next-line @next/next/no-img-element
@@ -228,32 +239,37 @@ const titreStructure: React.CSSProperties = {
   letterSpacing: 0.3,
 };
 
-/** `descriptionBox` : fond clair, rayon 16, pleine largeur. */
-const encart: React.CSSProperties = {
-  background: FOND_ENCART,
+/**
+ * `descriptionBox` : rayon 16, pleine largeur, fond CHOISI PAR L'ANNONCEUR.
+ *
+ * Fonction et non constante : la couleur vient de la carte. Un logo blanc sur
+ * le blanc cassé par défaut disparaissait — c'est tout l'objet du champ.
+ */
+const encart = (fond: string): React.CSSProperties => ({
+  background: fond,
   borderRadius: 16,
   padding: '14px 16px',
   width: '100%',
   marginBottom: 16,
-};
+});
 
 /** Même encart, en colonne centrée : le verso empile logo puis mentions. */
-const encartVerso: React.CSSProperties = {
-  ...encart,
+const encartVerso = (fond: string): React.CSSProperties => ({
+  ...encart(fond),
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-};
+});
 
-/** `description` : 14 px, interligne 22, centré. */
-const texteDescription: React.CSSProperties = {
+/** `description` : 14 px, interligne 22, centré, couleur configurable. */
+const texteDescription = (couleur: string): React.CSSProperties => ({
   fontSize: 14,
   lineHeight: '22px',
-  color: '#2C3E50',
+  color: couleur,
   textAlign: 'center',
   fontWeight: 500,
   margin: 0,
-};
+});
 
 /** `badge` : 64×64, rond, bordure 3 px vert foncé. */
 const badge: React.CSSProperties = {

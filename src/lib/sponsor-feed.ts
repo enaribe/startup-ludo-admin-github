@@ -29,6 +29,10 @@ export interface FeedCard {
   text: string;
   structure: string;
   logoUrl: string | null;
+  /** Fond de l'encart du logo (`#RRGGBB`), `null` = défaut du jeu. */
+  logoBgColor: string | null;
+  /** Couleur du texte du recto (`#RRGGBB`), `null` = défaut du jeu. */
+  textColor: string | null;
   ctaUrl: string | null;
   ctaLabel: string | null;
   verso: {
@@ -56,6 +60,8 @@ export function projeterCarteFeed(campagne: Campaign): FeedCard | null {
     text: carte.rectoText.trim(),
     structure: carte.structure?.trim() || '',
     logoUrl: carte.logoUrl || null,
+    logoBgColor: carte.logoBgColor || null,
+    textColor: carte.textColor || null,
     ctaUrl: carte.cta?.url || null,
     ctaLabel: carte.cta?.libelle || null,
     verso: carte.verso?.description

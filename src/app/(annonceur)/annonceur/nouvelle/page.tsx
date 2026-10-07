@@ -31,8 +31,10 @@ import {
   CheckCircle2,
   GraduationCap,
   HandCoins,
+  Info,
   Megaphone,
 } from 'lucide-react';
+import { CIBLAGE_SPONSOR_ACTIF } from '@/lib/features';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth-context';
 import { getEditions } from '@/lib/firestore-service';
@@ -98,6 +100,21 @@ const OBJECTIFS: Array<{
   { id: 'programme_accompagnement', titre: 'Programme d’accompagnement', texte: 'Incubation, mentorat — diffusé en carte OPPORTUNITÉ.', Icon: Award },
   { id: 'evenement_formation', titre: 'Événement ou formation', texte: 'Salon, atelier, bootcamp — diffusé en carte ÉVÉNEMENT.', Icon: GraduationCap },
 ];
+
+/**
+ * Index de l'étape « Ciblage » dans les deux parcours.
+ *
+ * ═══ POURQUOI ON SAUTE PLUTÔT QU'ON SUPPRIME ═══
+ *
+ * Le ciblage est en pause (`CIBLAGE_SPONSOR_ACTIF`) : le montrer sans qu'il
+ * s'applique n'apportait que de la confusion. Mais les étapes suivantes sont
+ * indexées en dur (`etape === 3`, `etape === 4`) : retirer l'étape du tableau
+ * décalerait tout, et un oubli enverrait l'annonceur sur le mauvais écran.
+ *
+ * On la laisse donc en place et on l'ENJAMBE à la navigation. La réactiver
+ * revient à remettre le drapeau à `true` — rien d'autre.
+ */
+const ETAPE_CIBLAGE = 2;
 
 const ETAPES_CARTE = ['Objectif', 'La carte', 'Ciblage', 'Objectifs et budget', 'Aperçu et validation'];
 const ETAPES_EDITION = ['Édition et réservation', 'L’habillage', 'Ciblage', 'Objectifs et budget', 'Aperçu et validation'];
@@ -337,7 +354,11 @@ export default function NouvelleMiseEnVisibilitePage() {
   const suivant = async () => {
     await sauvegarder();
     setDernierEnregistrement(Date.now());
-    setEtape((e) => e + 1);
+    setEtape((e) => {
+      const prochaine = e + 1;
+      // Ciblage en pause : on l'enjambe dans les deux sens (cf. ETAPE_CIBLAGE).
+      return !CIBLAGE_SPONSOR_ACTIF && prochaine === ETAPE_CIBLAGE ? prochaine + 1 : prochaine;
+    });
   };
 
   // Sauvegarde automatique : 2 s après la dernière modification (maquette :
@@ -528,28 +549,37 @@ export default function NouvelleMiseEnVisibilitePage() {
         className="flex items-center justify-between gap-2 mb-6 flex-wrap"
         style={{ background: '#FFFFFF', border: '1px solid rgba(15,28,46,0.08)', borderRadius: 14, padding: '16px 22px' }}
       >
-        {etapes.map((nom, i) => (
-          <div key={nom} className="flex items-center gap-3" style={{ flex: i < etapes.length - 1 ? 1 : undefined }}>
-            <div className="flex items-center gap-2.5">
-              <span
-                className="flex items-center justify-center"
-                style={{
-                  width: 26, height: 26, borderRadius: 13, fontSize: 12, fontWeight: 800,
-                  background: i < etape ? NAVY : i === etape ? ORANGE : '#EEF1F6',
-                  color: i <= etape ? '#FFFFFF' : '#8A94A6',
-                }}
-              >
-                {i + 1}
-              </span>
-              <span style={{ fontSize: 13, fontWeight: i === etape ? 700 : 400, color: i <= etape ? NAVY : '#8A94A6', whiteSpace: 'nowrap' }}>
-                {nom}
-              </span>
+        {/*
+          Le fil masque l'étape de ciblage quand elle est en pause, et
+          RENUMÉROTE : afficher « 1, 2, 4, 5 » ferait chercher une étape 3 qui
+          n'existe plus à l'écran. L'index d'ORIGINE est conservé pour décider
+          de l'état (faite / en cours / à venir) — c'est lui que `etape` suit.
+        */}
+        {etapes
+          .map((nom, index) => ({ nom, index }))
+          .filter(({ index }) => CIBLAGE_SPONSOR_ACTIF || index !== ETAPE_CIBLAGE)
+          .map(({ nom, index }, rang, visibles) => (
+            <div key={nom} className="flex items-center gap-3" style={{ flex: rang < visibles.length - 1 ? 1 : undefined }}>
+              <div className="flex items-center gap-2.5">
+                <span
+                  className="flex items-center justify-center"
+                  style={{
+                    width: 26, height: 26, borderRadius: 13, fontSize: 12, fontWeight: 800,
+                    background: index < etape ? NAVY : index === etape ? ORANGE : '#EEF1F6',
+                    color: index <= etape ? '#FFFFFF' : '#8A94A6',
+                  }}
+                >
+                  {rang + 1}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: index === etape ? 700 : 400, color: index <= etape ? NAVY : '#8A94A6', whiteSpace: 'nowrap' }}>
+                  {nom}
+                </span>
+              </div>
+              {rang < visibles.length - 1 && (
+                <span style={{ flex: 1, minWidth: 24, height: 1, background: 'rgba(15,28,46,0.12)' }} />
+              )}
             </div>
-            {i < etapes.length - 1 && (
-              <span style={{ flex: 1, minWidth: 24, height: 1, background: 'rgba(15,28,46,0.12)' }} />
-            )}
-          </div>
-        ))}
+          ))}
       </div>
 
       {/* ═══ Corps de l'étape ═══ */}
@@ -615,7 +645,16 @@ export default function NouvelleMiseEnVisibilitePage() {
             type="button"
             className="flex items-center gap-2"
             style={{ fontSize: 13, fontWeight: 600, padding: '9px 15px', borderRadius: 10, cursor: 'pointer', border: '1px solid rgba(15,28,46,0.15)', background: '#FFF', color: NAVY }}
-            onClick={() => (etape === 0 ? router.push('/annonceur') : setEtape(etape - 1))}
+            onClick={() => {
+              if (etape === 0) {
+                router.push('/annonceur');
+                return;
+              }
+              const precedente = etape - 1;
+              setEtape(
+                !CIBLAGE_SPONSOR_ACTIF && precedente === ETAPE_CIBLAGE ? precedente - 1 : precedente
+              );
+            }}
           >
             <ArrowLeft size={14} /> {etape === 0 ? 'Annuler' : 'Précédent'}
           </button>
@@ -806,6 +845,36 @@ function BrancheCarte(props: {
                 aspectRatio="square"
                 disabled={!props.campaignId}
                 disabledHint="Renseignez d’abord un champ texte — le dépôt d’image attend l’enregistrement du brouillon."
+              />
+            </div>
+
+            {/*
+              COULEURS DE LA CARTE — juste sous le logo, parce que c'est lui
+              qu'elles servent.
+
+              Le fond était figé à #F8F9FA. Un logo blanc ou très clair — la
+              déclinaison que beaucoup de structures fournissent — y devenait
+              invisible, et l'annonceur jugeait le produit sur un carré vide
+              (retour du point de test du 05/10/2026).
+
+              Seul l'ENCART est configurable. Le bandeau, le badge de gain et
+              le bouton restent au jeu : les ouvrir ferait de chaque carte une
+              interface étrangère au plateau.
+            */}
+            <div className="flex items-start gap-4 flex-wrap" style={{ marginTop: 14 }}>
+              <ChampCouleur
+                label="Fond du logo"
+                value={card.logoBgColor ?? ''}
+                defaut="#F8F9FA"
+                onChange={(couleur) => majCard({ logoBgColor: couleur })}
+                aide="Choisissez un fond qui fait ressortir votre logo."
+              />
+              <ChampCouleur
+                label="Couleur du texte"
+                value={card.textColor ?? ''}
+                defaut="#2C3E50"
+                onChange={(couleur) => majCard({ textColor: couleur })}
+                aide="À ajuster si le fond est sombre."
               />
             </div>
           </Bloc>
@@ -1979,6 +2048,22 @@ function moisCourt(mois: string): string {
  */
 function estimerAudience(t: CampaignTargeting, totalJoueurs: number | null): { min: number; max: number } | null {
   if (totalJoueurs == null || totalJoueurs === 0) return null;
+
+  /*
+    CIBLAGE SUSPENDU → AUDIENCE PLEINE.
+
+    Le filtrage est en pause côté jeu (`CIBLAGE_SPONSOR_ACTIF`, mobile) : la
+    carte sort pour tous les joueurs. Continuer à rétrécir l'estimation selon
+    des critères qui ne s'appliquent pas annoncerait à l'annonceur une audience
+    plus faible que celle qu'il va réellement toucher — et le dissuaderait de
+    cibler, alors que ses choix sont justement sans effet pour l'instant.
+
+    ⚠️ À RETIRER en même temps que `CIBLAGE_SPONSOR_ACTIF` repasse à `true`.
+  */
+  if (!CIBLAGE_SPONSOR_ACTIF) {
+    return { min: Math.round(totalJoueurs * 0.7), max: Math.round(totalJoueurs * 1.05) };
+  }
+
   const fSecteurs = t.sectors.length === 0 ? 1 : Math.min(1, t.sectors.length / SECTEURS.length + 0.1);
   const fZone = t.zone === 'diaspora' ? 0.08 : t.zone === 'regions'
     ? Math.min(1, Math.max(1, t.regions.length) / 14 + 0.1)
@@ -2049,6 +2134,38 @@ function EtapeCiblageCarte({
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '2px 0 16px' }}>
           Plus le ciblage est large, plus vite votre objectif est atteint.
         </p>
+
+        {/*
+          CIBLAGE SUSPENDU — le dire plutôt que de le masquer.
+
+          Le filtrage est en pause côté jeu (`CIBLAGE_SPONSOR_ACTIF`) le temps
+          que la base de joueurs s'étoffe : un ciblage fin sur une petite base
+          ne touchait presque personne, et l'annonceur en concluait que le
+          produit ne marche pas.
+
+          On garde les champs plutôt que de les retirer : les valeurs saisies
+          sont conservées et s'appliqueront à la réactivation. Mais laisser
+          l'écran muet ferait croire à un ciblage effectif — un annonceur qui
+          coche « Agriculture » doit savoir que sa carte sort aussi ailleurs.
+        */}
+        <div
+          className="flex items-start gap-2.5"
+          style={{
+            padding: '12px 14px',
+            borderRadius: 12,
+            marginBottom: 18,
+            background: 'rgba(245,166,35,0.08)',
+            border: '1px solid rgba(245,166,35,0.25)',
+          }}
+        >
+          <Info size={14} style={{ color: '#B87A0C', flexShrink: 0, marginTop: 2 }} />
+          <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
+            <strong style={{ color: NAVY }}>Ciblage temporairement suspendu.</strong> Votre carte
+            est diffusée à tous les joueurs, pour toucher le plus de monde possible pendant cette
+            phase de lancement. Vos choix sont enregistrés et s’appliqueront dès que l’audience
+            sera suffisante.
+          </p>
+        </div>
 
         <h3 style={{ fontSize: 13.5, fontWeight: 700, color: NAVY }}>Secteurs d'activité</h3>
         <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', margin: '2px 0 10px' }}>
@@ -2217,6 +2334,89 @@ function CarteFormat({
       </div>
       </span>
     </button>
+  );
+}
+
+/**
+ * Sélecteur de couleur — pastille native + champ hexadécimal.
+ *
+ * Les deux ensemble, parce qu'ils servent deux gestes : la pastille pour
+ * choisir à l'œil, le champ texte pour coller la couleur exacte d'une charte
+ * graphique. Un annonceur qui a « #1F91D0 » dans son manuel de marque ne doit
+ * pas avoir à le retrouver dans un nuancier.
+ *
+ * Vide = le défaut du jeu s'applique. Le bouton « Réinitialiser » rend donc ce
+ * défaut sans qu'on ait à le connaître.
+ */
+function ChampCouleur({
+  label,
+  value,
+  defaut,
+  onChange,
+  aide,
+}: {
+  label: string;
+  value: string;
+  defaut: string;
+  onChange: (couleur: string) => void;
+  aide?: string;
+}) {
+  // `<input type="color">` exige une valeur hexadécimale complète : vide, il
+  // afficherait du noir et laisserait croire que c'est la couleur choisie.
+  const valeurPastille = /^#[0-9a-f]{6}$/i.test(value) ? value : defaut;
+
+  return (
+    <div style={{ minWidth: 190 }}>
+      <label className="label">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={valeurPastille}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            width: 38,
+            height: 38,
+            padding: 0,
+            border: '1px solid var(--color-card-border)',
+            borderRadius: 8,
+            background: 'none',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+          aria-label={label}
+        />
+        <input
+          className="input-field"
+          value={value}
+          onChange={(e) => onChange(e.target.value.trim())}
+          placeholder={defaut}
+          maxLength={7}
+          style={{ fontFamily: 'ui-monospace, monospace', flex: 1, minWidth: 0 }}
+        />
+      </div>
+      {value && value.toLowerCase() !== defaut.toLowerCase() && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          style={{
+            fontSize: 11,
+            color: 'var(--color-text-muted)',
+            background: 'none',
+            border: 'none',
+            padding: '4px 0 0',
+            cursor: 'pointer',
+            textDecoration: 'underline',
+          }}
+        >
+          Réinitialiser
+        </button>
+      )}
+      {aide && (
+        <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+          {aide}
+        </p>
+      )}
+    </div>
   );
 }
 

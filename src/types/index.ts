@@ -156,6 +156,32 @@ export interface CampaignCard {
   /** Nom de la structure affiché sur la carte. */
   structure: string;
   logoUrl?: string;
+  /**
+   * Fond de l'encart qui porte le logo (`#RRGGBB`). Absent = `#F8F9FA`, le
+   * blanc cassé par défaut.
+   *
+   * ═══ POURQUOI CE CHAMP EXISTE ═══
+   *
+   * Le fond était figé. Un logo blanc ou très clair — fréquent, c'est la
+   * déclinaison que les structures fournissent pour les fonds sombres — y
+   * devenait invisible. L'annonceur jugeait le produit sur ce qu'il voyait de
+   * sa propre marque, et voyait un carré vide (retour du point de test du
+   * 05/10/2026).
+   *
+   * UNIQUEMENT L'ENCART, pas la carte entière : le bandeau vert, le badge de
+   * gain et le bouton appartiennent au jeu, pas à l'annonceur. Les laisser
+   * configurables transformerait chaque carte promue en interface étrangère au
+   * plateau, et le joueur ne reconnaîtrait plus ce qu'il regarde.
+   */
+  logoBgColor?: string;
+  /**
+   * Couleur du texte du recto (`#RRGGBB`). Absent = `#2C3E50`.
+   *
+   * Nécessaire dès lors que le fond est configurable : un fond sombre choisi
+   * pour un logo blanc rendrait le message illisible si le texte restait
+   * foncé. Les deux champs vont ensemble.
+   */
+  textColor?: string;
   /** Message recto (~120 caractères), écrit comme un événement du jeu. */
   rectoText: string;
   verso: CampaignCardVerso;
