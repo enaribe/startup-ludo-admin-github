@@ -321,15 +321,36 @@ export async function updateLearner(
  * geste décrit dans SPEC « Mouvements d'élèves ».
  */
 export async function removeLearner(classId: string, learnerId: string): Promise<void> {
-  await updateLearner(classId, learnerId, { isActive: false, linkedUid: null, linkedAt: null });
-  // ⚠️ DETTE CONNUE — le miroir `classLinks/{uid}` n'est pas effacé ici.
-  // Il est en `allow write: if false` (écrit uniquement par l'Admin SDK, cf.
-  // /api/class/link) et ce service tourne côté client : impossible d'y toucher.
-  // Conséquence : un élève retiré ne peut plus être identifié dans la classe
-  // (son `linkedUid` est effacé, son nom redevient libre) mais il conserve la
-  // LECTURE des séances `running` de son ancienne classe.
-  // À corriger au lot 5 : passer ce retrait derrière une route serveur qui
-  // supprime aussi `classLinks/{uid}` dans la même opération.
+  /*
+    ═══ PASSE PAR LE SERVEUR, ET C'EST INDISPENSABLE ═══
+
+    Le retrait tient en TROIS écritures : `isActive: false`, `linkedUid: null`,
+    et la suppression du miroir `classLinks/{uid}`. Ce service tourne côté
+    client, et le miroir est en `allow write: if false` — seul l'Admin SDK y
+    touche. Les deux premières écritures se faisaient donc ici, la troisième
+    jamais.
+
+    Résultat observé le 07/10/2026 : un élève retiré continuait de voir sa
+    classe et ses séances sur le mobile. C'est `classLinks` que l'app lit pour
+    savoir à quelle classe un compte appartient, et que les règles Firestore
+    interrogent pour autoriser la lecture des séances. Tant qu'il survit, le
+    retrait n'existe que dans le back-office.
+
+    `/api/class/retirer` fait les trois dans une transaction.
+  */
+  const { getAuth } = await import('firebase/auth');
+  const token = await getAuth().currentUser?.getIdToken();
+  if (!token) throw new Error('Session expirée : reconnectez-vous.');
+
+  const reponse = await fetch('/api/class/retirer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ classId, learnerId }),
+  });
+  if (!reponse.ok) {
+    const data = (await reponse.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Retrait impossible.');
+  }
 }
 
 /** Réintègre un élève retiré (annulation d'un retrait). Le compte reste à relier. */
