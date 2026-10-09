@@ -1,0 +1,675 @@
+'use client';
+
+/**
+ * Un défi de la semaine — le parcours complet, en quatre étapes.
+ *
+ * ═══ POURQUOI DES SECTIONS NUMÉROTÉES ═══
+ *
+ * Le défi se prépare dans un ORDRE : sans document, pas de génération ; sans
+ * contenu, pas d'ouverture. La première version de cet écran exposait ces
+ * actions comme cinq icônes côte à côte sur une carte de liste, ce qui cachait
+ * l'ordre et obligeait à deviner quoi faire ensuite.
+ *
+ * Les sections rendent la dépendance visible : chacune dit ce qu'elle attend,
+ * et une étape non franchie désactive la suivante en expliquant pourquoi.
+ * Même forme que `seances-pretes/[readyId]`.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft, FileText, Sparkles, Upload } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
+import {
+  cloturerDefi,
+  deposerDocumentDefi,
+  enregistrerContenuDefi,
+  enregistrerDefi,
+  genererContenuDefi,
+  getClassementDefi,
+  getDefi,
+} from '@/lib/weekly-challenge-service';
+import {
+  MIX_DEFI_DEFAUT,
+  type DefiScore,
+  type MixDefi,
+  type StatutDefi,
+  type WeeklyChallenge,
+} from '@/types/weeklyChallenge';
+import type { ClassSessionContent } from '@/types';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import toast from 'react-hot-toast';
+
+const versDate = (ms: number): string =>
+  Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString().slice(0, 10) : '';
+
+function nbCartes(c: ClassSessionContent | null | undefined): number {
+  if (!c) return 0;
+  return (
+    c.quizzes.length +
+    c.duels.length +
+    c.fundings.length +
+    c.opportunities.length +
+    c.challengeEvents.length
+  );
+}
+
+/** En-tête de section : le numéro porte l'ordre, le sous-titre dit l'attendu. */
+function TitreSection({
+  numero,
+  titre,
+  aide,
+  fait,
+}: {
+  numero: number;
+  titre: string;
+  aide: string;
+  fait: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-3 mb-4">
+      <div
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 999,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12,
+          fontWeight: 800,
+          background: fait ? 'rgba(46,160,67,0.12)' : 'var(--color-surface-variant)',
+          color: fait ? '#2EA043' : 'var(--color-text-muted)',
+        }}
+      >
+        {fait ? '✓' : numero}
+      </div>
+      <div>
+        <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-text-primary)' }}>
+          {titre}
+        </h2>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>{aide}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function PageDefi() {
+  const router = useRouter();
+  const params = useParams<{ defiId: string }>();
+  const defiId = params.defiId;
+  const { isSuperAdmin, loading: authLoading } = useAuth();
+
+  const [defi, setDefi] = useState<WeeklyChallenge | null>(null);
+  const [chargement, setChargement] = useState(true);
+
+  // Brouillon local des champs éditoriaux : on n'écrit qu'au clic, pour ne pas
+  // envoyer une requête par frappe.
+  const [titre, setTitre] = useState('');
+  const [description, setDescription] = useState('');
+  const [debutAt, setDebutAt] = useState(0);
+  const [finAt, setFinAt] = useState(0);
+  const [enregistrement, setEnregistrement] = useState(false);
+
+  const [depot, setDepot] = useState(false);
+  const [mix, setMix] = useState<MixDefi>(MIX_DEFI_DEFAUT);
+  const [generation, setGeneration] = useState(false);
+  /** Contenu en attente de relecture — non encore enregistré. */
+  const [brouillonContenu, setBrouillonContenu] = useState<ClassSessionContent | null>(null);
+
+  const [scores, setScores] = useState<DefiScore[]>([]);
+  const [aCloturer, setACloturer] = useState(false);
+  const [cloture, setCloture] = useState(false);
+
+  const charger = useCallback(async () => {
+    try {
+      const d = await getDefi(defiId);
+      setDefi(d);
+      if (d) {
+        setTitre(d.titre);
+        setDescription(d.description);
+        setDebutAt(d.debutAt);
+        setFinAt(d.finAt);
+        // Le classement n'a de sens qu'une fois le défi lancé.
+        if (d.statut !== 'brouillon') setScores(await getClassementDefi(d.id));
+      }
+    } catch {
+      toast.error('Chargement impossible');
+    } finally {
+      setChargement(false);
+    }
+  }, [defiId]);
+
+  useEffect(() => {
+    if (authLoading || !isSuperAdmin) return;
+    void charger();
+  }, [authLoading, isSuperAdmin, charger]);
+
+  async function sauver(statut?: StatutDefi) {
+    if (!defi) return;
+    if (!titre.trim()) {
+      toast.error('Le thème est requis');
+      return;
+    }
+    if (finAt <= debutAt) {
+      toast.error('La clôture doit suivre l’ouverture');
+      return;
+    }
+    setEnregistrement(true);
+    try {
+      await enregistrerDefi({
+        id: defi.id,
+        titre,
+        description,
+        statut: statut ?? defi.statut,
+        debutAt,
+        finAt,
+      });
+      toast.success(statut === 'ouvert' ? 'Défi ouvert aux joueurs' : 'Enregistré');
+      await charger();
+    } catch (error) {
+      // Le message du serveur porte l'information utile — notamment le 409 qui
+      // NOMME le défi déjà ouvert, ou dit qu'il manque le contenu.
+      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible', {
+        duration: 7000,
+      });
+    } finally {
+      setEnregistrement(false);
+    }
+  }
+
+  async function deposer(fichier: File) {
+    if (!defi) return;
+    setDepot(true);
+    try {
+      const source = await deposerDocumentDefi(defi.id, fichier);
+      toast.success(`${source.nom} — ${source.caracteres.toLocaleString('fr-FR')} caractères`);
+      await charger();
+    } catch (error) {
+      // Le message de l'extracteur distingue un format non supporté d'un PDF
+      // scanné : le garder tel quel dit quoi refaire.
+      toast.error(error instanceof Error ? error.message : 'Dépôt impossible', {
+        duration: 8000,
+      });
+    } finally {
+      setDepot(false);
+    }
+  }
+
+  async function generer() {
+    if (!defi) return;
+    setGeneration(true);
+    setBrouillonContenu(null);
+    try {
+      const genere = await genererContenuDefi(
+        { id: defi.id, titre, description },
+        mix
+      );
+      setBrouillonContenu(genere);
+      toast.success(`${nbCartes(genere)} cartes générées — relisez avant d’enregistrer`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Génération impossible', {
+        duration: 7000,
+      });
+    } finally {
+      setGeneration(false);
+    }
+  }
+
+  async function validerContenu() {
+    if (!defi || !brouillonContenu) return;
+    try {
+      await enregistrerContenuDefi(defi.id, brouillonContenu);
+      toast.success('Contenu enregistré');
+      setBrouillonContenu(null);
+      await charger();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible', {
+        duration: 7000,
+      });
+    }
+  }
+
+  async function confirmerCloture() {
+    if (!defi) return;
+    setCloture(true);
+    try {
+      const { champion, participants } = await cloturerDefi(defi.id);
+      toast.success(
+        champion
+          ? `Champion : ${champion.displayName} (${champion.xp} XP, ${participants} participants)`
+          : 'Défi clos — aucun participant',
+        { duration: 7000 }
+      );
+      setACloturer(false);
+      await charger();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Clôture impossible', {
+        duration: 7000,
+      });
+    } finally {
+      setCloture(false);
+    }
+  }
+
+  if (authLoading || chargement) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+  if (!isSuperAdmin) {
+    return (
+      <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+        Réservé à l’équipe CONCREE.
+      </p>
+    );
+  }
+  if (!defi) {
+    return (
+      <div>
+        <button className="btn-secondary mb-4" onClick={() => router.push('/defis-semaine')}>
+          <ArrowLeft size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Retour
+        </button>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Défi introuvable.</p>
+      </div>
+    );
+  }
+
+  // Les cartes ENREGISTRÉES, pas le brouillon : c'est ce qui conditionne
+  // l'ouverture côté serveur.
+  const cartesEnregistrees = nbCartes(defi.contenu as ClassSessionContent | null);
+  const clos = defi.statut === 'clos';
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <div className="flex items-center justify-between mb-5">
+        <button className="btn-secondary" onClick={() => router.push('/defis-semaine')}>
+          <ArrowLeft size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Tous les défis
+        </button>
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{defi.id}</span>
+      </div>
+
+      {/* ═══ 1. Le thème ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={1}
+          titre="Le thème"
+          aide="Ce que le joueur lit sur l’accueil avant de lancer le défi."
+          fait={!!defi.titre && defi.titre !== 'Nouveau défi'}
+        />
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="label">Thème</label>
+            <input
+              className="input-field"
+              value={titre}
+              disabled={clos}
+              placeholder="Trouver ses premiers clients"
+              onChange={(e) => setTitre(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input-field"
+              rows={2}
+              style={{ resize: 'vertical' }}
+              value={description}
+              disabled={clos}
+              placeholder="Une à deux phrases : ce que le joueur doit retenir."
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="label">Ouverture (UTC)</label>
+              <input
+                type="date"
+                className="input-field"
+                value={versDate(debutAt)}
+                disabled={clos}
+                onChange={(e) => setDebutAt(Date.parse(`${e.target.value}T00:00:00Z`))}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="label">Clôture (UTC)</label>
+              <input
+                type="date"
+                className="input-field"
+                value={versDate(finAt)}
+                disabled={clos}
+                onChange={(e) =>
+                  // 23:00 et non 00:00 : `resetWeeklyStats` tourne le lundi à
+                  // minuit UTC. Clôturer à minuit pile courrait contre elle.
+                  setFinAt(Date.parse(`${e.target.value}T23:00:00Z`))
+                }
+              />
+            </div>
+          </div>
+          {!clos ? (
+            <div className="flex justify-end">
+              <button
+                className="btn-primary"
+                onClick={() => void sauver()}
+                disabled={enregistrement}
+              >
+                {enregistrement ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {/* ═══ 2. Le document ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={2}
+          titre="Le document"
+          aide="La matière première : c’est lui qui fournit les cartes, pas les éditions du jeu."
+          fait={!!defi.source}
+        />
+        {defi.source ? (
+          <div
+            className="flex items-center justify-between gap-3 mb-3"
+            style={{
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'var(--color-surface)',
+              fontSize: 13,
+            }}
+          >
+            <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+              <FileText size={14} color="var(--color-text-muted)" />
+              {defi.source.nom}
+            </span>
+            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', flexShrink: 0 }}>
+              {defi.source.pages > 0 ? `${defi.source.pages} p · ` : ''}
+              {defi.source.caracteres.toLocaleString('fr-FR')} caractères
+            </span>
+          </div>
+        ) : (
+          <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+            PDF, DOCX, TXT ou MD. Un seul document par défi — en déposer un
+            nouveau remplace le précédent.
+          </p>
+        )}
+        {!clos ? (
+          <label
+            className="btn-secondary"
+            style={{ cursor: depot ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center' }}
+          >
+            <Upload size={14} style={{ marginRight: 6 }} />
+            {depot ? 'Extraction…' : defi.source ? 'Remplacer le document' : 'Déposer le document'}
+            <input
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              style={{ display: 'none' }}
+              disabled={depot}
+              onChange={(e) => {
+                const fichier = e.target.files?.[0];
+                // On remet la valeur à zéro : sans ça, déposer deux fois le même
+                // fichier ne déclenche pas `onChange` la seconde fois.
+                e.target.value = '';
+                if (fichier) void deposer(fichier);
+              }}
+            />
+          </label>
+        ) : null}
+      </section>
+
+      {/* ═══ 3. Le contenu ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={3}
+          titre="Le contenu"
+          aide="Généré depuis le document, puis relu. Rien ne détecte une question fausse à votre place."
+          fait={cartesEnregistrees > 0}
+        />
+
+        {!defi.source ? (
+          <p style={{ fontSize: 12.5, color: '#B9791A' }}>
+            Déposez d’abord le document : c’est lui qui fournit le contenu.
+          </p>
+        ) : (
+          <>
+            {cartesEnregistrees > 0 ? (
+              <p style={{ fontSize: 12.5, color: '#2EA043', fontWeight: 600, marginBottom: 12 }}>
+                {cartesEnregistrees} cartes enregistrées
+              </p>
+            ) : null}
+
+            {!clos ? (
+              <>
+                <div className="flex flex-wrap gap-3 mb-4">
+                  {(
+                    [
+                      ['quiz', 'Quiz'],
+                      ['duel', 'Duels'],
+                      ['funding', 'Financements'],
+                      ['opportunity', 'Opportunités'],
+                      ['challenge', 'Challenges'],
+                    ] as const
+                  ).map(([cle, label]) => (
+                    <div key={cle} style={{ width: 104 }}>
+                      <label className="label" style={{ fontSize: 10.5 }}>
+                        {label}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        className="input-field"
+                        value={mix[cle]}
+                        onChange={(e) =>
+                          setMix({
+                            ...mix,
+                            // Borné : le prompt tronque de toute façon, mais une
+                            // valeur absurde ferait dépenser du quota pour rien.
+                            [cle]: Math.max(0, Math.min(30, Number(e.target.value) || 0)),
+                          })
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="btn-secondary"
+                  onClick={() => void generer()}
+                  disabled={generation}
+                >
+                  <Sparkles size={14} style={{ display: 'inline', marginRight: 6 }} />
+                  {generation
+                    ? 'Génération… (quelques dizaines de secondes)'
+                    : cartesEnregistrees > 0
+                      ? 'Régénérer'
+                      : 'Générer le contenu'}
+                </button>
+              </>
+            ) : null}
+
+            {/* La relecture, en place : pas de modale. Elle se ferme d'un clic
+                hors cadre et le contenu généré serait perdu. */}
+            {brouillonContenu ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  paddingTop: 16,
+                  borderTop: '1px solid var(--color-card-border)',
+                }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <strong style={{ fontSize: 13 }}>
+                    À relire — {nbCartes(brouillonContenu)} cartes
+                  </strong>
+                  <div className="flex gap-2">
+                    <button className="btn-secondary" onClick={() => setBrouillonContenu(null)}>
+                      Jeter
+                    </button>
+                    <button className="btn-primary" onClick={() => void validerContenu()}>
+                      Enregistrer ce contenu
+                    </button>
+                  </div>
+                </div>
+                {(
+                  [
+                    ['Quiz', brouillonContenu.quizzes],
+                    ['Duels', brouillonContenu.duels],
+                    ['Financements', brouillonContenu.fundings],
+                    ['Opportunités', brouillonContenu.opportunities],
+                    ['Challenges', brouillonContenu.challengeEvents],
+                  ] as const
+                )
+                  .filter(([, liste]) => liste.length > 0)
+                  .map(([label, liste]) => (
+                    <div key={label} className="mb-3">
+                      <div className="label" style={{ marginBottom: 5 }}>
+                        {label} ({liste.length})
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {liste.map((carte, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              fontSize: 12,
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              background: 'var(--color-surface)',
+                            }}
+                          >
+                            {libelleCarte(carte)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
+
+      {/* ═══ 4. Ouvrir, puis clôturer ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={4}
+          titre="Mise en ligne"
+          aide="Un seul défi peut être en cours à la fois."
+          fait={defi.statut !== 'brouillon'}
+        />
+
+        {clos ? (
+          <div style={{ fontSize: 13 }}>
+            {defi.champion ? (
+              <>
+                🏆 <strong>{defi.champion.displayName}</strong> — {defi.champion.xp} XP
+                <span style={{ color: 'var(--color-text-muted)' }}>
+                  {' '}
+                  · {defi.participants} participant{defi.participants > 1 ? 's' : ''}
+                </span>
+              </>
+            ) : (
+              <span style={{ color: 'var(--color-text-muted)' }}>Clos sans participant.</span>
+            )}
+          </div>
+        ) : defi.statut === 'brouillon' ? (
+          <>
+            {cartesEnregistrees === 0 ? (
+              <p style={{ fontSize: 12.5, color: '#B9791A' }}>
+                Enregistrez d’abord le contenu : sans cartes, la partie tirerait
+                celles de l’édition et le défi n’aurait plus de thème.
+              </p>
+            ) : (
+              <button
+                className="btn-primary"
+                onClick={() => void sauver('ouvert')}
+                disabled={enregistrement}
+              >
+                Ouvrir le défi aux joueurs
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+              En cours. La clôture automatique tombe le dimanche à 23:00 UTC.
+            </span>
+            <button className="btn-secondary" onClick={() => setACloturer(true)}>
+              Clôturer maintenant
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* ═══ Le classement, quand il existe ═══ */}
+      {defi.statut !== 'brouillon' ? (
+        <section className="glass-card p-5">
+          <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Classement</h2>
+          {scores.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+              Personne n’a encore marqué de points.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {scores.map((s, i) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between"
+                  style={{ fontSize: 13, padding: '5px 0' }}
+                >
+                  <span>
+                    <strong style={{ color: 'var(--color-text-muted)', marginRight: 8 }}>
+                      {i + 1}.
+                    </strong>
+                    {s.displayName}
+                  </span>
+                  <span style={{ fontWeight: 700 }}>
+                    {s.xp} XP
+                    <span
+                      style={{ color: 'var(--color-text-muted)', fontWeight: 400, fontSize: 11.5 }}
+                    >
+                      {' '}
+                      · {s.parties} partie{s.parties > 1 ? 's' : ''}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      <ConfirmDialog
+        open={aCloturer}
+        onClose={() => setACloturer(false)}
+        onConfirm={() => void confirmerCloture()}
+        title="Clôturer ce défi ?"
+        message="Le champion sera calculé depuis le classement et figé définitivement. Le défi ne pourra plus être rouvert ni modifié."
+        confirmLabel="Clôturer"
+        danger
+        loading={cloture}
+      />
+    </div>
+  );
+}
+
+/**
+ * Libellé lisible d'une carte, quel que soit son type.
+ *
+ * Les cinq types n'ont pas le même champ porteur : `question` pour un quiz,
+ * `title` ou `description` pour les événements. On prend le premier non vide
+ * plutôt que d'écrire cinq branches — cette liste sert à relire, pas à éditer.
+ */
+function libelleCarte(carte: unknown): string {
+  if (!carte || typeof carte !== 'object') return '(carte vide)';
+  const o = carte as Record<string, unknown>;
+  for (const cle of ['question', 'title', 'titre', 'description', 'text']) {
+    const v = o[cle];
+    if (typeof v === 'string' && v.trim()) return v;
+  }
+  return '(sans libellé)';
+}

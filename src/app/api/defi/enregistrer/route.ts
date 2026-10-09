@@ -103,6 +103,27 @@ export async function POST(request: NextRequest) {
   const maintenant = Date.now();
 
   /*
+    CRÉATION SUR UN ID DÉJÀ PRIS : on refuse au lieu d'écraser.
+
+    L'id dérive de la semaine (`AAAA-Sxx`), donc deux créations pour la même
+    semaine visent le même document. Sans ce test, créer un second défi
+    écraserait le premier — avec son document source et son contenu — sans que
+    rien ne le signale.
+
+    Le test porte sur l'ABSENCE de `id` dans la requête : une modification
+    envoie toujours l'id du défi qu'elle modifie, une création ne l'a pas.
+  */
+  if (!id && existant.exists) {
+    return NextResponse.json(
+      {
+        error: `Un défi existe déjà pour cette semaine (« ${existant.data()?.titre ?? idFinal} »). Modifiez-le, ou changez la date d’ouverture.`,
+        existantId: idFinal,
+      },
+      { status: 409 }
+    );
+  }
+
+  /*
     ON N'OUVRE PAS UN DÉFI SANS CONTENU.
 
     Un défi ouvert sans cartes ferait tirer celles de l'édition : le joueur

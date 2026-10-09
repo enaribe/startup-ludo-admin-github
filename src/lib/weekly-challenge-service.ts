@@ -23,6 +23,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -61,6 +62,12 @@ export async function getDefis(): Promise<WeeklyChallenge[]> {
     query(collection(firestore, COLLECTIONS.weeklyChallenges), orderBy('debutAt', 'desc'))
   );
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WeeklyChallenge);
+}
+
+/** Un défi par son id — la page de détail. */
+export async function getDefi(id: string): Promise<WeeklyChallenge | null> {
+  const snap = await getDoc(doc(firestore, COLLECTIONS.weeklyChallenges, id));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as WeeklyChallenge) : null;
 }
 
 /** Le défi ouvert, ou `null`. Sert à prévenir avant d'en ouvrir un autre. */
