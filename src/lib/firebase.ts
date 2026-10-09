@@ -137,4 +137,17 @@ export const COLLECTIONS = {
   // l'enseignant (suivi en direct et rapport, lot 6). Le back-office n'y écrit
   // JAMAIS : la règle Firestore réserve l'écriture à l'élève lui-même.
   classSessionParticipants: (sessionId: string) => `classSessions/${sessionId}/participants`,
+
+  // ===== Défi de la semaine =====
+  /**
+   * Thème hebdomadaire (`weeklyChallenges/{AAAA-Sxx}`), écrit ici et nulle part
+   * ailleurs. Nom verbeux exprès : `challenges` est l'ancien parcours YEAH.
+   */
+  weeklyChallenges: 'weeklyChallenges',
+  /**
+   * Score d'un joueur sur un défi (`defiScores/{defiId}_{uid}`), écrit par le
+   * MOBILE pendant la partie. Le back-office ne fait que le lire, pour le
+   * classement et la désignation du champion.
+   */
+  defiScores: 'defiScores',
 } as const;

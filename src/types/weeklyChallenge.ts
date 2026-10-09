@@ -1,0 +1,124 @@
+/**
+ * Défi de la semaine — modèle partagé mobile / back-office.
+ *
+ * ⚠️ COPIE SYNCHRONE de `startup-ludo/src/types/weeklyChallenge.ts`. Les deux
+ * dépôts sont séparés et ne partagent aucun paquet : toute modification ici
+ * doit être reportée là-bas, et inversement. Le modèle décrit des documents
+ * Firestore communs aux deux — une divergence se traduirait par des champs lus
+ * mais jamais écrits, sans erreur de compilation d'aucun côté.
+ *
+ * Un thème entrepreneurial par semaine, ouvert le lundi et clos le dimanche à
+ * 23:00 UTC. Les parties jouées SUR le défi alimentent un classement propre au
+ * défi, d'où sort le champion de la semaine.
+ *
+ * ⚠️ NE PAS CONFONDRE avec les trois autres « challenges » du projet :
+ *   - `challenges` / `ChallengeEnrollment` : l'ancien parcours YEAH à niveaux,
+ *     avec livrables et secteurs (`src/types/challenge.ts`). Sans rapport.
+ *   - `challengeEvents` : les cartes de jeu à jetons négatifs.
+ *   - celui-ci : `weeklyChallenges`, un thème hebdomadaire.
+ * Le nom `weeklyChallenges` est verbeux exprès — `challenges` est déjà pris, et
+ * une collision ici serait silencieuse et coûteuse.
+ */
+
+/**
+ * Statut d'un défi.
+ *
+ * `brouillon` → invisible du mobile. `ouvert` → joué et classé.
+ * `clos` → visible en lecture (palmarès), plus de score accepté.
+ *
+ * La règle Firestore ne distingue pas ces statuts : c'est la requête du mobile
+ * qui filtre sur `ouvert`. Un défi en brouillon est donc techniquement lisible
+ * par un client curieux — il ne contient rien de sensible, juste un thème non
+ * encore annoncé.
+ */
+export type StatutDefi = 'brouillon' | 'ouvert' | 'clos';
+
+export interface WeeklyChallenge {
+  /** Id du document. Convention : `AAAA-Sxx` (ex. `2026-S42`), lisible en base. */
+  id: string;
+  /** Thème affiché, court : « Trouver ses premiers clients ». */
+  titre: string;
+  /** Une à deux phrases. Ce que le joueur doit retenir du thème. */
+  description: string;
+
+  statut: StatutDefi;
+
+  /** Ouverture, en millisecondes epoch (UTC). */
+  debutAt: number;
+  /** Clôture, en millisecondes epoch. Dimanche 23:00 UTC. */
+  finAt: number;
+
+  /**
+   * Champion désigné à la clôture, figé.
+   *
+   * Écrit UNE FOIS par la Cloud Function de clôture, puis jamais relu depuis
+   * `defiScores` : un classement recalculé après coup pourrait changer d'avis
+   * (un score arrivé en retard, un compte supprimé) et déposséder le champion
+   * annoncé. Ce qui est annoncé est figé.
+   */
+  champion: ChampionDefi | null;
+
+  /** Nombre de joueurs ayant marqué au moins un point. Figé à la clôture. */
+  participants: number;
+
+  creeAt: number;
+  majAt: number;
+}
+
+export interface ChampionDefi {
+  userId: string;
+  /** Copié à la clôture : le joueur peut renommer son compte ensuite. */
+  displayName: string;
+  xp: number;
+}
+
+/**
+ * Score d'un joueur sur UN défi (`defiScores/{defiId}_{uid}`).
+ *
+ * Collection séparée, et non un champ `defiXP` dans `userStats`, pour trois
+ * raisons :
+ *   - aucun reset hebdomadaire à faire — chaque défi a ses propres documents,
+ *     là où un champ unique devrait être vidé chaque lundi ;
+ *   - l'historique survit : le palmarès des défis passés reste consultable ;
+ *   - `weeklyXP` continue de mesurer l'activité de la semaine, ce qui est son
+ *     rôle. Mélanger les deux ferait du « classement du défi » un classement
+ *     d'activité, et la promesse du thème n'aurait plus de sens.
+ *
+ * L'id est composé (`{defiId}_{uid}`) et non auto-généré : il rend l'écriture
+ * idempotente. Deux parties terminées en même temps mettent à jour le même
+ * document au lieu d'en créer deux, et l'incrément se fait en transaction.
+ */
+export interface DefiScore {
+  /** `{defiId}_{userId}` */
+  id: string;
+  defiId: string;
+  userId: string;
+  /** Dénormalisé pour afficher le classement sans N lectures de `users`. */
+  displayName: string;
+  /** Avatar dénormalisé, même raison. `null` si le joueur n'en a pas. */
+  avatarUrl: string | null;
+
+  /** XP cumulés sur ce défi uniquement. */
+  xp: number;
+  /** Parties jouées sur ce défi. Sert à départager à XP égal. */
+  parties: number;
+
+  majAt: number;
+}
+
+/** Id de document d'un score, à utiliser partout plutôt que de concaténer à la main. */
+export function idDefiScore(defiId: string, userId: string): string {
+  return `${defiId}_${userId}`;
+}
+
+/**
+ * Le défi est-il ouvert aux scores, à l'instant donné ?
+ *
+ * Vérifie le statut ET la fenêtre de temps. Les deux, parce qu'ils peuvent
+ * diverger : la Cloud Function de clôture peut avoir du retard (démarrage à
+ * froid, relance), et une partie terminée à 23:01 ne doit pas compter même si
+ * `statut` est encore `ouvert`.
+ */
+export function defiAccepteDesScores(defi: WeeklyChallenge, maintenant = Date.now()): boolean {
+  return defi.statut === 'ouvert' && maintenant >= defi.debutAt && maintenant < defi.finAt;
+}
