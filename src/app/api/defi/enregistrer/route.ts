@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
   const titre = String(corps.titre ?? '').trim();
   const description = String(corps.description ?? '').trim();
   const statut = String(corps.statut ?? 'brouillon') as StatutDefi;
+  const editionId = String(corps.editionId ?? '').trim();
   const debutAt = Number(corps.debutAt);
   const finAt = Number(corps.finAt);
 
@@ -59,6 +60,12 @@ export async function POST(request: NextRequest) {
   }
   if (!STATUTS.includes(statut)) {
     return NextResponse.json({ error: 'Statut inconnu.' }, { status: 400 });
+  }
+  if (!editionId) {
+    return NextResponse.json(
+      { error: 'L’édition est requise : le contenu du défi y est ancré.' },
+      { status: 400 }
+    );
   }
   if (!Number.isFinite(debutAt) || !Number.isFinite(finAt)) {
     return NextResponse.json({ error: 'Dates invalides.' }, { status: 400 });
@@ -102,17 +109,49 @@ export async function POST(request: NextRequest) {
   const existant = await ref.get();
   const maintenant = Date.now();
 
+  /*
+    ON N'OUVRE PAS UN DÉFI SANS CONTENU.
+
+    Un défi ouvert sans cartes ferait tirer celles de l'édition : le joueur
+    aurait une partie libre présentée comme une épreuve thématique, et le
+    classement comparerait des parties qui n'ont rien à voir avec le thème
+    annoncé. C'est exactement le défaut que le contenu du défi corrige — le
+    laisser possible le réintroduirait en silence.
+
+    Le contenu vient de `/api/defi/contenu`, pas d'ici : on vérifie donc l'état
+    du document, et non le corps de cette requête.
+  */
+  if (statut === 'ouvert') {
+    const contenu = existant.data()?.contenu as Record<string, unknown[]> | undefined;
+    const cartes = contenu
+      ? Object.values(contenu).reduce(
+          (n, liste) => n + (Array.isArray(liste) ? liste.length : 0),
+          0
+        )
+      : 0;
+    if (cartes === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Générez et enregistrez le contenu du défi avant de l’ouvrir — sans cartes, la partie tirerait celles de l’édition.',
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   await ref.set(
     {
       titre,
       description,
       statut,
+      editionId,
       debutAt,
       finAt,
       // `champion` et `participants` ne sont JAMAIS écrits ici : ils
       // appartiennent à la clôture. Les inclure permettrait de désigner un
       // champion à la main, ce qui viderait le classement de son sens.
-      ...(existant.exists ? {} : { champion: null, participants: 0, creeAt: maintenant }),
+      ...(existant.exists ? {} : { champion: null, participants: 0, contenu: null, creeAt: maintenant }),
       majAt: maintenant,
     },
     { merge: true }

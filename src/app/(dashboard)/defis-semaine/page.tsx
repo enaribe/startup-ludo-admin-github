@@ -19,16 +19,20 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Trophy, Plus, Pencil, Lock, Users } from 'lucide-react';
+import { Trophy, Plus, Pencil, Lock, Users, Sparkles, Layers } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   cloturerDefi,
+  enregistrerContenuDefi,
   enregistrerDefi,
+  genererContenuDefi,
   getClassementDefi,
   getDefis,
   prochaineSemaine,
   type SaisieDefi,
 } from '@/lib/weekly-challenge-service';
+import { getEditions } from '@/lib/firestore-service';
+import type { ClassSessionContent, EditionData } from '@/types';
 import type { DefiScore, StatutDefi, WeeklyChallenge } from '@/types/weeklyChallenge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -45,9 +49,44 @@ const STATUTS: Array<{ id: StatutDefi; label: string; fond: string; texte: strin
 
 const styleStatut = (s: StatutDefi) => STATUTS.find((x) => x.id === s) ?? STATUTS[0];
 
+/**
+ * Nombre de cartes du contenu d'un défi, toutes listes confondues.
+ *
+ * Zéro signifie « pas ouvrable » : la route `/api/defi/enregistrer` refuse de
+ * passer un défi sans cartes en `ouvert`, parce qu'il tirerait alors celles de
+ * l'édition et redonnerait une partie libre déguisée en épreuve thématique.
+ */
+function nbCartes(d: WeeklyChallenge): number {
+  if (!d.contenu) return 0;
+  return (
+    d.contenu.quizzes.length +
+    d.contenu.duels.length +
+    d.contenu.fundings.length +
+    d.contenu.opportunities.length +
+    d.contenu.challengeEvents.length
+  );
+}
+
 /** `<input type="date">` ne parle que `AAAA-MM-JJ`, en UTC ici pour coller aux crons. */
 const versValeurDate = (ms: number): string =>
   Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString().slice(0, 10) : '';
+
+/**
+ * Libellé lisible d'une carte, quel que soit son type.
+ *
+ * Les cinq types n'ont pas le même champ porteur : `question` pour un quiz,
+ * `title` ou `description` pour les événements. On prend le premier non vide
+ * plutôt que d'écrire cinq branches — cette modale sert à relire, pas à éditer.
+ */
+function libelleCarte(carte: unknown): string {
+  if (!carte || typeof carte !== 'object') return '(carte vide)';
+  const o = carte as Record<string, unknown>;
+  for (const cle of ['question', 'title', 'titre', 'description', 'text']) {
+    const v = o[cle];
+    if (typeof v === 'string' && v.trim()) return v;
+  }
+  return '(sans libellé)';
+}
 
 export default function PageDefisSemaine() {
   const { isSuperAdmin, loading: authLoading } = useAuth();
@@ -60,6 +99,11 @@ export default function PageDefisSemaine() {
   const [aCloturer, setACloturer] = useState<WeeklyChallenge | null>(null);
   const [cloture, setCloture] = useState(false);
   const [classement, setClassement] = useState<{ defi: WeeklyChallenge; scores: DefiScore[] } | null>(null);
+  const [editions, setEditions] = useState<EditionData[]>([]);
+  /** Défi dont on génère/relit le contenu, et le contenu en cours de relecture. */
+  const [contenuDe, setContenuDe] = useState<WeeklyChallenge | null>(null);
+  const [contenu, setContenu] = useState<ClassSessionContent | null>(null);
+  const [generation, setGeneration] = useState(false);
 
   const charger = useCallback(async () => {
     try {
@@ -75,12 +119,26 @@ export default function PageDefisSemaine() {
     // On ne lit RIEN sans le droit : le patron de `seances-pretes`.
     if (authLoading || !isSuperAdmin) return;
     void charger();
+    // Les éditions alimentent le sélecteur : le contenu du défi est ancré sur
+    // une édition, elle ne peut pas être laissée au hasard.
+    void getEditions()
+      .then(setEditions)
+      .catch(() => toast.error('Éditions indisponibles'));
   }, [authLoading, isSuperAdmin, charger]);
 
   function ouvrirNouveau() {
     const { debutAt, finAt } = prochaineSemaine();
     setNouveau(true);
-    setEdite({ titre: '', description: '', statut: 'brouillon', debutAt, finAt });
+    setEdite({
+      titre: '',
+      description: '',
+      statut: 'brouillon',
+      // Première édition par défaut : un champ vide ferait échouer
+      // l'enregistrement, et l'admin devrait deviner pourquoi.
+      editionId: editions[0]?.id ?? '',
+      debutAt,
+      finAt,
+    });
   }
 
   function ouvrirEdition(d: WeeklyChallenge) {
@@ -90,6 +148,7 @@ export default function PageDefisSemaine() {
       titre: d.titre,
       description: d.description,
       statut: d.statut,
+      editionId: d.editionId,
       debutAt: d.debutAt,
       finAt: d.finAt,
     });
@@ -143,6 +202,62 @@ export default function PageDefisSemaine() {
       toast.error(error instanceof Error ? error.message : 'Clôture impossible', { duration: 6000 });
     } finally {
       setCloture(false);
+    }
+  }
+
+  /**
+   * Génère le contenu depuis le thème, puis l'ouvre en relecture.
+   *
+   * Le contenu N'EST PAS enregistré automatiquement : la génération IA produit
+   * des cartes plausibles mais parfois hors sujet ou fausses, et rien ne le
+   * détecte côté machine. La relecture est le garde-fou, donc le bouton
+   * « Enregistrer » est un geste séparé.
+   */
+  async function generer(defi: WeeklyChallenge) {
+    if (!defi.titre.trim()) {
+      toast.error('Donnez d’abord un thème au défi');
+      return;
+    }
+    setContenuDe(defi);
+    setContenu(null);
+    setGeneration(true);
+    try {
+      const genere = await genererContenuDefi({
+        id: defi.id,
+        titre: defi.titre,
+        description: defi.description,
+        editionId: defi.editionId,
+      });
+      setContenu(genere);
+      toast.success('Contenu généré — relisez avant d’enregistrer');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Génération impossible', {
+        duration: 6000,
+      });
+      setContenuDe(null);
+    } finally {
+      setGeneration(false);
+    }
+  }
+
+  /** Ouvre le contenu DÉJÀ enregistré, pour le consulter. */
+  function voirContenu(defi: WeeklyChallenge) {
+    setContenuDe(defi);
+    setContenu((defi.contenu as ClassSessionContent | null) ?? null);
+  }
+
+  async function enregistrerContenu() {
+    if (!contenuDe || !contenu) return;
+    try {
+      await enregistrerContenuDefi(contenuDe.id, contenu);
+      toast.success('Contenu enregistré');
+      setContenuDe(null);
+      setContenu(null);
+      await charger();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible', {
+        duration: 6000,
+      });
     }
   }
 
@@ -223,6 +338,19 @@ export default function PageDefisSemaine() {
                         {d.description}
                       </div>
                     ) : null}
+                    {/* L'état du contenu est l'information la plus utile de la
+                        carte : sans cartes, le défi ne peut pas être ouvert. */}
+                    <div style={{ fontSize: 11.5, marginTop: 6 }}>
+                      {nbCartes(d) > 0 ? (
+                        <span style={{ color: '#2EA043', fontWeight: 600 }}>
+                          {nbCartes(d)} cartes
+                        </span>
+                      ) : (
+                        <span style={{ color: '#B9791A', fontWeight: 600 }}>
+                          Aucun contenu — à générer avant d’ouvrir
+                        </span>
+                      )}
+                    </div>
                     {d.champion ? (
                       <div style={{ fontSize: 12, marginTop: 8, fontWeight: 600 }}>
                         🏆 {d.champion.displayName} — {d.champion.xp} XP
@@ -240,9 +368,25 @@ export default function PageDefisSemaine() {
                     >
                       <Users size={14} color="var(--color-text-muted)" />
                     </button>
+                    {nbCartes(d) > 0 ? (
+                      <button
+                        onClick={() => voirContenu(d)}
+                        title="Voir le contenu"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+                      >
+                        <Layers size={14} color="var(--color-text-muted)" />
+                      </button>
+                    ) : null}
                     {/* Un défi clos ne se modifie plus : son champion est annoncé. */}
                     {d.statut !== 'clos' ? (
                       <>
+                        <button
+                          onClick={() => generer(d)}
+                          title={nbCartes(d) > 0 ? 'Régénérer le contenu' : 'Générer le contenu'}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+                        >
+                          <Sparkles size={14} color="#F5A623" />
+                        </button>
                         <button
                           onClick={() => ouvrirEdition(d)}
                           title="Modifier"
@@ -324,6 +468,24 @@ export default function PageDefisSemaine() {
               </div>
             </div>
             <div>
+              <label className="label">Édition</label>
+              <select
+                className="input-field"
+                value={edite.editionId}
+                onChange={(e) => setEdite({ ...edite, editionId: e.target.value })}
+              >
+                {editions.map((ed) => (
+                  <option key={ed.id} value={ed.id}>
+                    {ed.name}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                Imposée au joueur. Le contenu généré y est ancré — la changer
+                après génération rendrait les cartes incohérentes.
+              </div>
+            </div>
+            <div>
               <label className="label">Statut</label>
               <select
                 className="input-field"
@@ -358,6 +520,89 @@ export default function PageDefisSemaine() {
         danger
         loading={cloture}
       />
+
+      {/* Relecture du contenu — généré ou déjà enregistré. */}
+      <Modal
+        open={!!contenuDe}
+        onClose={() => {
+          setContenuDe(null);
+          setContenu(null);
+        }}
+        title={`Contenu — ${contenuDe?.titre ?? ''}`}
+        maxWidth="640px"
+      >
+        {generation ? (
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Génération en cours… cela prend quelques dizaines de secondes.
+          </p>
+        ) : !contenu ? (
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Aucun contenu.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Relisez avant d’enregistrer : la génération produit des cartes
+              plausibles, mais rien ne détecte une question fausse ou hors sujet.
+            </div>
+
+            {(
+              [
+                ['Quiz', contenu.quizzes],
+                ['Duels', contenu.duels],
+                ['Financements', contenu.fundings],
+                ['Opportunités', contenu.opportunities],
+                ['Challenges', contenu.challengeEvents],
+              ] as const
+            ).map(([label, liste]) => (
+              <div key={label}>
+                <div className="label" style={{ marginBottom: 6 }}>
+                  {label} ({liste.length})
+                </div>
+                {liste.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>—</div>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {liste.map((carte, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          fontSize: 12,
+                          padding: '6px 10px',
+                          borderRadius: 8,
+                          background: 'var(--color-surface)',
+                        }}
+                      >
+                        {/* Les cinq types n'ont pas le même champ de libellé :
+                            on prend le premier qui existe plutôt que de traiter
+                            chaque type à part. */}
+                        {libelleCarte(carte)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="flex justify-end gap-3 mt-2">
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setContenuDe(null);
+                  setContenu(null);
+                }}
+              >
+                Fermer
+              </button>
+              {contenuDe?.statut !== 'clos' ? (
+                <button className="btn-primary" onClick={enregistrerContenu}>
+                  Enregistrer ce contenu
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={!!classement}

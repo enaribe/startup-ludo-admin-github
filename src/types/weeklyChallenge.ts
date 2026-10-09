@@ -33,6 +33,39 @@
  */
 export type StatutDefi = 'brouillon' | 'ouvert' | 'clos';
 
+/**
+ * Contenu de jeu d'un défi — miroir EXACT de `GameContentPack`
+ * (`src/services/game/EventManager.ts`) et de `ClassSessionContent`.
+ *
+ * Les types sont volontairement `unknown[]` ici plutôt que `Quiz[]`, `Duel[]`…
+ *
+ * Raison : ce fichier est une COPIE SYNCHRONE partagée avec le back-office, qui
+ * n'a pas les types de cartes du moteur de jeu. Les importer rendrait la copie
+ * impossible à compiler là-bas. Côté mobile, `defiService` recoerce vers
+ * `GameContentPack` au moment de l'injection — c'est là que la forme est
+ * vérifiée, et c'est le seul endroit qui en a besoin.
+ */
+export interface DefiContenu {
+  quizzes: unknown[];
+  duels: unknown[];
+  fundings: unknown[];
+  opportunities: unknown[];
+  challengeEvents: unknown[];
+}
+
+/** Le contenu a-t-il au moins une carte ? Un défi vide ne doit pas s'ouvrir. */
+export function contenuNonVide(contenu: DefiContenu | null | undefined): boolean {
+  if (!contenu) return false;
+  return (
+    contenu.quizzes.length +
+      contenu.duels.length +
+      contenu.fundings.length +
+      contenu.opportunities.length +
+      contenu.challengeEvents.length >
+    0
+  );
+}
+
 export interface WeeklyChallenge {
   /** Id du document. Convention : `AAAA-Sxx` (ex. `2026-S42`), lisible en base. */
   id: string;
@@ -42,6 +75,37 @@ export interface WeeklyChallenge {
   description: string;
 
   statut: StatutDefi;
+
+  /**
+   * Édition dans laquelle la partie du défi se déroule.
+   *
+   * Imposée par le défi et non choisie par le joueur : le contenu généré est
+   * ancré sur une édition (secteurs, personas, valeurs de jetons), et le laisser
+   * jouer dans une autre produirait des incohérences — un financement calibré
+   * pour une édition dans l'économie d'une autre.
+   */
+  editionId: string;
+
+  /**
+   * Contenu de jeu du défi, généré UNE FOIS et figé.
+   *
+   * ═══ POURQUOI LE DÉFI PORTE SON PROPRE CONTENU ═══
+   *
+   * Sans lui, « jouer le défi » lançait une partie ordinaire et le thème
+   * n'était qu'une étiquette : le joueur voyait les mêmes cartes qu'en partie
+   * libre, et seul le comptage des XP changeait. La promesse « le défi de la
+   * semaine sur les premiers clients » n'était pas tenue.
+   *
+   * Même forme que `ClassSessionContent` et `GameContentPack` : c'est ce qui
+   * permet de l'injecter avec `eventManager.setContentPack()` SANS toucher au
+   * moteur de jeu.
+   *
+   * ⚠️ `null` tant que le contenu n'a pas été généré. Un défi sans contenu NE
+   * DOIT PAS être ouvert — le back-office l'en empêche. Ouvrir un défi vide
+   * ferait tirer les cartes ordinaires de l'édition, c'est-à-dire exactement le
+   * problème que ce champ corrige, mais en silence.
+   */
+  contenu: DefiContenu | null;
 
   /** Ouverture, en millisecondes epoch (UTC). */
   debutAt: number;
@@ -146,6 +210,8 @@ export interface DefiGameContext {
   defiId: string;
   /** Recopié pour l'affichage en fin de partie, sans relire le défi. */
   titre: string;
+  /** Édition imposée par le défi — le joueur ne la choisit pas. */
+  editionId: string;
   /**
    * Clôture du défi, en ms.
    *
