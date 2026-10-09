@@ -21,17 +21,26 @@
  */
 import {
   collection,
+  deleteDoc,
+  doc,
   getDocs,
   limit,
   orderBy,
   query,
+  setDoc,
   where,
 } from 'firebase/firestore';
-import { appelerGeneration } from '@/lib/ai-client';
-import { normaliserContenu, type MixSeance } from '@/lib/class-session-generation';
+import { appelerExtraction, appelerGeneration } from '@/lib/ai-client';
+import { normaliserContenu } from '@/lib/class-session-generation';
 import { auth, firestore, COLLECTIONS } from './firebase';
 import type { ClassSessionContent } from '@/types';
-import type { DefiScore, WeeklyChallenge } from '@/types/weeklyChallenge';
+import {
+  MIX_DEFI_DEFAUT,
+  type DefiScore,
+  type DefiSource,
+  type MixDefi,
+  type WeeklyChallenge,
+} from '@/types/weeklyChallenge';
 
 /** En-têtes d'appel des routes `/api/defi/*`, avec le jeton de l'admin. */
 async function enTetesAuth(): Promise<HeadersInit> {
@@ -94,8 +103,6 @@ export interface SaisieDefi {
   titre: string;
   description: string;
   statut: WeeklyChallenge['statut'];
-  /** Édition imposée au joueur : le contenu généré y est ancré. */
-  editionId: string;
   debutAt: number;
   finAt: number;
 }
@@ -161,73 +168,6 @@ export function prochaineSemaine(depuis = Date.now()): { debutAt: number; finAt:
   return { debutAt: lundi.getTime(), finAt: dimanche.getTime() };
 }
 
-/**
- * Génère le contenu de jeu d'un défi depuis son thème.
- *
- * ═══ POURQUOI RÉUTILISER `class_session_content` ═══
- *
- * Le prompt du Mode Classe produit exactement la forme attendue : les cinq
- * types de cartes, ancrés sur un sujet donné. La seule différence est la source
- * du sujet — un cours déposé par l'enseignant là-bas, le thème du défi ici.
- *
- * Ajouter un type de génération dédié dupliquerait un prompt de plusieurs
- * centaines de lignes pour changer une phrase d'amorce. On passe donc le thème
- * en `sourceText`, qui est le champ que le prompt lit comme matière première.
- *
- * ═══ LE CONTENU EST GÉNÉRÉ UNE FOIS, PUIS RELU ═══
- *
- * Il n'est PAS régénéré à chaque partie : ce serait un appel modèle par joueur,
- * un contenu différent pour un même défi annoncé — et donc un classement qui
- * comparerait des épreuves différentes. Même raison que `readySessions`, dont
- * le contenu est figé à la création.
- *
- * La relecture humaine est le garde-fou : `normaliserContenu` écarte les cartes
- * malformées, mais rien ne détecte une question fausse ou hors sujet.
- */
-export async function genererContenuDefi(
-  defi: { id: string; titre: string; description: string; editionId: string },
-  mix: MixSeance = MIX_DEFI_DEFAUT
-): Promise<ClassSessionContent> {
-  const sujet = [defi.titre, defi.description].filter(Boolean).join('\n\n');
-
-  const res = await appelerGeneration({
-    type: 'class_session_content',
-    prompt:
-      `Défi entrepreneurial hebdomadaire sur le thème : « ${defi.titre} ». ` +
-      `Les cartes doivent toutes porter sur ce thème, dans un contexte de création ` +
-      `d'entreprise en Afrique de l'Ouest.`,
-    context: {
-      sessionTitle: defi.titre,
-      // Le thème EST la matière première, à la place du cours de l'enseignant.
-      sourceText: sujet,
-      mix,
-    },
-  });
-
-  const json = await res.json();
-  if (!res.ok || json.error) throw new Error(json.error || 'Génération impossible.');
-
-  // Le seed horodaté garantit des ids uniques entre deux générations du même
-  // défi : régénérer ne crée pas de collision avec le contenu précédent.
-  return normaliserContenu(json.data, `d${Date.now().toString(36)}`);
-}
-
-/**
- * Mix par défaut d'un défi.
- *
- * Plus court qu'une séance de classe (8 quiz) : un défi se joue en quelques
- * minutes, seul, et doit pouvoir être rejoué dans la semaine. Un contenu trop
- * long ferait abandonner avant la fin, et le score ne refléterait alors que la
- * patience du joueur.
- */
-export const MIX_DEFI_DEFAUT: MixSeance = {
-  quiz: 6,
-  duel: 2,
-  funding: 2,
-  opportunity: 2,
-  challenge: 2,
-};
-
 /** Enregistre le contenu généré sur le défi, après relecture. */
 export async function enregistrerContenuDefi(
   id: string,
@@ -240,4 +180,186 @@ export async function enregistrerContenuDefi(
   });
   const donnees = await reponse.json();
   if (!reponse.ok) throw new Error(donnees.error || 'Enregistrement du contenu impossible');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DOCUMENT SOURCE — la matière première du contenu
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Le texte extrait est découpé pour tenir sous la limite Firestore.
+ *
+ * Un document Firestore plafonne à 1 Mo. Un PDF de cours dépasse régulièrement
+ * ce seuil une fois son texte extrait : sans découpage, l'écriture échoue et le
+ * message d'erreur ne dit pas pourquoi.
+ */
+const TAILLE_CHUNK = 700_000;
+
+/**
+ * Dépose le document du défi : extraction du texte, puis stockage.
+ *
+ * ═══ LE FICHIER ORIGINAL N'EST PAS CONSERVÉ ═══
+ *
+ * Seul son texte sert à la génération, et il n'a pas à être re-consulté depuis
+ * le back-office. Ne pas le stocker réduit la surface de données conservées —
+ * même choix que `deposerCours()` pour les séances de classe.
+ *
+ * Un SEUL document par défi : déposer à nouveau remplace le précédent. Un défi
+ * porte un sujet, pas un dossier — accumuler des documents mélangerait les
+ * thèmes dans un contenu annoncé comme portant sur un seul.
+ *
+ * @throws Error si l'extraction échoue (format non supporté, PDF scanné, 401…).
+ */
+export async function deposerDocumentDefi(
+  defiId: string,
+  file: File
+): Promise<DefiSource> {
+  const res = await appelerExtraction(file);
+  const extrait = await res.json();
+  if (!res.ok || extrait.error) {
+    throw new Error(extrait.error || 'Extraction impossible : vérifiez le format du fichier.');
+  }
+
+  const texte = String(extrait.text ?? '');
+  if (!texte.trim()) {
+    throw new Error('Aucun texte extrait — le document est peut-être une image ou un PDF scanné.');
+  }
+
+  const base = collection(firestore, COLLECTIONS.defiSourceDocs(defiId));
+
+  /*
+    On efface l'ancien document AVANT d'écrire le nouveau.
+
+    Sans ça, `getTexteSourceDefi()` concaténerait les deux et générerait un
+    contenu à cheval sur deux sujets. Et comme le découpage produit un nombre
+    variable de chunks, un ancien document plus long laisserait des chunks
+    orphelins qui seraient relus.
+  */
+  const ancien = await getDocs(base);
+  await Promise.all(
+    ancien.docs.map(async (d) => {
+      const chunks = await getDocs(collection(d.ref, 'chunks'));
+      await Promise.all(chunks.docs.map((c) => deleteDoc(c.ref)));
+      await deleteDoc(d.ref);
+    })
+  );
+
+  const chunks: string[] = [];
+  for (let i = 0; i < texte.length; i += TAILLE_CHUNK) {
+    chunks.push(texte.slice(i, i + TAILLE_CHUNK));
+  }
+
+  const docId = `src_${Date.now().toString(36)}`;
+  const docRef = doc(base, docId);
+  await setDoc(docRef, {
+    name: file.name,
+    charCount: texte.length,
+    pages: Number(extrait.pages ?? 0),
+    chunkCount: chunks.length,
+    extractedAt: Date.now(),
+  });
+  await Promise.all(
+    chunks.map((content, i) => setDoc(doc(docRef, 'chunks', String(i)), { i, content }))
+  );
+
+  const source: DefiSource = {
+    nom: file.name,
+    pages: Number(extrait.pages ?? 0),
+    caracteres: texte.length,
+    deposeAt: Date.now(),
+  };
+
+  // Les métadonnées sur le défi lui-même : le mobile et la liste du back-office
+  // doivent savoir qu'un document existe sans lire la sous-collection.
+  await enregistrerSourceDefi(defiId, source);
+  return source;
+}
+
+/** Texte complet du document déposé, recomposé depuis ses chunks. */
+export async function getTexteSourceDefi(defiId: string): Promise<string> {
+  const base = collection(firestore, COLLECTIONS.defiSourceDocs(defiId));
+  const docsSnap = await getDocs(base);
+  const parties: string[] = [];
+  for (const d of docsSnap.docs) {
+    // `orderBy('i')` : les chunks doivent être recollés DANS L'ORDRE. Sans tri,
+    // Firestore les rend par id lexicographique et « 10 » précède « 2 ».
+    const chunksSnap = await getDocs(query(collection(d.ref, 'chunks'), orderBy('i')));
+    const texte = chunksSnap.docs.map((c) => c.data().content as string).join('');
+    if (texte) parties.push(texte);
+  }
+  return parties.join('\n\n');
+}
+
+/** Écrit les métadonnées du document sur le défi (via la route serveur). */
+async function enregistrerSourceDefi(id: string, source: DefiSource | null): Promise<void> {
+  const reponse = await fetch('/api/defi/source', {
+    method: 'POST',
+    headers: await enTetesAuth(),
+    body: JSON.stringify({ id, source }),
+  });
+  const donnees = await reponse.json();
+  if (!reponse.ok) throw new Error(donnees.error || 'Enregistrement du document impossible');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GÉNÉRATION DU CONTENU
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Génère le contenu de jeu depuis le DOCUMENT du défi.
+ *
+ * ═══ POURQUOI RÉUTILISER `class_session_content` ═══
+ *
+ * Ce prompt produit exactement la forme attendue — les cinq types de cartes,
+ * ancrés sur un texte source. Le Mode Classe lui passe le cours de
+ * l'enseignant ; on lui passe le document du défi. Ajouter un type de
+ * génération dédié dupliquerait un prompt de plusieurs centaines de lignes pour
+ * changer une phrase d'amorce.
+ *
+ * ═══ LE CONTENU EST INDÉPENDANT DES ÉDITIONS ═══
+ *
+ * Rien dans cet appel ne mentionne d'édition, et c'est volontaire : les cartes
+ * viennent du document, pas du catalogue du jeu. L'édition ne sert qu'au
+ * plateau, côté mobile (`EDITION_PLATEAU_DEFI`).
+ *
+ * ═══ GÉNÉRÉ UNE FOIS, PUIS RELU ═══
+ *
+ * Pas de régénération à chaque partie : ce serait un appel modèle par joueur,
+ * un contenu différent pour un même défi annoncé — donc un classement qui
+ * comparerait des épreuves différentes.
+ *
+ * La relecture humaine est le garde-fou. `normaliserContenu` écarte les cartes
+ * malformées, mais rien ne détecte une question fausse ou hors sujet.
+ */
+export async function genererContenuDefi(
+  defi: { id: string; titre: string; description: string },
+  mix: MixDefi = MIX_DEFI_DEFAUT
+): Promise<ClassSessionContent> {
+  const sourceText = await getTexteSourceDefi(defi.id);
+  if (!sourceText.trim()) {
+    throw new Error('Déposez d’abord le document du défi : c’est lui qui fournit le contenu.');
+  }
+
+  const res = await appelerGeneration({
+    type: 'class_session_content',
+    prompt:
+      `Défi entrepreneurial de la semaine : « ${defi.titre} ».` +
+      (defi.description ? ` ${defi.description}` : '') +
+      ` Toutes les cartes doivent porter sur le document fourni, dans un contexte` +
+      ` de création d'entreprise en Afrique de l'Ouest.`,
+    context: {
+      sessionTitle: defi.titre,
+      // Le document EST la matière première, à la place du cours de l'enseignant.
+      sourceText,
+      // Le prompt attend les clés de `MixSeance` : même forme, noms identiques.
+      mix,
+    },
+  });
+
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Génération impossible.');
+
+  // Seed horodaté : régénérer ne crée pas de collision d'ids avec le contenu
+  // précédent.
+  return normaliserContenu(json.data, `d${Date.now().toString(36)}`);
 }

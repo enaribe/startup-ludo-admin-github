@@ -19,10 +19,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Trophy, Plus, Pencil, Lock, Users, Sparkles, Layers } from 'lucide-react';
+import { Trophy, Plus, Pencil, Lock, Users, Sparkles, Layers, Upload, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   cloturerDefi,
+  deposerDocumentDefi,
   enregistrerContenuDefi,
   enregistrerDefi,
   genererContenuDefi,
@@ -31,8 +32,8 @@ import {
   prochaineSemaine,
   type SaisieDefi,
 } from '@/lib/weekly-challenge-service';
-import { getEditions } from '@/lib/firestore-service';
-import type { ClassSessionContent, EditionData } from '@/types';
+import { MIX_DEFI_DEFAUT, type MixDefi } from '@/types/weeklyChallenge';
+import type { ClassSessionContent } from '@/types';
 import type { DefiScore, StatutDefi, WeeklyChallenge } from '@/types/weeklyChallenge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -99,11 +100,13 @@ export default function PageDefisSemaine() {
   const [aCloturer, setACloturer] = useState<WeeklyChallenge | null>(null);
   const [cloture, setCloture] = useState(false);
   const [classement, setClassement] = useState<{ defi: WeeklyChallenge; scores: DefiScore[] } | null>(null);
-  const [editions, setEditions] = useState<EditionData[]>([]);
   /** Défi dont on génère/relit le contenu, et le contenu en cours de relecture. */
   const [contenuDe, setContenuDe] = useState<WeeklyChallenge | null>(null);
   const [contenu, setContenu] = useState<ClassSessionContent | null>(null);
   const [generation, setGeneration] = useState(false);
+  /** Quantités demandées à la génération — ajustables selon le document. */
+  const [mix, setMix] = useState<MixDefi>(MIX_DEFI_DEFAUT);
+  const [depot, setDepot] = useState<string | null>(null);
 
   const charger = useCallback(async () => {
     try {
@@ -119,11 +122,6 @@ export default function PageDefisSemaine() {
     // On ne lit RIEN sans le droit : le patron de `seances-pretes`.
     if (authLoading || !isSuperAdmin) return;
     void charger();
-    // Les éditions alimentent le sélecteur : le contenu du défi est ancré sur
-    // une édition, elle ne peut pas être laissée au hasard.
-    void getEditions()
-      .then(setEditions)
-      .catch(() => toast.error('Éditions indisponibles'));
   }, [authLoading, isSuperAdmin, charger]);
 
   function ouvrirNouveau() {
@@ -133,9 +131,6 @@ export default function PageDefisSemaine() {
       titre: '',
       description: '',
       statut: 'brouillon',
-      // Première édition par défaut : un champ vide ferait échouer
-      // l'enregistrement, et l'admin devrait deviner pourquoi.
-      editionId: editions[0]?.id ?? '',
       debutAt,
       finAt,
     });
@@ -148,7 +143,6 @@ export default function PageDefisSemaine() {
       titre: d.titre,
       description: d.description,
       statut: d.statut,
-      editionId: d.editionId,
       debutAt: d.debutAt,
       finAt: d.finAt,
     });
@@ -206,7 +200,33 @@ export default function PageDefisSemaine() {
   }
 
   /**
-   * Génère le contenu depuis le thème, puis l'ouvre en relecture.
+   * Dépose le document du défi — la matière première du contenu.
+   *
+   * Un seul document par défi : déposer à nouveau remplace le précédent. Un
+   * défi porte un sujet, pas un dossier ; accumuler des documents mélangerait
+   * les thèmes dans un contenu annoncé comme portant sur un seul.
+   */
+  async function deposer(defi: WeeklyChallenge, fichier: File) {
+    setDepot(defi.id);
+    try {
+      const source = await deposerDocumentDefi(defi.id, fichier);
+      toast.success(
+        `Document déposé : ${source.nom} (${source.caracteres.toLocaleString('fr-FR')} caractères)`
+      );
+      await charger();
+    } catch (error) {
+      // Le message de l'extracteur est utile tel quel : il distingue un format
+      // non supporté d'un PDF scanné, et l'admin saura quoi refaire.
+      toast.error(error instanceof Error ? error.message : 'Dépôt impossible', {
+        duration: 8000,
+      });
+    } finally {
+      setDepot(null);
+    }
+  }
+
+  /**
+   * Génère le contenu depuis le document, puis l'ouvre en relecture.
    *
    * Le contenu N'EST PAS enregistré automatiquement : la génération IA produit
    * des cartes plausibles mais parfois hors sujet ou fausses, et rien ne le
@@ -218,16 +238,20 @@ export default function PageDefisSemaine() {
       toast.error('Donnez d’abord un thème au défi');
       return;
     }
+    // Le document EST la matière première : sans lui, le modèle inventerait un
+    // contenu sans rapport avec ce que vous voulez enseigner cette semaine.
+    if (!defi.source) {
+      toast.error('Déposez d’abord le document du défi');
+      return;
+    }
     setContenuDe(defi);
     setContenu(null);
     setGeneration(true);
     try {
-      const genere = await genererContenuDefi({
-        id: defi.id,
-        titre: defi.titre,
-        description: defi.description,
-        editionId: defi.editionId,
-      });
+      const genere = await genererContenuDefi(
+        { id: defi.id, titre: defi.titre, description: defi.description },
+        mix
+      );
       setContenu(genere);
       toast.success('Contenu généré — relisez avant d’enregistrer');
     } catch (error) {
@@ -301,6 +325,52 @@ export default function PageDefisSemaine() {
         </button>
       </div>
 
+      {/*
+        QUANTITÉS DE LA PROCHAINE GÉNÉRATION.
+
+        Hors de la modale d'édition, parce qu'elles ne décrivent pas un défi :
+        ce sont les réglages du geste « générer », à ajuster selon la richesse
+        du document déposé. Un document de deux pages ne donnera pas 15 quiz
+        utiles ; un support de cours complet, si.
+      */}
+      <div className="glass-card p-4 mb-4">
+        <div className="label" style={{ marginBottom: 10 }}>
+          Cartes à générer
+        </div>
+        <div className="flex flex-wrap gap-4">
+          {(
+            [
+              ['quiz', 'Quiz'],
+              ['duel', 'Duels'],
+              ['funding', 'Financements'],
+              ['opportunity', 'Opportunités'],
+              ['challenge', 'Challenges'],
+            ] as const
+          ).map(([cle, label]) => (
+            <div key={cle} style={{ width: 110 }}>
+              <label className="label" style={{ fontSize: 11 }}>
+                {label}
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={30}
+                className="input-field"
+                value={mix[cle]}
+                onChange={(e) =>
+                  setMix({
+                    ...mix,
+                    // Borné : le prompt tronque de toute façon, mais une valeur
+                    // absurde ferait dépenser du quota pour rien.
+                    [cle]: Math.max(0, Math.min(30, Number(e.target.value) || 0)),
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
       {defis.length === 0 ? (
         <EmptyState
           icon={<Trophy size={32} />}
@@ -338,9 +408,32 @@ export default function PageDefisSemaine() {
                         {d.description}
                       </div>
                     ) : null}
-                    {/* L'état du contenu est l'information la plus utile de la
-                        carte : sans cartes, le défi ne peut pas être ouvert. */}
-                    <div style={{ fontSize: 11.5, marginTop: 6 }}>
+                    {/* Les deux informations qui conditionnent l'ouverture :
+                        le document source, puis le contenu généré. */}
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        marginTop: 7,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 10,
+                        alignItems: 'center',
+                      }}
+                    >
+                      {d.source ? (
+                        <span
+                          style={{ color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title={`${d.source.caracteres.toLocaleString('fr-FR')} caractères extraits`}
+                        >
+                          <FileText size={12} />
+                          {d.source.nom}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#B9791A', fontWeight: 600 }}>
+                          Aucun document — à déposer en premier
+                        </span>
+                      )}
+                      <span style={{ color: 'var(--color-card-border)' }}>·</span>
                       {nbCartes(d) > 0 ? (
                         <span style={{ color: '#2EA043', fontWeight: 600 }}>
                           {nbCartes(d)} cartes
@@ -380,10 +473,46 @@ export default function PageDefisSemaine() {
                     {/* Un défi clos ne se modifie plus : son champion est annoncé. */}
                     {d.statut !== 'clos' ? (
                       <>
+                        {/* `<label>` plutôt qu'un bouton : c'est la seule
+                            façon d'ouvrir un sélecteur de fichier sans garder
+                            une ref par carte. L'input est masqué. */}
+                        <label
+                          title={d.source ? 'Remplacer le document' : 'Déposer le document'}
+                          style={{ cursor: depot === d.id ? 'wait' : 'pointer', padding: 4, display: 'inline-flex' }}
+                        >
+                          <Upload size={14} color={d.source ? 'var(--color-text-muted)' : '#F5A623'} />
+                          <input
+                            type="file"
+                            accept=".pdf,.docx,.txt,.md"
+                            style={{ display: 'none' }}
+                            disabled={depot === d.id}
+                            onChange={(e) => {
+                              const fichier = e.target.files?.[0];
+                              // On remet la valeur à zéro : sans ça, déposer
+                              // deux fois le même fichier ne déclenche pas
+                              // `onChange` la seconde fois.
+                              e.target.value = '';
+                              if (fichier) void deposer(d, fichier);
+                            }}
+                          />
+                        </label>
                         <button
                           onClick={() => generer(d)}
-                          title={nbCartes(d) > 0 ? 'Régénérer le contenu' : 'Générer le contenu'}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+                          disabled={!d.source}
+                          title={
+                            !d.source
+                              ? 'Déposez d’abord le document'
+                              : nbCartes(d) > 0
+                                ? 'Régénérer le contenu'
+                                : 'Générer le contenu'
+                          }
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: d.source ? 'pointer' : 'not-allowed',
+                            padding: 4,
+                            opacity: d.source ? 1 : 0.35,
+                          }}
                         >
                           <Sparkles size={14} color="#F5A623" />
                         </button>
@@ -465,24 +594,6 @@ export default function PageDefisSemaine() {
                     setEdite({ ...edite, finAt: Date.parse(`${e.target.value}T23:00:00Z`) })
                   }
                 />
-              </div>
-            </div>
-            <div>
-              <label className="label">Édition</label>
-              <select
-                className="input-field"
-                value={edite.editionId}
-                onChange={(e) => setEdite({ ...edite, editionId: e.target.value })}
-              >
-                {editions.map((ed) => (
-                  <option key={ed.id} value={ed.id}>
-                    {ed.name}
-                  </option>
-                ))}
-              </select>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
-                Imposée au joueur. Le contenu généré y est ancré — la changer
-                après génération rendrait les cartes incohérentes.
               </div>
             </div>
             <div>

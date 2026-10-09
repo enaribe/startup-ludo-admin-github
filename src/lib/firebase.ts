@@ -150,4 +150,13 @@ export const COLLECTIONS = {
    * classement et la désignation du champion.
    */
   defiScores: 'defiScores',
+  /**
+   * Document source d'un défi : texte extrait, découpé en chunks.
+   *
+   * Même forme que `classSessionSourceDocs` — et pour la même raison : le texte
+   * d'un document peut peser plusieurs centaines de kilo-octets, là où un
+   * document Firestore plafonne à 1 Mo. Le garder hors du défi évite aussi de
+   * le transporter à chaque lecture de l'accueil côté mobile.
+   */
+  defiSourceDocs: (defiId: string) => `weeklyChallenges/${defiId}/sourceDocs`,
 } as const;

@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
   const titre = String(corps.titre ?? '').trim();
   const description = String(corps.description ?? '').trim();
   const statut = String(corps.statut ?? 'brouillon') as StatutDefi;
-  const editionId = String(corps.editionId ?? '').trim();
   const debutAt = Number(corps.debutAt);
   const finAt = Number(corps.finAt);
 
@@ -60,12 +59,6 @@ export async function POST(request: NextRequest) {
   }
   if (!STATUTS.includes(statut)) {
     return NextResponse.json({ error: 'Statut inconnu.' }, { status: 400 });
-  }
-  if (!editionId) {
-    return NextResponse.json(
-      { error: 'L’édition est requise : le contenu du défi y est ancré.' },
-      { status: 400 }
-    );
   }
   if (!Number.isFinite(debutAt) || !Number.isFinite(finAt)) {
     return NextResponse.json({ error: 'Dates invalides.' }, { status: 400 });
@@ -145,13 +138,12 @@ export async function POST(request: NextRequest) {
       titre,
       description,
       statut,
-      editionId,
       debutAt,
       finAt,
       // `champion` et `participants` ne sont JAMAIS écrits ici : ils
       // appartiennent à la clôture. Les inclure permettrait de désigner un
       // champion à la main, ce qui viderait le classement de son sens.
-      ...(existant.exists ? {} : { champion: null, participants: 0, contenu: null, creeAt: maintenant }),
+      ...(existant.exists ? {} : { champion: null, participants: 0, contenu: null, source: null, creeAt: maintenant }),
       majAt: maintenant,
     },
     { merge: true }

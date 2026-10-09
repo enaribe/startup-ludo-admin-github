@@ -53,6 +53,43 @@ export interface DefiContenu {
   challengeEvents: unknown[];
 }
 
+/** Métadonnées du document déposé — le texte, lui, vit en sous-collection. */
+export interface DefiSource {
+  /** Nom du fichier original, affiché au back-office. */
+  nom: string;
+  /** Nombre de pages extraites. 0 si l'extracteur ne l'a pas renseigné. */
+  pages: number;
+  /** Taille du texte extrait, en caractères — indique la richesse disponible. */
+  caracteres: number;
+  deposeAt: number;
+}
+
+/** Quantités de cartes à générer, par type. */
+export interface MixDefi {
+  quiz: number;
+  duel: number;
+  funding: number;
+  opportunity: number;
+  challenge: number;
+}
+
+/**
+ * Mix par défaut d'un défi.
+ *
+ * Plus court qu'une séance de classe (8 quiz) : un défi se joue en quelques
+ * minutes, seul, et doit pouvoir être rejoué dans la semaine. Un contenu trop
+ * long ferait abandonner avant la fin, et le score ne refléterait alors que la
+ * patience du joueur. Ces valeurs sont un point de départ : le back-office les
+ * laisse ajuster selon la richesse du document.
+ */
+export const MIX_DEFI_DEFAUT: MixDefi = {
+  quiz: 6,
+  duel: 2,
+  funding: 2,
+  opportunity: 2,
+  challenge: 2,
+};
+
 /** Le contenu a-t-il au moins une carte ? Un défi vide ne doit pas s'ouvrir. */
 export function contenuNonVide(contenu: DefiContenu | null | undefined): boolean {
   if (!contenu) return false;
@@ -77,14 +114,20 @@ export interface WeeklyChallenge {
   statut: StatutDefi;
 
   /**
-   * Édition dans laquelle la partie du défi se déroule.
+   * Document source du défi — la matière première du contenu.
    *
-   * Imposée par le défi et non choisie par le joueur : le contenu généré est
-   * ancré sur une édition (secteurs, personas, valeurs de jetons), et le laisser
-   * jouer dans une autre produirait des incohérences — un financement calibré
-   * pour une édition dans l'économie d'une autre.
+   * ⚠️ LE TEXTE EXTRAIT N'EST PAS STOCKÉ ICI. Seules ses métadonnées le sont
+   * (nom du fichier, nombre de pages) : le texte d'un document peut peser
+   * plusieurs centaines de kilo-octets, et un document Firestore plafonne à
+   * 1 Mo — un défi lu à chaque ouverture de l'accueil n'a pas à le transporter.
+   *
+   * Le texte vit dans la sous-collection `weeklyChallenges/{id}/sourceDocs`,
+   * sur le modèle de `classSessions/{sid}/sourceDocs`. Seul le back-office le
+   * lit, au moment de générer.
+   *
+   * `null` quand aucun document n'a été déposé.
    */
-  editionId: string;
+  source: DefiSource | null;
 
   /**
    * Contenu de jeu du défi, généré UNE FOIS et figé.
@@ -99,6 +142,14 @@ export interface WeeklyChallenge {
    * Même forme que `ClassSessionContent` et `GameContentPack` : c'est ce qui
    * permet de l'injecter avec `eventManager.setContentPack()` SANS toucher au
    * moteur de jeu.
+   *
+   * ═══ LE CONTENU EST INDÉPENDANT DES ÉDITIONS ═══
+   *
+   * Il vient d'un document fourni avec le défi, pas d'une édition du jeu. Le
+   * moteur a besoin d'une édition pour le plateau (cases, secteurs affichés),
+   * mais AUCUNE de ses cartes n'est tirée : le pack du défi les remplace toutes.
+   * L'édition utilisée est donc un détail technique, choisi par le mobile et
+   * invisible du back-office — cf. `EDITION_PLATEAU_DEFI`.
    *
    * ⚠️ `null` tant que le contenu n'a pas été généré. Un défi sans contenu NE
    * DOIT PAS être ouvert — le back-office l'en empêche. Ouvrir un défi vide
@@ -210,8 +261,6 @@ export interface DefiGameContext {
   defiId: string;
   /** Recopié pour l'affichage en fin de partie, sans relire le défi. */
   titre: string;
-  /** Édition imposée par le défi — le joueur ne la choisit pas. */
-  editionId: string;
   /**
    * Clôture du défi, en ms.
    *
