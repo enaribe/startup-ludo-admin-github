@@ -122,3 +122,36 @@ export function idDefiScore(defiId: string, userId: string): string {
 export function defiAccepteDesScores(defi: WeeklyChallenge, maintenant = Date.now()): boolean {
   return defi.statut === 'ouvert' && maintenant >= defi.debutAt && maintenant < defi.finAt;
 }
+
+/**
+ * Contexte d'une partie jouée SUR le défi.
+ *
+ * Même forme que `ProgramGameContext` et `ClassGameContext` : un discriminant
+ * `origin` que `initGame` teste pour router le contexte.
+ *
+ * ⚠️ `origin: 'defi'` DOIT être testé dans `useGameStore.initGame` AVANT le
+ * repli qui déduit `challengeContext` par élimination. Ce repli capture tout
+ * contexte dont l'`origin` n'est pas reconnu : un contexte de défi y tomberait
+ * et le store irait chercher un sous-niveau du parcours YEAH qui n'existe pas.
+ * Le même bug s'est produit avec le Mode Classe — c'est écrit dans le
+ * commentaire de `initGame`.
+ *
+ * Le défi ne porte PAS de contenu de jeu dédié : il définit un thème, pas un
+ * pack de cartes. Une partie sur le défi se joue avec le contenu ordinaire de
+ * son édition ; seul le score compte à part.
+ */
+export interface DefiGameContext {
+  origin: 'defi';
+  /** Id du défi (`AAAA-Sxx`), clé de `defiScores/{defiId}_{uid}`. */
+  defiId: string;
+  /** Recopié pour l'affichage en fin de partie, sans relire le défi. */
+  titre: string;
+  /**
+   * Clôture du défi, en ms.
+   *
+   * Portée dans le contexte pour que la fin de partie puisse décider SANS
+   * relire Firestore : une partie commencée avant la clôture et finie après ne
+   * doit pas compter — le champion est déjà figé.
+   */
+  finAt: number;
+}
