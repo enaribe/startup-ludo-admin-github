@@ -41,9 +41,10 @@ import {
   ShieldCheck,
   ShoppingCart,
   TrendingUp,
-  Zap,
+  Trophy,
   UserCog,
   Users,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
@@ -102,6 +103,9 @@ const GROUPES: Array<{ titre: string; entrees: Entree[] }> = [
       { href: '/default-projects', libelle: 'Projets par défaut', Icon: FolderKanban },
       { href: '/progression', libelle: 'Rangs & XP', Icon: TrendingUp },
       { href: '/achievements', libelle: 'Achievements', Icon: Award },
+      // Thème hebdomadaire et son classement. Un seul défi peut être ouvert à
+      // la fois — la route `/api/defi/enregistrer` refuse le second.
+      { href: '/defis-semaine', libelle: 'Défi de la semaine', Icon: Trophy },
     ],
   },
 ];
@@ -125,6 +129,7 @@ function titreDepuisChemin(pathname: string): string {
     ['/default-projects', 'Projets par défaut'],
     ['/progression', 'Rangs & XP'],
     ['/achievements', 'Achievements'],
+    ['/defis-semaine', 'Défi de la semaine'],
     ['/settings', 'Paramètres'],
   ];
   for (const [prefixe, titre] of table) {
