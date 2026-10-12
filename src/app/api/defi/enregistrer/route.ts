@@ -3,7 +3,7 @@
  *
  *  POST /api/defi/enregistrer
  *      Authorization: Bearer <idToken super admin>
- *      { id?, titre, description, statut, debutAt, finAt }
+ *      { id?, titre, description, statut, debutAt, finAt, bannerUrl? }
  *      → 200 { ok: true, id }
  *      → 403 si l'appelant n'est pas super admin
  *      → 409 si l'ouverture entre en conflit avec un défi déjà ouvert
@@ -51,6 +51,18 @@ export async function POST(request: NextRequest) {
   const titre = String(corps.titre ?? '').trim();
   const description = String(corps.description ?? '').trim();
   const statut = String(corps.statut ?? 'brouillon') as StatutDefi;
+  /*
+    `bannerUrl` n'est traité que s'il est PRÉSENT dans le corps.
+
+    La requête d'écriture est un `merge` : écrire systématiquement ce champ
+    ferait disparaître l'image dès qu'un appelant ne l'envoie pas — un script,
+    ou un écran qui ne connaît pas encore le champ. On distingue donc « absent »
+    (ne pas toucher) de `''` (retirer l'image).
+  */
+  const banniereFournie = Object.prototype.hasOwnProperty.call(corps, 'bannerUrl');
+  const bannerUrl = banniereFournie
+    ? String((corps as { bannerUrl?: unknown }).bannerUrl ?? '').trim() || null
+    : null;
   const debutAt = Number(corps.debutAt);
   const finAt = Number(corps.finAt);
 
@@ -161,10 +173,23 @@ export async function POST(request: NextRequest) {
       statut,
       debutAt,
       finAt,
+      ...(banniereFournie ? { bannerUrl } : {}),
       // `champion` et `participants` ne sont JAMAIS écrits ici : ils
       // appartiennent à la clôture. Les inclure permettrait de désigner un
       // champion à la main, ce qui viderait le classement de son sens.
-      ...(existant.exists ? {} : { champion: null, participants: 0, contenu: null, source: null, creeAt: maintenant }),
+      ...(existant.exists
+        ? {}
+        : {
+            champion: null,
+            participants: 0,
+            contenu: null,
+            source: null,
+            // Initialisé à la création pour que la forme du document soit la
+            // même partout : le mobile tolère la clé absente, mais un document
+            // complet évite d'avoir à s'en souvenir.
+            bannerUrl: null,
+            creeAt: maintenant,
+          }),
       majAt: maintenant,
     },
     { merge: true }

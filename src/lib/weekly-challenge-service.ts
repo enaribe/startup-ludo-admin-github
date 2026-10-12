@@ -128,6 +128,14 @@ export interface SaisieDefi {
   statut: WeeklyChallenge['statut'];
   debutAt: number;
   finAt: number;
+  /**
+   * Image de fond de la carte d'accueil.
+   *
+   * ⚠️ OMETTRE la clé laisse l'image inchangée ; `''` ou `null` la retire.
+   * L'écriture est un `merge` côté serveur, qui ne touche au champ que s'il est
+   * présent — sinon un appelant qui l'ignore effacerait l'image.
+   */
+  bannerUrl?: string | null;
 }
 
 /**

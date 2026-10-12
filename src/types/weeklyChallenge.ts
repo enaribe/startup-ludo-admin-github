@@ -111,6 +111,20 @@ export interface WeeklyChallenge {
   /** Une à deux phrases. Ce que le joueur doit retenir du thème. */
   description: string;
 
+  /**
+   * Image de fond de la carte d'accueil, en pleine largeur.
+   *
+   * Même rôle que `bannerUrl` d'un `ProgramPartner`, et la carte du défi suit
+   * le même patron visuel (`PartnerHomeCard`). `null` ou absent : la carte
+   * retombe sur un fond dégradé, elle reste donc lisible sans image — un défi
+   * créé à la hâte ne doit pas produire une carte vide.
+   *
+   * ⚠️ OPTIONNEL AVEC `?`, pas seulement `| null` : les défis créés avant
+   * l'ajout du champ n'ont PAS la clé en base, et Firestore ne la matérialise
+   * pas à `null`. Un type non optionnel mentirait sur ce que le mobile reçoit.
+   */
+  bannerUrl?: string | null;
+
   statut: StatutDefi;
 
   /**

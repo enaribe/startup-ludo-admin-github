@@ -50,6 +50,7 @@ import {
   type WeeklyChallenge,
 } from '@/types/weeklyChallenge';
 import type { ClassSessionContent } from '@/types';
+import ImageUploadField from '@/components/ui/ImageUploadField';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
@@ -124,6 +125,15 @@ export default function PageDefi() {
   const [description, setDescription] = useState('');
   const [debutAt, setDebutAt] = useState(0);
   const [finAt, setFinAt] = useState(0);
+  /*
+    L'image reste dans le BROUILLON local, comme le titre et les dates.
+
+    `ImageUploadField` envoie le fichier au Storage immédiatement et rend son
+    URL, mais on n'écrit pas le défi pour autant : l'enregistrement se fait au
+    bouton. Sinon l'image partirait en base pendant qu'un titre modifié juste
+    au-dessus attendrait encore — deux comportements dans un même formulaire.
+  */
+  const [bannerUrl, setBannerUrl] = useState('');
   const [enregistrement, setEnregistrement] = useState(false);
 
   const [depot, setDepot] = useState(false);
@@ -154,6 +164,7 @@ export default function PageDefi() {
         setDescription(d.description);
         setDebutAt(d.debutAt);
         setFinAt(d.finAt);
+        setBannerUrl(d.bannerUrl ?? '');
         // Le classement n'a de sens qu'une fois le défi lancé.
         if (d.statut !== 'brouillon') setScores(await getClassementDefi(d.id));
       }
@@ -188,6 +199,10 @@ export default function PageDefi() {
         statut: statut ?? defi.statut,
         debutAt,
         finAt,
+        // Toujours transmis depuis CET écran, qui connaît le champ : `''`
+        // retire donc l'image, et c'est le comportement attendu du bouton
+        // « Retirer » du champ d'upload.
+        bannerUrl,
       });
       toast.success(statut === 'ouvert' ? 'Défi ouvert aux joueurs' : 'Enregistré');
       await charger();
@@ -425,6 +440,24 @@ export default function PageDefi() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+          {/*
+            `storagePath` porte l'id du défi : une image par défi, et remplacer
+            l'image d'un défi ne touche pas celle d'un autre.
+          */}
+          <ImageUploadField
+            label="Image de fond de la carte d’accueil"
+            value={bannerUrl}
+            onChange={setBannerUrl}
+            storagePath={`weeklyChallenges/${defi.id}/banner`}
+            aspectRatio="banner"
+            disabled={clos}
+          />
+          <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: -8 }}>
+            Optionnelle : sans image, la carte s’affiche sur un dégradé ambre.
+            Le thème et la description se superposent au visuel, en blanc —
+            préférez une image sans texte et plutôt sombre.
+          </p>
+
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="label">Ouverture (UTC)</label>
