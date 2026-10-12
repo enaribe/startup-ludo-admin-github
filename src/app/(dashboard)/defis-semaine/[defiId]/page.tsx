@@ -23,6 +23,17 @@
  * chemin à prendre, alors qu'il y en a un normal.
  *
  * Le document a donc perdu son numéro d'étape : il n'est plus obligatoire.
+ *
+ * ═══ UN SEUL BOUTON ÉCRIT ═══
+ *
+ * Les sections n'ont PAS chacune leur bouton d'enregistrement. La page en
+ * portait trois, et rien ne disait lequel sauvait quoi : modifier le titre puis
+ * cliquer sur celui du contenu perdait le titre en silence.
+ *
+ * Tout passe par la barre collée en bas, qui n'apparaît que s'il y a quelque
+ * chose à écrire et qui dit QUOI part. Les autres boutons primaires ne sont pas
+ * des enregistrements : « Importer un JSON » choisit un fichier, « Ouvrir »
+ * publie. Toute action ajoutée ici doit garder cette distinction.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -180,6 +191,28 @@ export default function PageDefi() {
     void charger();
   }, [authLoading, isSuperAdmin, charger]);
 
+  /**
+   * Enregistre TOUT ce qui est en attente, en un seul geste.
+   *
+   * ═══ POURQUOI UN SEUL BOUTON ═══
+   *
+   * La page portait trois boutons primaires — « Enregistrer » pour le thème,
+   * « Enregistrer ce contenu » pour les cartes, « Ouvrir » pour la mise en
+   * ligne — et rien ne disait lequel sauvait quoi. Modifier le titre puis
+   * cliquer sur celui du contenu perdait le titre, sans aucun avertissement.
+   *
+   * Un seul bouton, donc, qui écrit les deux. L'ouverture reste à part : ce
+   * n'est pas un enregistrement mais une publication, visible immédiatement par
+   * les joueurs, et elle mérite son geste propre.
+   *
+   * ⚠️ LE CONTENU EST ÉCRIT EN SECOND, et l'ordre compte : la route
+   * `/enregistrer` refuse une ouverture sans cartes. Écrire le thème d'abord
+   * garantit que le défi existe avec ses dates avant que le contenu l'y
+   * rejoigne.
+   *
+   * @param statut Statut à forcer — `'ouvert'` depuis le bouton de mise en
+   *   ligne. Sinon le statut courant est conservé.
+   */
   async function sauver(statut?: StatutDefi) {
     if (!defi) return;
     if (!titre.trim()) {
@@ -192,6 +225,24 @@ export default function PageDefi() {
     }
     setEnregistrement(true);
     try {
+      /*
+        ⚠️ LE CONTENU PART EN PREMIER, et l'ordre n'est pas indifférent.
+
+        `/api/defi/enregistrer` refuse en 409 une ouverture sans cartes
+        ENREGISTRÉES. Importer un JSON puis cliquer droit sur « Ouvrir »
+        enverrait donc le statut `ouvert` alors que les cartes sont encore dans
+        le brouillon local : refus, alors que le contenu est juste là, sous les
+        yeux de l'auteur.
+
+        Une exception ici laisse le brouillon à l'écran et le thème non
+        enregistré : rien n'est perdu, et le message dit quoi corriger.
+      */
+      let contenuEnregistre = false;
+      if (brouillonContenu) {
+        await enregistrerContenuDefi(defi.id, brouillonContenu);
+        contenuEnregistre = true;
+      }
+
       await enregistrerDefi({
         id: defi.id,
         titre,
@@ -204,9 +255,31 @@ export default function PageDefi() {
         // « Retirer » du champ d'upload.
         bannerUrl,
       });
-      toast.success(statut === 'ouvert' ? 'Défi ouvert aux joueurs' : 'Enregistré');
+
+      if (statut === 'ouvert') {
+        toast.success('Défi ouvert aux joueurs');
+      } else if (contenuEnregistre) {
+        toast.success(`Enregistré — ${nbCartes(brouillonContenu)} cartes`);
+      } else {
+        toast.success('Enregistré');
+      }
+
+      if (contenuEnregistre) {
+        setBrouillonContenu(null);
+        setAnomalies([]);
+      }
       await charger();
     } catch (error) {
+      /*
+        La route de contenu REVALIDE et peut refuser en 422 ce que l'écran a
+        accepté. On réaffiche alors les cartes fautives plutôt qu'un échec
+        global — même traitement que l'import.
+      */
+      if (error instanceof ErreurContenuInvalide) {
+        setAnomalies(error.anomalies);
+        toast.error(error.message, { duration: 9000 });
+        return;
+      }
       // Le message du serveur porte l'information utile — notamment le 409 qui
       // NOMME le défi déjà ouvert, ou dit qu'il manque le contenu.
       toast.error(error instanceof Error ? error.message : 'Enregistrement impossible', {
@@ -321,31 +394,6 @@ export default function PageDefi() {
     telecharger(exporterContenuJson(defi), `defi-${defi.id}.json`);
   }
 
-  async function validerContenu() {
-    if (!defi || !brouillonContenu) return;
-    try {
-      await enregistrerContenuDefi(defi.id, brouillonContenu);
-      toast.success('Contenu enregistré');
-      setBrouillonContenu(null);
-      setAnomalies([]);
-      await charger();
-    } catch (error) {
-      /*
-        La route REVALIDE le contenu et peut refuser en 422 ce que l'écran a
-        accepté — un écran plus ancien, ou une forme qui a dérivé. On réaffiche
-        alors les cartes fautives plutôt qu'un échec global.
-      */
-      if (error instanceof ErreurContenuInvalide) {
-        setAnomalies(error.anomalies);
-        toast.error(error.message, { duration: 9000 });
-        return;
-      }
-      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible', {
-        duration: 7000,
-      });
-    }
-  }
-
   async function confirmerCloture() {
     if (!defi) return;
     setCloture(true);
@@ -399,8 +447,29 @@ export default function PageDefi() {
   const cartesEnregistrees = nbCartes(defi.contenu as ClassSessionContent | null);
   const clos = defi.statut === 'clos';
 
+  /*
+    CE QUI EST EN ATTENTE D'ÉCRITURE.
+
+    La barre d'enregistrement n'apparaît que s'il y a vraiment quelque chose à
+    sauver : une barre toujours présente devient un décor qu'on ne regarde plus,
+    et on perd le signal « attention, vous avez des modifications ».
+
+    La comparaison porte sur les valeurs, pas sur un drapeau « touché » : ouvrir
+    un champ et y remettre la même chose ne doit pas réclamer un enregistrement.
+    `bannerUrl` compare `''` à `defi.bannerUrl ?? ''` — en base, l'absence
+    d'image peut être `null`, `''` ou la clé absente, les trois valant « pas
+    d'image ».
+  */
+  const themeModifie =
+    titre !== defi.titre ||
+    description !== defi.description ||
+    debutAt !== defi.debutAt ||
+    finAt !== defi.finAt ||
+    bannerUrl !== (defi.bannerUrl ?? '');
+  const aEnregistrer = !clos && (themeModifie || brouillonContenu !== null);
+
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div style={{ maxWidth: 760, paddingBottom: 8 }}>
       <div className="flex items-center justify-between mb-5">
         <button className="btn-secondary" onClick={() => router.push('/defis-semaine')}>
           <ArrowLeft size={14} style={{ display: 'inline', marginRight: 6 }} />
@@ -484,17 +553,6 @@ export default function PageDefi() {
               />
             </div>
           </div>
-          {!clos ? (
-            <div className="flex justify-end">
-              <button
-                className="btn-primary"
-                onClick={() => void sauver()}
-                disabled={enregistrement}
-              >
-                {enregistrement ? 'Enregistrement…' : 'Enregistrer'}
-              </button>
-            </div>
-          ) : null}
         </div>
       </section>
 
@@ -776,20 +834,17 @@ export default function PageDefi() {
               <strong style={{ fontSize: 13 }}>
                 À relire — {nbCartes(brouillonContenu)} cartes
               </strong>
-              <div className="flex gap-2">
-                <button
-                  className="btn-secondary"
-                  onClick={() => {
-                    setBrouillonContenu(null);
-                    setAnomalies([]);
-                  }}
-                >
-                  Jeter
-                </button>
-                <button className="btn-primary" onClick={() => void validerContenu()}>
-                  {cartesEnregistrees > 0 ? 'Remplacer le contenu' : 'Enregistrer ce contenu'}
-                </button>
-              </div>
+              {/* « Jeter » reste ici : c'est une action LOCALE sur ce brouillon,
+                  pas un enregistrement. L'écriture passe par la barre du bas. */}
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setBrouillonContenu(null);
+                  setAnomalies([]);
+                }}
+              >
+                Jeter
+              </button>
             </div>
             {cartesEnregistrees > 0 ? (
               <p style={{ fontSize: 12, color: '#B9791A', marginBottom: 10 }}>
@@ -857,7 +912,11 @@ export default function PageDefi() {
           </div>
         ) : defi.statut === 'brouillon' ? (
           <>
-            {cartesEnregistrees === 0 ? (
+            {/* Le BROUILLON compte : `sauver('ouvert')` l'écrit avant
+                d'ouvrir, donc un contenu relu mais pas encore enregistré
+                permet bien l'ouverture. Ne tester que `cartesEnregistrees`
+                bloquerait l'auteur juste après un import réussi. */}
+            {cartesEnregistrees === 0 && !brouillonContenu ? (
               <p style={{ fontSize: 12.5, color: '#B9791A' }}>
                 Importez d’abord le contenu : sans cartes, le défi n’a pas
                 d’épreuve à faire jouer.
@@ -920,6 +979,53 @@ export default function PageDefi() {
             </div>
           )}
         </section>
+      ) : null}
+
+      {/*
+        ═══ LA BARRE D'ENREGISTREMENT — LE SEUL BOUTON QUI ÉCRIT ═══
+
+        Collée en bas de la fenêtre : la page est longue, et un bouton en fin de
+        document obligerait à défiler jusqu'en bas après avoir corrigé un champ
+        tout en haut.
+
+        `paddingBottom` sur le conteneur de page plus bas compense sa hauteur,
+        sinon elle masquerait le classement.
+      */}
+      {aEnregistrer ? (
+        <div
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            marginTop: 16,
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(12, 36, 62, 0.92)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid var(--color-card-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
+            {/* Dire CE QUI part : sans ça, l'auteur ne sait pas si son
+                contenu relu est inclus dans le même geste. */}
+            {brouillonContenu && themeModifie
+              ? `Thème modifié et ${nbCartes(brouillonContenu)} cartes à enregistrer`
+              : brouillonContenu
+                ? `${nbCartes(brouillonContenu)} cartes à enregistrer`
+                : 'Modifications non enregistrées'}
+          </span>
+          <button
+            className="btn-primary"
+            onClick={() => void sauver()}
+            disabled={enregistrement}
+            style={{ flexShrink: 0 }}
+          >
+            {enregistrement ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
       ) : null}
 
       <ConfirmDialog
