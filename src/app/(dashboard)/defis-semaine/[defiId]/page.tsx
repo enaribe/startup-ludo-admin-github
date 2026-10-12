@@ -1,33 +1,47 @@
 'use client';
 
 /**
- * Un défi de la semaine — le parcours complet, en quatre étapes.
+ * Un défi de la semaine — le parcours complet, en trois étapes.
  *
  * ═══ POURQUOI DES SECTIONS NUMÉROTÉES ═══
  *
- * Le défi se prépare dans un ORDRE : sans document, pas de génération ; sans
- * contenu, pas d'ouverture. La première version de cet écran exposait ces
- * actions comme cinq icônes côte à côte sur une carte de liste, ce qui cachait
- * l'ordre et obligeait à deviner quoi faire ensuite.
+ * Le défi se prépare dans un ORDRE : sans contenu, pas d'ouverture. La première
+ * version de cet écran exposait ces actions comme cinq icônes côte à côte sur
+ * une carte de liste, ce qui cachait l'ordre et obligeait à deviner quoi faire
+ * ensuite.
  *
  * Les sections rendent la dépendance visible : chacune dit ce qu'elle attend,
  * et une étape non franchie désactive la suivante en expliquant pourquoi.
  * Même forme que `seances-pretes/[readyId]`.
+ *
+ * ═══ LE CONTENU ARRIVE PAR IMPORT JSON ═══
+ *
+ * L'étape 2 attend un JSON de cartes déjà rédigé. Le dépôt d'un document et la
+ * génération IA sont REPLIÉS dans un `<details>` : ils ne servent qu'à produire
+ * une première version quand on n'a rien, qu'on exporte ensuite en JSON pour la
+ * corriger. Les présenter au même niveau que l'import ferait hésiter sur le
+ * chemin à prendre, alors qu'il y en a un normal.
+ *
+ * Le document a donc perdu son numéro d'étape : il n'est plus obligatoire.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Sparkles, Upload } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Download, FileJson, FileText, Sparkles, Upload } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   cloturerDefi,
   deposerDocumentDefi,
   enregistrerContenuDefi,
   enregistrerDefi,
+  exporterContenuJson,
   genererContenuDefi,
   getClassementDefi,
   getDefi,
+  lireContenuJson,
+  ErreurContenuInvalide,
 } from '@/lib/weekly-challenge-service';
+import { modeleContenuJson, type AnomalieImport } from '@/lib/defi-json-import';
 import {
   MIX_DEFI_DEFAUT,
   type DefiScore,
@@ -117,6 +131,15 @@ export default function PageDefi() {
   const [generation, setGeneration] = useState(false);
   /** Contenu en attente de relecture — non encore enregistré. */
   const [brouillonContenu, setBrouillonContenu] = useState<ClassSessionContent | null>(null);
+  const [importJson, setImportJson] = useState(false);
+  /** Anomalies du dernier import : erreurs bloquantes ou corrections appliquées. */
+  const [anomalies, setAnomalies] = useState<AnomalieImport[]>([]);
+  /*
+    La génération IA est REPLIÉE par défaut. Le chemin normal est l'import d'un
+    JSON déjà rédigé ; la génération ne sert qu'à partir de rien, et l'exposer
+    au même niveau redonnerait à l'écran l'encombrement qu'on vient d'en retirer.
+  */
+  const [voirGeneration, setVoirGeneration] = useState(false);
 
   const [scores, setScores] = useState<DefiScore[]>([]);
   const [aCloturer, setACloturer] = useState(false);
@@ -217,14 +240,91 @@ export default function PageDefi() {
     }
   }
 
+  /**
+   * Importe un JSON de contenu : validation, puis relecture à l'écran.
+   *
+   * Rien n'est enregistré ici. L'auteur doit voir les corrections automatiques
+   * (un signe de jetons retourné, une catégorie ramenée) avant de valider —
+   * elles ne se verraient jamais en partie.
+   */
+  async function importer(fichier: File) {
+    setImportJson(true);
+    setAnomalies([]);
+    setBrouillonContenu(null);
+    try {
+      const resultat = await lireContenuJson(fichier);
+      setAnomalies(resultat.anomalies);
+
+      if (!resultat.contenu) {
+        const nb = resultat.anomalies.filter((a) => a.bloquant).length;
+        toast.error(
+          `${nb} problème${nb > 1 ? 's' : ''} à corriger — rien n'a été importé.`,
+          { duration: 7000 }
+        );
+        return;
+      }
+
+      setBrouillonContenu(resultat.contenu);
+      const corrections = resultat.anomalies.filter((a) => !a.bloquant).length;
+      toast.success(
+        corrections > 0
+          ? `${nbCartes(resultat.contenu)} cartes lues, ${corrections} correction${corrections > 1 ? 's' : ''} appliquée${corrections > 1 ? 's' : ''} — à vérifier ci-dessous`
+          : `${nbCartes(resultat.contenu)} cartes lues — relisez avant d'enregistrer`,
+        { duration: 6000 }
+      );
+    } catch (error) {
+      // Le message de `JSON.parse` porte la POSITION de l'erreur de syntaxe :
+      // c'est l'information la plus utile sur un fichier écrit à la main.
+      toast.error(error instanceof Error ? error.message : 'Lecture impossible', {
+        duration: 9000,
+      });
+    } finally {
+      setImportJson(false);
+    }
+  }
+
+  /** Déclenche le téléchargement d'un contenu texte. */
+  function telecharger(contenu: string, nom: string) {
+    const blob = new Blob([contenu], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nom;
+    lien.click();
+    // Sans révocation, le blob reste en mémoire jusqu'au rechargement de l'onglet.
+    URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Exporte le contenu en base, au format réimportable.
+   *
+   * Le chemin prévu pour retoucher un contenu généré par l'IA : exporter,
+   * corriger dans un éditeur, réimporter.
+   */
+  function exporter() {
+    if (!defi) return;
+    telecharger(exporterContenuJson(defi), `defi-${defi.id}.json`);
+  }
+
   async function validerContenu() {
     if (!defi || !brouillonContenu) return;
     try {
       await enregistrerContenuDefi(defi.id, brouillonContenu);
       toast.success('Contenu enregistré');
       setBrouillonContenu(null);
+      setAnomalies([]);
       await charger();
     } catch (error) {
+      /*
+        La route REVALIDE le contenu et peut refuser en 422 ce que l'écran a
+        accepté — un écran plus ancien, ou une forme qui a dérivé. On réaffiche
+        alors les cartes fautives plutôt qu'un échec global.
+      */
+      if (error instanceof ErreurContenuInvalide) {
+        setAnomalies(error.anomalies);
+        toast.error(error.message, { duration: 9000 });
+        return;
+      }
       toast.error(error instanceof Error ? error.message : 'Enregistrement impossible', {
         duration: 7000,
       });
@@ -365,198 +465,344 @@ export default function PageDefi() {
         </div>
       </section>
 
-      {/* ═══ 2. Le document ═══ */}
+      {/* ═══ 2. Le contenu ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
           numero={2}
-          titre="Le document"
-          aide="La matière première : c’est lui qui fournit les cartes, pas les éditions du jeu."
-          fait={!!defi.source}
-        />
-        {defi.source ? (
-          <div
-            className="flex items-center justify-between gap-3 mb-3"
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              background: 'var(--color-surface)',
-              fontSize: 13,
-            }}
-          >
-            <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
-              <FileText size={14} color="var(--color-text-muted)" />
-              {defi.source.nom}
-            </span>
-            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', flexShrink: 0 }}>
-              {defi.source.pages > 0 ? `${defi.source.pages} p · ` : ''}
-              {defi.source.caracteres.toLocaleString('fr-FR')} caractères
-            </span>
-          </div>
-        ) : (
-          <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 12 }}>
-            PDF, DOCX, TXT ou MD. Un seul document par défi — en déposer un
-            nouveau remplace le précédent.
-          </p>
-        )}
-        {!clos ? (
-          <label
-            className="btn-secondary"
-            style={{ cursor: depot ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center' }}
-          >
-            <Upload size={14} style={{ marginRight: 6 }} />
-            {depot ? 'Extraction…' : defi.source ? 'Remplacer le document' : 'Déposer le document'}
-            <input
-              type="file"
-              accept=".pdf,.docx,.txt,.md"
-              style={{ display: 'none' }}
-              disabled={depot}
-              onChange={(e) => {
-                const fichier = e.target.files?.[0];
-                // On remet la valeur à zéro : sans ça, déposer deux fois le même
-                // fichier ne déclenche pas `onChange` la seconde fois.
-                e.target.value = '';
-                if (fichier) void deposer(fichier);
-              }}
-            />
-          </label>
-        ) : null}
-      </section>
-
-      {/* ═══ 3. Le contenu ═══ */}
-      <section className="glass-card p-5 mb-3">
-        <TitreSection
-          numero={3}
           titre="Le contenu"
-          aide="Généré depuis le document, puis relu. Rien ne détecte une question fausse à votre place."
+          aide="Les cartes jouées pendant le défi. Importez un JSON, ou générez-le depuis un document."
           fait={cartesEnregistrees > 0}
         />
 
-        {!defi.source ? (
-          <p style={{ fontSize: 12.5, color: '#B9791A' }}>
-            Déposez d’abord le document : c’est lui qui fournit le contenu.
-          </p>
-        ) : (
+        {cartesEnregistrees > 0 ? (
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <span style={{ fontSize: 12.5, color: '#2EA043', fontWeight: 600 }}>
+              {cartesEnregistrees} cartes enregistrées
+            </span>
+            <button className="btn-secondary" onClick={exporter}>
+              <Download size={14} style={{ display: 'inline', marginRight: 6 }} />
+              Exporter le JSON
+            </button>
+          </div>
+        ) : null}
+
+        {!clos ? (
           <>
-            {cartesEnregistrees > 0 ? (
-              <p style={{ fontSize: 12.5, color: '#2EA043', fontWeight: 600, marginBottom: 12 }}>
-                {cartesEnregistrees} cartes enregistrées
-              </p>
-            ) : null}
+            <label
+              className="btn-primary"
+              style={{
+                cursor: importJson ? 'wait' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              <FileJson size={14} style={{ marginRight: 6 }} />
+              {importJson
+                ? 'Lecture…'
+                : cartesEnregistrees > 0
+                  ? 'Importer un autre JSON'
+                  : 'Importer un JSON'}
+              <input
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                disabled={importJson}
+                onChange={(e) => {
+                  const fichier = e.target.files?.[0];
+                  // Remise à zéro : sans ça, réimporter le MÊME fichier après
+                  // correction ne déclenche pas `onChange` la seconde fois —
+                  // or c'est exactement le geste attendu après une erreur.
+                  e.target.value = '';
+                  if (fichier) void importer(fichier);
+                }}
+              />
+            </label>
 
-            {!clos ? (
-              <>
-                <div className="flex flex-wrap gap-3 mb-4">
-                  {(
-                    [
-                      ['quiz', 'Quiz'],
-                      ['duel', 'Duels'],
-                      ['funding', 'Financements'],
-                      ['opportunity', 'Opportunités'],
-                      ['challenge', 'Challenges'],
-                    ] as const
-                  ).map(([cle, label]) => (
-                    <div key={cle} style={{ width: 104 }}>
-                      <label className="label" style={{ fontSize: 10.5 }}>
-                        {label}
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={30}
-                        className="input-field"
-                        value={mix[cle]}
-                        onChange={(e) =>
-                          setMix({
-                            ...mix,
-                            // Borné : le prompt tronque de toute façon, mais une
-                            // valeur absurde ferait dépenser du quota pour rien.
-                            [cle]: Math.max(0, Math.min(30, Number(e.target.value) || 0)),
-                          })
-                        }
-                      />
-                    </div>
-                  ))}
-                </div>
-                <button
-                  className="btn-secondary"
-                  onClick={() => void generer()}
-                  disabled={generation}
-                >
-                  <Sparkles size={14} style={{ display: 'inline', marginRight: 6 }} />
-                  {generation
-                    ? 'Génération… (quelques dizaines de secondes)'
-                    : cartesEnregistrees > 0
-                      ? 'Régénérer'
-                      : 'Générer le contenu'}
-                </button>
-              </>
-            ) : null}
-
-            {/* La relecture, en place : pas de modale. Elle se ferme d'un clic
-                hors cadre et le contenu généré serait perdu. */}
-            {brouillonContenu ? (
-              <div
+            {/* Le modèle, à côté de l'import : le format a trois subtilités
+                qu'un fichier d'exemple fait comprendre mieux qu'une aide. */}
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 10 }}>
+              Format attendu :{' '}
+              <button
+                onClick={() => telecharger(modeleContenuJson(), 'modele-defi.json')}
                 style={{
-                  marginTop: 18,
-                  paddingTop: 16,
-                  borderTop: '1px solid var(--color-card-border)',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  font: 'inherit',
+                  color: 'var(--color-primary)',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
                 }}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <strong style={{ fontSize: 13 }}>
-                    À relire — {nbCartes(brouillonContenu)} cartes
-                  </strong>
-                  <div className="flex gap-2">
-                    <button className="btn-secondary" onClick={() => setBrouillonContenu(null)}>
-                      Jeter
+                télécharger un fichier d’exemple
+              </button>{' '}
+              — une carte de chaque type, à dupliquer.
+            </p>
+
+            <details
+              style={{ marginTop: 14 }}
+              open={voirGeneration}
+              onToggle={(e) => setVoirGeneration((e.target as HTMLDetailsElement).open)}
+            >
+              <summary
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                Je n’ai pas encore de JSON — générer depuis un document
+              </summary>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  paddingLeft: 14,
+                  borderLeft: '2px solid var(--color-card-border)',
+                }}
+              >
+                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+                  Déposez un document, générez une première version, puis
+                  exportez-la en JSON pour la corriger et la réimporter.
+                </p>
+
+                {/* ─ Le document source ─ */}
+                {defi.source ? (
+                  <div
+                    className="flex items-center justify-between gap-3 mb-3"
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      background: 'var(--color-surface)',
+                      fontSize: 13,
+                    }}
+                  >
+                    <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                      <FileText size={14} color="var(--color-text-muted)" />
+                      {defi.source.nom}
+                    </span>
+                    <span
+                      style={{ fontSize: 11.5, color: 'var(--color-text-muted)', flexShrink: 0 }}
+                    >
+                      {defi.source.pages > 0 ? `${defi.source.pages} p · ` : ''}
+                      {defi.source.caracteres.toLocaleString('fr-FR')} caractères
+                    </span>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+                    PDF, DOCX, TXT ou MD. Un seul document par défi.
+                  </p>
+                )}
+
+                <label
+                  className="btn-secondary"
+                  style={{
+                    cursor: depot ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    marginBottom: 14,
+                  }}
+                >
+                  <Upload size={14} style={{ marginRight: 6 }} />
+                  {depot
+                    ? 'Extraction…'
+                    : defi.source
+                      ? 'Remplacer le document'
+                      : 'Déposer le document'}
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md"
+                    style={{ display: 'none' }}
+                    disabled={depot}
+                    onChange={(e) => {
+                      const fichier = e.target.files?.[0];
+                      e.target.value = '';
+                      if (fichier) void deposer(fichier);
+                    }}
+                  />
+                </label>
+
+                {/* ─ Les quantités, puis la génération ─ */}
+                {!defi.source ? (
+                  <p style={{ fontSize: 12.5, color: '#B9791A' }}>
+                    Déposez d’abord le document : c’est lui qui fournit le contenu.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-3 mb-4">
+                      {(
+                        [
+                          ['quiz', 'Quiz'],
+                          ['duel', 'Duels'],
+                          ['funding', 'Financements'],
+                          ['opportunity', 'Opportunités'],
+                          ['challenge', 'Challenges'],
+                        ] as const
+                      ).map(([cle, label]) => (
+                        <div key={cle} style={{ width: 104 }}>
+                          <label className="label" style={{ fontSize: 10.5 }}>
+                            {label}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={30}
+                            className="input-field"
+                            value={mix[cle]}
+                            onChange={(e) =>
+                              setMix({
+                                ...mix,
+                                // Borné : le prompt tronque de toute façon, mais une
+                                // valeur absurde ferait dépenser du quota pour rien.
+                                [cle]: Math.max(0, Math.min(30, Number(e.target.value) || 0)),
+                              })
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => void generer()}
+                      disabled={generation}
+                    >
+                      <Sparkles size={14} style={{ display: 'inline', marginRight: 6 }} />
+                      {generation
+                        ? 'Génération… (quelques dizaines de secondes)'
+                        : 'Générer une première version'}
                     </button>
-                    <button className="btn-primary" onClick={() => void validerContenu()}>
-                      Enregistrer ce contenu
-                    </button>
+                  </>
+                )}
+              </div>
+            </details>
+          </>
+        ) : null}
+
+        {/* ═══ Les anomalies du dernier import ═══ */}
+        {anomalies.length > 0 ? (
+          <div
+            style={{
+              marginTop: 18,
+              padding: '12px 14px',
+              borderRadius: 10,
+              background: anomalies.some((a) => a.bloquant)
+                ? 'rgba(248,81,73,0.08)'
+                : 'rgba(185,121,26,0.08)',
+              border: `1px solid ${
+                anomalies.some((a) => a.bloquant)
+                  ? 'rgba(248,81,73,0.25)'
+                  : 'rgba(185,121,26,0.25)'
+              }`,
+            }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle
+                size={14}
+                color={anomalies.some((a) => a.bloquant) ? '#F85149' : '#B9791A'}
+              />
+              <strong style={{ fontSize: 12.5 }}>
+                {anomalies.some((a) => a.bloquant)
+                  ? 'À corriger dans le fichier — rien n’a été importé'
+                  : 'Corrections appliquées automatiquement'}
+              </strong>
+            </div>
+            <div className="flex flex-col gap-1">
+              {/* Les bloquantes d'abord : c'est ce qui empêche l'import. */}
+              {[...anomalies]
+                .sort((a, b) => Number(b.bloquant) - Number(a.bloquant))
+                .map((a, i) => (
+                  <div key={i} style={{ fontSize: 12, lineHeight: 1.45 }}>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: a.bloquant ? '#F85149' : '#B9791A',
+                        marginRight: 6,
+                      }}
+                    >
+                      {a.ou}
+                    </span>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>{a.message}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* La relecture, en place : pas de modale. Elle se ferme d'un clic
+            hors cadre et le contenu lu serait perdu. */}
+        {brouillonContenu ? (
+          <div
+            style={{
+              marginTop: 18,
+              paddingTop: 16,
+              borderTop: '1px solid var(--color-card-border)',
+            }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <strong style={{ fontSize: 13 }}>
+                À relire — {nbCartes(brouillonContenu)} cartes
+              </strong>
+              <div className="flex gap-2">
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setBrouillonContenu(null);
+                    setAnomalies([]);
+                  }}
+                >
+                  Jeter
+                </button>
+                <button className="btn-primary" onClick={() => void validerContenu()}>
+                  {cartesEnregistrees > 0 ? 'Remplacer le contenu' : 'Enregistrer ce contenu'}
+                </button>
+              </div>
+            </div>
+            {cartesEnregistrees > 0 ? (
+              <p style={{ fontSize: 12, color: '#B9791A', marginBottom: 10 }}>
+                Ce contenu REMPLACE les {cartesEnregistrees} cartes enregistrées.
+              </p>
+            ) : null}
+            {(
+              [
+                ['Quiz', brouillonContenu.quizzes],
+                ['Duels', brouillonContenu.duels],
+                ['Financements', brouillonContenu.fundings],
+                ['Opportunités', brouillonContenu.opportunities],
+                ['Challenges', brouillonContenu.challengeEvents],
+              ] as const
+            )
+              .filter(([, liste]) => liste.length > 0)
+              .map(([label, liste]) => (
+                <div key={label} className="mb-3">
+                  <div className="label" style={{ marginBottom: 5 }}>
+                    {label} ({liste.length})
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {liste.map((carte, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          fontSize: 12,
+                          padding: '6px 10px',
+                          borderRadius: 8,
+                          background: 'var(--color-surface)',
+                        }}
+                      >
+                        {libelleCarte(carte)}
+                      </div>
+                    ))}
                   </div>
                 </div>
-                {(
-                  [
-                    ['Quiz', brouillonContenu.quizzes],
-                    ['Duels', brouillonContenu.duels],
-                    ['Financements', brouillonContenu.fundings],
-                    ['Opportunités', brouillonContenu.opportunities],
-                    ['Challenges', brouillonContenu.challengeEvents],
-                  ] as const
-                )
-                  .filter(([, liste]) => liste.length > 0)
-                  .map(([label, liste]) => (
-                    <div key={label} className="mb-3">
-                      <div className="label" style={{ marginBottom: 5 }}>
-                        {label} ({liste.length})
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {liste.map((carte, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              fontSize: 12,
-                              padding: '6px 10px',
-                              borderRadius: 8,
-                              background: 'var(--color-surface)',
-                            }}
-                          >
-                            {libelleCarte(carte)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : null}
-          </>
-        )}
+              ))}
+          </div>
+        ) : null}
       </section>
 
-      {/* ═══ 4. Ouvrir, puis clôturer ═══ */}
+      {/* ═══ 3. Ouvrir, puis clôturer ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
-          numero={4}
+          numero={3}
           titre="Mise en ligne"
           aide="Un seul défi peut être en cours à la fois."
           fait={defi.statut !== 'brouillon'}
@@ -580,8 +826,8 @@ export default function PageDefi() {
           <>
             {cartesEnregistrees === 0 ? (
               <p style={{ fontSize: 12.5, color: '#B9791A' }}>
-                Enregistrez d’abord le contenu : sans cartes, la partie tirerait
-                celles de l’édition et le défi n’aurait plus de thème.
+                Importez d’abord le contenu : sans cartes, le défi n’a pas
+                d’épreuve à faire jouer.
               </p>
             ) : (
               <button

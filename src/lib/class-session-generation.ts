@@ -19,7 +19,7 @@
  */
 
 import { appelerExtraction, appelerGeneration } from '@/lib/ai-client';
-import { CATEGORIES_QUIZ, type CategorieQuiz } from '@/lib/ai-prompts';
+import { normaliserCategorie, normaliserDifficulte } from '@/lib/contenu-normalisation';
 import {
   getSessionSourceText,
   saveSessionSourceDoc,
@@ -217,51 +217,13 @@ function nombre(valeur: unknown, defaut: number): number {
   return Number.isFinite(n) ? n : defaut;
 }
 
-/**
- * Ramène une catégorie dans la liste fermée.
- *
- * Le modèle respecte la consigne la plupart du temps, mais pas toujours : il
- * produit « Business Model », « Financement des startups », ou une catégorie
- * inédite. Sans ce filet, une seule dérive suffit à recréer le foisonnement que
- * la liste fermée existe précisément pour empêcher — et le rapport du lot 6
- * afficherait deux lignes pour la même notion.
- *
- * Repli sur `strategie` : c'est la catégorie la plus large, et il vaut mieux une
- * question mal rangée qu'une catégorie hors liste dans les statistiques.
- */
-export function normaliserCategorie(valeur: unknown): CategorieQuiz {
-  const brut = texte(valeur)
-    .toLowerCase()
-    .replace(/[\s_]+/g, '-')
-    // Retire les accents : « stratégie » doit tomber sur « strategie ».
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  const exact = CATEGORIES_QUIZ.find((c) => c === brut);
-  if (exact) return exact;
-  // Correspondance partielle : « business-model-canvas » → « business-model ».
-  // Le seuil de 3 caractères évite qu'une catégorie absente ou d'une lettre
-  // tombe sur la première de la liste par simple inclusion de sous-chaîne.
-  const partiel =
-    brut.length >= 3
-      ? CATEGORIES_QUIZ.find((c) => brut.includes(c) || c.includes(brut))
-      : undefined;
-  return partiel ?? 'strategie';
-}
-
-/** Difficultés acceptées. */
-const DIFFICULTES: DifficultyLevel[] = ['facile', 'moyen', 'difficile'];
-
-/**
- * Ramène une difficulté dans les trois valeurs acceptées.
- *
- * Repli sur `moyen` quand le champ est absent : le laisser vide priverait le lot 6
- * de la dérivation du niveau N1–N4 sur cette question, ce qui est exactement le
- * défaut constaté sur les 130 quiz historiques.
- */
-export function normaliserDifficulte(valeur: unknown): DifficultyLevel {
-  const brut = texte(valeur).toLowerCase();
-  return DIFFICULTES.find((d) => d === brut) ?? 'moyen';
-}
+/*
+  `normaliserCategorie` et `normaliserDifficulte` ont été déplacées dans
+  `contenu-normalisation.ts` : elles sont pures, alors que ce module importe
+  Firestore via `class-session-service`. L'import JSON du défi en a besoin sans
+  avoir à charger la chaîne IA. Réexportées ici pour les appelants existants.
+*/
+export { normaliserCategorie, normaliserDifficulte };
 
 /**
  * Convertit la réponse brute du modèle en `ClassSessionContent` typé et sûr.

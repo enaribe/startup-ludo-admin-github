@@ -18,6 +18,17 @@
  *
  * `defiScores` est en LECTURE SEULE ici : c'est le mobile qui l'écrit pendant
  * les parties (cf. `COLLECTIONS.defiScores`).
+ *
+ * ═══ DEUX VOIES POUR LE CONTENU ═══
+ *
+ *   1. IMPORT D'UN JSON déjà rédigé (`lireContenuJson`) — la voie principale.
+ *      Chaque carte est validée et les problèmes sont rapportés avec leur
+ *      position dans le fichier, au lieu d'être écartés en silence.
+ *   2. GÉNÉRATION IA depuis un document (`deposerDocumentDefi` +
+ *      `genererContenuDefi`) — conservée pour partir de rien : on génère, on
+ *      exporte le JSON, on le corrige, on le réimporte.
+ *
+ * Les deux aboutissent au même `enregistrerContenuDefi`, et la route revalide.
  */
 import {
   collection,
@@ -33,6 +44,11 @@ import {
 } from 'firebase/firestore';
 import { appelerExtraction, appelerGeneration } from '@/lib/ai-client';
 import { normaliserContenu } from '@/lib/class-session-generation';
+import {
+  importerContenuJson,
+  type AnomalieImport,
+  type ResultatImport,
+} from '@/lib/defi-json-import';
 import { auth, firestore, COLLECTIONS } from './firebase';
 import type { ClassSessionContent } from '@/types';
 import {
@@ -175,7 +191,28 @@ export function prochaineSemaine(depuis = Date.now()): { debutAt: number; finAt:
   return { debutAt: lundi.getTime(), finAt: dimanche.getTime() };
 }
 
-/** Enregistre le contenu généré sur le défi, après relecture. */
+/**
+ * Erreur d'enregistrement portant les cartes fautives relevées par le serveur.
+ *
+ * Un `Error` nu perdrait la liste : l'écran ne pourrait afficher qu'un message
+ * global, alors que l'auteur a besoin de savoir QUELLES cartes corriger.
+ */
+export class ErreurContenuInvalide extends Error {
+  constructor(
+    message: string,
+    readonly anomalies: AnomalieImport[]
+  ) {
+    super(message);
+    this.name = 'ErreurContenuInvalide';
+  }
+}
+
+/**
+ * Enregistre le contenu sur le défi, après relecture.
+ *
+ * La route revalide chaque carte et répond 422 avec la liste des cartes
+ * fautives : on la propage telle quelle plutôt que de la résumer.
+ */
 export async function enregistrerContenuDefi(
   id: string,
   contenu: ClassSessionContent
@@ -186,7 +223,82 @@ export async function enregistrerContenuDefi(
     body: JSON.stringify({ id, contenu }),
   });
   const donnees = await reponse.json();
-  if (!reponse.ok) throw new Error(donnees.error || 'Enregistrement du contenu impossible');
+  if (!reponse.ok) {
+    const message = donnees.error || 'Enregistrement du contenu impossible';
+    if (Array.isArray(donnees.anomalies) && donnees.anomalies.length > 0) {
+      throw new ErreurContenuInvalide(message, donnees.anomalies as AnomalieImport[]);
+    }
+    throw new Error(message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPORT / EXPORT JSON DU CONTENU
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Taille maximale du fichier JSON accepté. */
+const TAILLE_MAX_JSON = 4 * 1024 * 1024;
+
+/**
+ * Lit un fichier JSON de contenu et le valide, SANS rien enregistrer.
+ *
+ * Deux temps volontairement séparés : on lit et on rapporte, puis l'auteur
+ * relit à l'écran et décide d'enregistrer. Un import qui écrirait directement
+ * ne laisserait aucune occasion de voir les corrections automatiques — un signe
+ * de jetons retourné, par exemple, qui ne se verrait jamais en partie.
+ *
+ * ⚠️ Le fichier n'est PAS conservé : seules les cartes validées partent en base,
+ * comme pour le document source. Rien à re-télécharger depuis le back-office,
+ * puisque l'export reconstruit un JSON réimportable depuis le contenu en base.
+ */
+export async function lireContenuJson(fichier: File): Promise<ResultatImport> {
+  if (fichier.size > TAILLE_MAX_JSON) {
+    throw new Error(
+      `Fichier trop volumineux (${(fichier.size / 1024 / 1024).toFixed(1)} Mo, maximum 4 Mo).`
+    );
+  }
+
+  const texte = await fichier.text();
+  let brut: unknown;
+  try {
+    brut = JSON.parse(texte);
+  } catch (error) {
+    /*
+      Le message de `JSON.parse` donne la POSITION de l'erreur (« at position
+      1423 »), ce qui est l'information la plus utile sur un fichier écrit à la
+      main — virgule en trop, guillemet oublié. On le garde tel quel.
+    */
+    throw new Error(
+      `JSON invalide : ${error instanceof Error ? error.message : 'syntaxe incorrecte'}`
+    );
+  }
+
+  // Seed horodaté : réimporter ne recrée pas les ids du contenu précédent.
+  return importerContenuJson(brut, `i${Date.now().toString(36)}`);
+}
+
+/**
+ * Le contenu d'un défi, en JSON réimportable.
+ *
+ * Même forme que celle attendue à l'import — on peut donc exporter, corriger
+ * dans un éditeur, et réimporter. C'est le chemin prévu pour retoucher un
+ * contenu d'abord produit par l'IA.
+ */
+export function exporterContenuJson(defi: WeeklyChallenge): string {
+  const contenu = (defi.contenu ?? {}) as Partial<ClassSessionContent>;
+  return JSON.stringify(
+    {
+      defi: defi.id,
+      titre: defi.titre,
+      quizzes: contenu.quizzes ?? [],
+      duels: contenu.duels ?? [],
+      fundings: contenu.fundings ?? [],
+      opportunities: contenu.opportunities ?? [],
+      challengeEvents: contenu.challengeEvents ?? [],
+    },
+    null,
+    2
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

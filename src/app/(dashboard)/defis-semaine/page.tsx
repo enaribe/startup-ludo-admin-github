@@ -92,9 +92,14 @@ function etape(d: WeeklyChallenge): { texte: string; couleur: string } {
       ? { texte: `🏆 ${d.champion.displayName} — ${d.champion.xp} XP`, couleur: '#B9791A' }
       : { texte: 'Clos sans participant', couleur: 'var(--color-text-muted)' };
   }
-  if (!d.source) return { texte: '1 — Déposer le document', couleur: '#B9791A' };
-  if (nbCartes(d) === 0) return { texte: '2 — Générer le contenu', couleur: '#B9791A' };
-  if (d.statut === 'brouillon') return { texte: '3 — Prêt à ouvrir', couleur: '#2EA043' };
+  /*
+    Le document source n'entre PLUS dans cette suite d'étapes : le contenu
+    s'importe en JSON sans document, et un défi prêt afficherait pour toujours
+    « déposer le document » s'il restait testé ici. Seules les cartes comptent.
+  */
+  if (nbCartes(d) === 0) return { texte: '1 — Importer le contenu', couleur: '#B9791A' };
+  if (d.statut === 'brouillon')
+    return { texte: `2 — Prêt à ouvrir · ${nbCartes(d)} cartes`, couleur: '#2EA043' };
   return { texte: `En cours · ${nbCartes(d)} cartes`, couleur: '#2EA043' };
 }
 

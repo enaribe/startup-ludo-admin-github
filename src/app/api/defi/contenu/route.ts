@@ -17,15 +17,26 @@
  * ⚠️ UN DÉFI CLOS NE CHANGE PLUS DE CONTENU. Son champion a été désigné sur une
  * épreuve donnée ; en modifier les cartes après coup rendrait le classement
  * inexplicable.
+ *
+ * ═══ LA VALIDATION EST ICI, PAS SEULEMENT DANS L'ÉCRAN ═══
+ *
+ * Le contenu arrivait autrefois uniquement de `normaliserContenu()`, qui garantit
+ * sa forme. Depuis l'import JSON, il peut venir d'un fichier écrit à la main :
+ * cette route revalide donc chaque carte avec `importerContenuJson()` et refuse
+ * en 422 ce qui n'est pas jouable, en NOMMANT la carte fautive.
+ *
+ * Revalider ce que l'écran a déjà validé n'est pas une redondance inutile : la
+ * route est la dernière barrière avant Firestore, et le mobile lit ce document
+ * sans le vérifier. Un `curl` ou un écran futur ne doivent pas pouvoir y écrire
+ * un quiz dont `correctAnswer` sort des bornes — il serait ingagnable en partie,
+ * sans message d'erreur.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore } from '@/lib/firebase-admin';
 import { verifierAppelant } from '@/lib/api-auth';
 import { COLLECTIONS } from '@/lib/firebase';
-
-/** Les cinq listes de `GameContentPack`, dans l'ordre du type. */
-const LISTES = ['quizzes', 'duels', 'fundings', 'opportunities', 'challengeEvents'] as const;
+import { importerContenuJson } from '@/lib/defi-json-import';
 
 export async function POST(request: NextRequest) {
   const appelant = await verifierAppelant(request);
@@ -50,25 +61,38 @@ export async function POST(request: NextRequest) {
   }
 
   /*
-    On ne garde QUE les cinq listes connues, et seulement si ce sont des
-    tableaux. Écrire le corps tel quel laisserait passer n'importe quel champ
-    jusqu'à Firestore — et le mobile, qui lit ce document, n'a pas à se défendre
-    contre une forme qu'on contrôle ici.
-  */
-  const contenu: Record<string, unknown[]> = {};
-  let cartes = 0;
-  for (const cle of LISTES) {
-    const liste = Array.isArray(brut[cle]) ? (brut[cle] as unknown[]) : [];
-    contenu[cle] = liste;
-    cartes += liste.length;
-  }
+    Validation carte par carte. `importerContenuJson` ne garde que les cinq
+    listes connues, réécrit les ids (des ids en doublon casseraient la
+    déduplication du moteur) et refuse ce qui est injouable.
 
-  if (cartes === 0) {
+    Le seed est horodaté : ré-enregistrer ne doit pas recréer les ids du contenu
+    précédent, que des parties en cours ont déjà pu voir.
+  */
+  const resultat = importerContenuJson(brut, `d${Date.now().toString(36)}`);
+
+  if (!resultat.contenu) {
+    const bloquantes = resultat.anomalies.filter((a) => a.bloquant);
     return NextResponse.json(
-      { error: 'Le contenu est vide — générez les cartes avant d’enregistrer.' },
-      { status: 400 }
+      {
+        error:
+          bloquantes.length === 1 && bloquantes[0]
+            ? `${bloquantes[0].ou} : ${bloquantes[0].message}`
+            : `${bloquantes.length} cartes invalides — rien n'a été enregistré.`,
+        // La liste complète permet à l'écran d'afficher chaque carte fautive
+        // avec sa position dans le fichier, plutôt qu'un échec global.
+        anomalies: bloquantes,
+      },
+      { status: 422 }
     );
   }
+
+  const contenu = resultat.contenu;
+  const cartes =
+    contenu.quizzes.length +
+    contenu.duels.length +
+    contenu.fundings.length +
+    contenu.opportunities.length +
+    contenu.challengeEvents.length;
 
   const db = getAdminFirestore();
   const ref = db.collection(COLLECTIONS.weeklyChallenges).doc(id);
