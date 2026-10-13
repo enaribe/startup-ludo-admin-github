@@ -50,6 +50,15 @@ interface SalleAttenteProps {
   onDemarrer?: () => void;
   /** True pendant le démarrage, pour neutraliser le bouton. */
   actionEnCours?: boolean;
+  /**
+   * Retire un élève de la classe. Absent pour un lecteur non propriétaire.
+   *
+   * Nécessaire depuis l'auto-inscription : les élèves se créent eux-mêmes en
+   * tapant leur nom, et c'est l'enseignant qui arbitre dans cette salle.
+   */
+  onRetirer?: (ligne: LigneSuivi) => void;
+  /** `learnerId` en cours de retrait, pour neutraliser sa pastille. */
+  retraitEnCours?: string | null;
 }
 
 export default function SalleAttente({
@@ -61,6 +70,8 @@ export default function SalleAttente({
   chargement,
   onDemarrer,
   actionEnCours = false,
+  onRetirer,
+  retraitEnCours = null,
 }: SalleAttenteProps) {
   const [projection, setProjection] = useState(false);
   const [qr, setQr] = useState<string>('');
@@ -190,11 +201,37 @@ export default function SalleAttente({
               </span>
             </div>
 
+            {/* ═══ ARBITRAGE — la contrepartie de l'inscription libre ═══
+
+                Les élèves s'inscrivent eux-mêmes en tapant leur nom : rien ne
+                garantit en amont qu'ils appartiennent à la classe, ni que le nom
+                saisi soit le bon. Le contrôle se fait DONC ici, au seul moment
+                où quelqu'un peut vraiment juger — l'enseignant a la classe
+                devant lui et reconnaît ses élèves.
+
+                L'exclusion est délibérément dans le PANNEAU DE CONTRÔLE et non
+                dans la projection : l'écran projeté est vu par toute la classe,
+                on n'y met pas de boutons d'action, et retirer un élève devant
+                tout le monde n'a pas à être un geste public. */}
             {connectes.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                {connectes.map((l) => (
-                  <PastilleJoueur key={l.learnerId} nom={l.nom} sombre />
-                ))}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {connectes.map((l) => (
+                    <PastilleJoueur
+                      key={l.learnerId}
+                      nom={l.nom}
+                      sombre
+                      onRetirer={onRetirer ? () => onRetirer(l) : undefined}
+                      retraitEnCours={retraitEnCours === l.learnerId}
+                    />
+                  ))}
+                </div>
+                {onRetirer && (
+                  <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                    Un nom que vous ne reconnaissez pas ? Retirez-le : l’élève sort de la classe et
+                    ses résultats ne compteront pas dans le bilan.
+                  </p>
+                )}
               </div>
             )}
 
@@ -245,7 +282,7 @@ export default function SalleAttente({
 }
 
 /** Pastille d'un apprenant connecté : point vert + prénom. */
-function PastilleJoueur({ nom, sombre }: { nom: string; sombre?: boolean }) {
+function PastilleJoueur({ nom, sombre, onRetirer, retraitEnCours }: { nom: string; sombre?: boolean; onRetirer?: () => void; retraitEnCours?: boolean }) {
   return (
     <span
       className="flex items-center gap-2"
@@ -259,6 +296,24 @@ function PastilleJoueur({ nom, sombre }: { nom: string; sombre?: boolean }) {
     >
       <span aria-hidden style={{ width: 7, height: 7, borderRadius: 4, background: '#2EA043', flexShrink: 0 }} />
       {nom}
+      {onRetirer && (
+        <button
+          type="button"
+          onClick={onRetirer}
+          disabled={retraitEnCours}
+          aria-label={`Retirer ${nom} de la classe`}
+          title={`Retirer ${nom} de la classe`}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 18, height: 18, marginLeft: 2, borderRadius: 999,
+            border: 'none', background: 'rgba(255,255,255,0.14)',
+            color: '#FFFFFF', cursor: retraitEnCours ? 'progress' : 'pointer',
+            opacity: retraitEnCours ? 0.5 : 1, flexShrink: 0, padding: 0,
+          }}
+        >
+          <X size={11} />
+        </button>
+      )}
     </span>
   );
 }

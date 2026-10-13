@@ -39,6 +39,10 @@ import {
   resoudreSeanceParCode,
   verifierQuota,
 } from '../../../class/_shared';
+// `nomAffiche` est PARTAGÉE : les trois portes (ce code, la séance et
+// l'auto-inscription) doivent projeter exactement la même chose, sans quoi
+// l'une devient la faille des autres.
+import { nomAffiche } from '@/lib/nom-eleve';
 
 /** Un élève tel qu'il est présenté à l'app mobile — projection minimale. */
 interface LearnerPublic {
@@ -112,20 +116,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
     console.error('Résolution d’un code de séance :', error);
     return NextResponse.json({ error: 'Erreur de chargement' }, { status: 500 });
   }
-}
-
-/**
- * « Fatou », « Diop » → « Fatou D. »
- *
- * L'élève se reconnaît dans la liste, mais un curieux qui obtiendrait le code
- * pendant la séance ne repart pas avec la liste nominative complète d'une classe
- * de mineurs. Même règle que `/api/class/join/[code]` — les deux portes doivent
- * projeter exactement la même chose, sans quoi l'une deviendrait la faille de
- * l'autre.
- */
-function nomAffiche(prenom: string, nom: string): string {
-  const p = prenom.trim();
-  const initiale = nom.trim().charAt(0).toUpperCase();
-  if (!p) return initiale ? `${initiale}.` : 'Élève';
-  return initiale ? `${p} ${initiale}.` : p;
 }

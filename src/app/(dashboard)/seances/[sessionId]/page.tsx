@@ -30,7 +30,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, CalendarClock, Pencil, Play, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth-context';
-import { getClass, getLearners } from '@/lib/school-service';
+import { ecouterLearners, getClass, getLearners, removeLearner } from '@/lib/school-service';
 import {
   DUREE_SEANCE_MAX,
   DUREE_SEANCE_MIN,
@@ -50,6 +50,7 @@ import {
   construireSuivi,
   ecouterParticipants,
   getParticipants,
+  type LigneSuivi,
 } from '@/lib/class-report-service';
 import { integrerSeanceDansCumuls } from '@/lib/class-cumul-service';
 import type {
@@ -130,6 +131,9 @@ export default function SeanceDetailPage() {
   }, [authLoading, charger]);
 
   const statut = seance?.status;
+  // Stabilisé hors de l'effet : `seance` est un nouvel objet à chaque snapshot,
+  // le dépendre directement réabonnerait l'écoute à chaque mise à jour.
+  const classeId = seance?.classId;
 
   /**
    * Participants : écoute temps réel en `running`, lecture unique en `ended`.
@@ -138,6 +142,37 @@ export default function SeanceDetailPage() {
    * de séance en séance empilerait autant d'écoutes ouvertes que de visites,
    * toutes facturées, jusqu'au rechargement de l'onglet.
    */
+  /*
+    ═══ LISTE D'ÉLÈVES EN DIRECT, PENDANT LA SÉANCE ═══
+
+    Depuis l'auto-inscription, la liste d'élèves d'une classe GRANDIT pendant la
+    séance : un élève qui n'a jamais joué tape son nom et sa ligne est créée à
+    cet instant.
+
+    Sans cette écoute, `eleves` resterait figé sur le chargement initial. Le
+    nouvel arrivant n'apparaîtrait dans la salle d'attente que par la branche
+    « participant orphelin » de `construireSuivi`, c'est-à-dire sous le libellé
+    « Élève retiré de la classe » — incompréhensible pour l'enseignant, et
+    surtout inutilisable pour l'arbitrage qu'on attend de lui.
+
+    Bornée à `running` : hors séance ouverte, personne ne s'inscrit, et un
+    abonnement permanent sur chaque fiche de séance terminée serait une lecture
+    facturée pour rien.
+  */
+  useEffect(() => {
+    if (!sessionId || statut !== 'running' || !classeId) return;
+    return ecouterLearners(
+      classeId,
+      (liste) => setEleves(liste),
+      (error) => {
+        // Non bloquant : la liste initiale reste affichée, seuls les arrivants
+        // de la séance en cours manqueront. Mieux vaut une salle d'attente
+        // incomplète qu'un écran en erreur pendant le cours.
+        console.error('Écoute des élèves de la classe :', error);
+      }
+    );
+  }, [sessionId, statut, classeId]);
+
   useEffect(() => {
     if (!sessionId || !statut) return;
 
@@ -206,6 +241,52 @@ export default function SeanceDetailPage() {
   };
 
   /** « Démarrer la partie » : la salle d'attente se ferme, le jeu commence. */
+  /**
+   * Retrait d'un élève depuis la salle d'attente.
+   *
+   * ═══ POURQUOI CE GESTE EXISTE ═══
+   *
+   * Les élèves s'inscrivent eux-mêmes (POST /api/session/inscrire) en tapant
+   * leur nom : personne ne vérifie en amont qu'ils appartiennent à la classe.
+   * Le contrôle est reporté ICI, au seul moment où il est fiable — l'enseignant
+   * a sa classe devant lui et reconnaît ses élèves, ce qu'aucun import de liste
+   * ne lui garantissait.
+   *
+   * L'élève retiré sort de la classe ET perd l'accès aux séances : la route
+   * supprime `classLinks/{uid}`, que les règles Firestore interrogent. Sa
+   * participation déjà écrite subsiste en base (on ne supprime jamais une
+   * trace), mais son learner passe `isActive: false` et disparaît donc du
+   * bilan de séance, qui croise les participants aux élèves ACTIFS.
+   *
+   * CONFIRMATION EXIGÉE : le geste est irréversible depuis cet écran — la
+   * réintégration se fait depuis la fiche de classe. Un clic de trop sur un
+   * nom mal lu sortirait un élève de sa séance en pleine partie.
+   */
+  const [retraitEnCours, setRetraitEnCours] = useState<string | null>(null);
+
+  const retirerEleve = useCallback(
+    async (ligne: LigneSuivi) => {
+      if (!seance) return;
+      if (
+        !window.confirm(
+          `Retirer « ${ligne.nom} » de la classe ?\n\nIl ne pourra plus rejoindre cette séance, et ses résultats ne compteront pas dans le bilan. Vous pourrez le réintégrer depuis la fiche de classe.`
+        )
+      ) {
+        return;
+      }
+      setRetraitEnCours(ligne.learnerId);
+      try {
+        await removeLearner(seance.classId, ligne.learnerId);
+        toast.success(`${ligne.nom} a été retiré de la classe.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Retrait impossible.');
+      } finally {
+        setRetraitEnCours(null);
+      }
+    },
+    [seance]
+  );
+
   const lancerPartie = async () => {
     setAction(true);
     try {
@@ -480,6 +561,8 @@ export default function SeanceDetailPage() {
           chargement={chargementSuivi}
           onDemarrer={estProprietaire ? lancerPartie : undefined}
           actionEnCours={action}
+          onRetirer={estProprietaire ? retirerEleve : undefined}
+          retraitEnCours={retraitEnCours}
         />
       )}
 

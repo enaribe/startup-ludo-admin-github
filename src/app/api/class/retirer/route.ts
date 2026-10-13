@@ -31,6 +31,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebase-admin';
 import { verifierAppelant } from '@/lib/api-auth';
 import { COLLECTIONS } from '@/lib/firebase';
@@ -90,6 +91,10 @@ export async function POST(request: NextRequest) {
   const uidLie = (learnerSnap.data()?.linkedUid as string | null | undefined) ?? null;
   const maintenant = Date.now();
 
+  // Un élève DÉJÀ retiré ne doit pas décrémenter une seconde fois : deux clics
+  // sur « Retirer » creuseraient l'effectif, qui sert au quota d'établissement.
+  const etaitActif = learnerSnap.data()?.isActive !== false;
+
   await db.runTransaction(async (tx) => {
     tx.update(refLearner, {
       isActive: false,
@@ -97,6 +102,25 @@ export async function POST(request: NextRequest) {
       linkedAt: null,
       updatedAt: maintenant,
     });
+
+    /*
+      EFFECTIF DÉNORMALISÉ — ajouté avec l'auto-inscription (POST
+      /api/session/inscrire), qui l'incrémente à chaque élève créé.
+
+      Avant, seul le back-office créait des élèves et la fiche de classe
+      RECALCULAIT le compteur par comptage (`majEffectif`) à chaque mouvement :
+      une exclusion sans décrément se corrigeait d'elle-même à la prochaine
+      ouverture de la fiche. Ce n'est plus vrai — un élève peut maintenant
+      s'inscrire et être exclu sans que personne n'ouvre la fiche, et
+      `learnerCount` sert au quota d'élèves de l'établissement.
+
+      `increment(-1)` et non une réécriture : la transaction ne connaît pas
+      l'effectif réel sans compter la sous-collection, et deux exclusions
+      simultanées doivent se soustraire toutes les deux.
+    */
+    if (etaitActif) {
+      tx.set(refClasse, { learnerCount: FieldValue.increment(-1), updatedAt: maintenant }, { merge: true });
+    }
 
     if (uidLie) {
       /*
