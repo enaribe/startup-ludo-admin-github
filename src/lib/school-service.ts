@@ -19,7 +19,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
   onSnapshot,
   query,
   where,
@@ -381,170 +380,25 @@ export function ecouterLearners(
   );
 }
 
-// ===== FENÊTRE DE RATTACHEMENT (lot 4a) =====
+/*
+  ═══ FENÊTRE DE RATTACHEMENT — RETIRÉE LE 13/10/2026 ═══
 
-/**
- * Alphabet du code de rattachement — **sans caractère ambigu** : ni O/0, ni I/1.
- *
- * C'est exactement celui de `generateRoomCode` du projet mobile
- * (`src/services/multiplayer/MultiplayerSync.ts:105`), et ce n'est pas un détail
- * cosmétique : le code est **dicté à voix haute** et écrit au tableau. Un « 0 »
- * lu « O » par un élève au fond de la salle, c'est une tentative perdue et un
- * appel au prof.
- */
-const ALPHABET_CODE = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  Cette section portait un SECOND code, posé sur la classe (`joinCode` /
+  `joinCodeExpiresAt`), distinct du code de séance : l'enseignant l'ouvrait pour
+  quelques minutes et le dictait, les élèves choisissaient leur nom dans sa liste
+  pré-saisie. Sont partis avec elle `ouvrirFenetreRattachement`,
+  `fermerFenetreRattachement`, `fenetreEstOuverte`, `RattachementError`, leur
+  générateur de code et l'écran de projection `/classes/[id]/rattachement`.
 
-/** Longueur du code de rattachement, alignée sur les codes de partie du mobile. */
-const LONGUEUR_CODE = 6;
+  POURQUOI : les élèves s'inscrivent désormais eux-mêmes en rejoignant une
+  séance (POST /api/session/inscrire). Deux codes au même alphabet étaient
+  indistinguables côté mobile, et celui-ci exigeait une liste d'élèves déjà
+  saisie — c'est-à-dire exactement ce que l'auto-inscription remplace. Il était
+  donc devenu inutilisable en plus d'être contradictoire.
 
-/** Durées de fenêtre proposées à l'enseignant, en minutes. */
-export const DUREES_RATTACHEMENT = [5, 15, 30, 60] as const;
-
-/** Durée par défaut d'une fenêtre de rattachement, en minutes (cf. SPEC §1). */
-export const DUREE_RATTACHEMENT_DEFAUT = 15;
-
-/** Nombre de tirages avant d'abandonner sur une collision de code. */
-const TENTATIVES_CODE = 5;
-
-/** Tire un code de 6 caractères dans l'alphabet sans ambiguïté. */
-function genererCode(): string {
-  let code = '';
-  for (let i = 0; i < LONGUEUR_CODE; i += 1) {
-    code += ALPHABET_CODE.charAt(Math.floor(Math.random() * ALPHABET_CODE.length));
-  }
-  return code;
-}
-
-/**
- * Le code est-il déjà porté par une classe dont la fenêtre est **encore active** ?
- *
- * ⚠️ REQUÊTE INDEXÉE, jamais un listing complet. C'est précisément
- * l'anti-pattern de `joinRoom()` côté mobile (`MultiplayerSync.ts:209-227`), qui
- * télécharge toute la table avant de chercher un code : à 30 établissements et
- * 500 classes, ce serait 500 documents lus à chaque ouverture de fenêtre.
- *
- * L'expiration est filtrée **en mémoire** sur le seul document trouvé, et non
- * dans la requête : un `where('joinCode', '==', …)` combiné à un
- * `where('joinCodeExpiresAt', '>', …)` exigerait un index composite, pour
- * économiser la lecture d'un unique document. Le `limit(1)` suffit — deux
- * classes ne peuvent pas porter le même code actif, c'est l'invariant tenu ici.
- */
-async function codeDejaActif(code: string): Promise<boolean> {
-  // Passe par le serveur : ce contrôle est un LISTING de `classes`, que les
-  // règles refusent à un enseignant (sa permission porte sur l'ID du document,
-  // via le claim `classIds`, pas sur un champ). L'autoriser dans les règles
-  // laisserait n'importe qui énumérer les classes de tous les établissements.
-  const { getAuth } = await import('firebase/auth');
-  const token = await getAuth().currentUser?.getIdToken();
-  if (!token) throw new Error('Session expirée : reconnectez-vous.');
-
-  const reponse = await fetch('/api/class/verifier-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ code }),
-  });
-  if (!reponse.ok) {
-    // En cas d'échec, on considère le code comme pris : l'appelant en tirera un
-    // autre. Mieux vaut un tirage de plus qu'un doublon de code actif.
-    return true;
-  }
-  const data = (await reponse.json()) as { actif?: boolean };
-  return data.actif === true;
-}
-
-/** Résultat de l'ouverture d'une fenêtre : le code à dicter et son échéance. */
-export interface FenetreRattachement {
-  /** Code à 6 caractères, à dicter à voix haute. */
-  joinCode: string;
-  /** Instant d'expiration, en millisecondes epoch. */
-  joinCodeExpiresAt: number;
-}
-
-/**
- * Erreur d'ouverture de fenêtre — distinguée pour afficher un message utile
- * plutôt qu'un « Erreur » générique (cf. `QuotaDepasseError`).
- */
-export class RattachementError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'RattachementError';
-  }
-}
-
-/**
- * Ouvre une fenêtre de rattachement sur une classe.
- *
- * Le code vit sur `classes/{id}`, **pas** sur la séance : il sert au
- * rattachement (une fois par élève), pas au jeu. Sa brièveté est ce qui protège
- * la liste nominative d'élèves mineurs — un code qui fuit est déjà expiré.
- *
- * UNICITÉ : le code est retiré parmi les classes dont la fenêtre est encore
- * active, avec jusqu'à 5 tirages. Sur 32^6 ≈ 1,07 milliard de combinaisons et
- * quelques dizaines de fenêtres ouvertes simultanément, une collision est déjà
- * improbable ; cinq essais la rendent négligeable. Au-delà, on lève plutôt que
- * d'écrire un code ambigu — deux classes partageant un code enverraient des
- * élèves dans la mauvaise liste.
- *
- * ⚠️ COURSE POSSIBLE : entre la vérification et l'écriture, une autre classe
- * peut poser le même code. Le risque est accepté ici (probabilité négligeable,
- * fenêtre de quelques millisecondes) ; le supprimer imposerait une transaction
- * sur toute la collection `classes`, hors de portée des règles côté client.
- *
- * @param classId       Classe sur laquelle ouvrir la fenêtre.
- * @param dureeMinutes  Durée de validité (5 / 15 / 30 / 60), 15 par défaut.
- */
-export async function ouvrirFenetreRattachement(
-  classId: string,
-  dureeMinutes: number = DUREE_RATTACHEMENT_DEFAUT
-): Promise<FenetreRattachement> {
-  const duree = Number.isFinite(dureeMinutes) && dureeMinutes > 0
-    ? Math.floor(dureeMinutes)
-    : DUREE_RATTACHEMENT_DEFAUT;
-
-  let code: string | null = null;
-  for (let essai = 0; essai < TENTATIVES_CODE; essai += 1) {
-    const candidat = genererCode();
-    if (!(await codeDejaActif(candidat))) {
-      code = candidat;
-      break;
-    }
-  }
-  if (!code) {
-    throw new RattachementError(
-      'Impossible de générer un code disponible. Réessayez dans quelques instants.'
-    );
-  }
-
-  const joinCodeExpiresAt = Date.now() + duree * 60_000;
-  // `updateDoc` et non `setDoc(merge)` : la classe DOIT exister. Créer un
-  // document de classe par accident depuis cet écran laisserait une classe
-  // fantôme sans `establishmentId`, donc invisible et illisible pour tous.
-  await updateDoc(doc(firestore, COLLECTIONS.classes, classId), {
-    joinCode: code,
-    joinCodeExpiresAt,
-    updatedAt: Date.now(),
-  });
-
-  return { joinCode: code, joinCodeExpiresAt };
-}
-
-/**
- * Ferme la fenêtre de rattachement d'une classe : les deux champs repassent à
- * `null`, le code ne vaut plus rien immédiatement.
- *
- * On écrit `null` plutôt que de supprimer les champs : `joinCode: null` reste
- * indexé et interrogeable, et le type `SchoolClass` les déclare nullables. Une
- * fenêtre est **réouvrable à tout moment** (absents du jour, nouvel élève).
- */
-export async function fermerFenetreRattachement(classId: string): Promise<void> {
-  await updateDoc(doc(firestore, COLLECTIONS.classes, classId), {
-    joinCode: null,
-    joinCodeExpiresAt: null,
-    updatedAt: Date.now(),
-  });
-}
-
-/** Une fenêtre est-elle actuellement ouverte sur cette classe ? */
-export function fenetreEstOuverte(classe: Pick<SchoolClass, 'joinCode' | 'joinCodeExpiresAt'>): boolean {
-  return !!classe.joinCode && (classe.joinCodeExpiresAt ?? 0) > Date.now();
-}
+  ⚠️ LES CHAMPS `joinCode` / `joinCodeExpiresAt` DE `SchoolClass` SURVIVENT, et
+  ce n'est pas un oubli : des classes en base les portent peut-être encore.
+  Plus personne ne les écrit ni ne les lit, et l'index Firestore sur `joinCode`
+  reste utilisé par les SÉANCES, qui ont leur propre générateur dans
+  `class-session-service.ts` — volontairement indépendant de celui-ci.
+*/

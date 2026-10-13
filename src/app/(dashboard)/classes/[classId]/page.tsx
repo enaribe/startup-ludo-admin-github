@@ -23,7 +23,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import {
   AlertCircle,
   ArrowLeft,
@@ -33,12 +33,9 @@ import {
   Download,
   Eye,
   EyeOff,
-  KeyRound,
   LayoutGrid,
   Play,
-  Plus,
   RefreshCw,
-  Upload,
   UserMinus,
   UserPlus,
   Users,
@@ -48,17 +45,12 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { firestore, COLLECTIONS } from '@/lib/firebase';
 import {
-  addLearners,
-  addLearner,
-  DUREE_RATTACHEMENT_DEFAUT,
-  DUREES_RATTACHEMENT,
   getClass,
   getEstablishment,
   getLearners,
   removeLearner,
   restoreLearner,
   saveClass,
-  QuotaDepasseError,
 } from '@/lib/school-service';
 import { recalculerCumuls } from '@/lib/class-cumul-service';
 import {
@@ -81,7 +73,6 @@ import {
   telechargerPdf,
   type EligibiliteCertificat,
 } from '@/lib/certificate-service';
-import { cleEleve } from '@/lib/learners-csv';
 import { formatDate } from '@/lib/utils';
 import {
   SCHOOL_LEVELS,
@@ -99,7 +90,6 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import MenuActions from '@/components/ui/MenuActions';
 import Modal from '@/components/ui/Modal';
 import SaveStatusIndicator from '@/components/ui/SaveStatusIndicator';
-import ImportLearnersModal from '@/components/school/ImportLearnersModal';
 import toast from 'react-hot-toast';
 
 /** Partie éditable de la fiche de classe (autosave). */
@@ -140,7 +130,6 @@ function initialesClasse(nom: string): string {
 
 export default function ClasseDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const classId = params.classId as string;
   const {
     isSuperAdmin,
@@ -159,11 +148,8 @@ export default function ClasseDetailPage() {
   const [introuvable, setIntrouvable] = useState(false);
 
   const [afficherRetires, setAfficherRetires] = useState(false);
-  const [ajout, setAjout] = useState(false);
-  const [importCsv, setImportCsv] = useState(false);
   const [retrait, setRetrait] = useState<Learner | null>(null);
   const [retraitEnCours, setRetraitEnCours] = useState(false);
-  const [choixDuree, setChoixDuree] = useState(false);
 
   // ── Bilan de classe (maquette « détails d'une classe ») ──
   const [seances, setSeances] = useState<ClassSession[]>([]);
@@ -306,7 +292,6 @@ export default function ClasseDetailPage() {
 
   const actifs = useMemo(() => eleves.filter((e) => e.isActive !== false), [eleves]);
   const retires = useMemo(() => eleves.filter((e) => e.isActive === false), [eleves]);
-  const rattaches = useMemo(() => actifs.filter((e) => !!e.linkedUid).length, [actifs]);
 
   const affiches = useMemo(() => {
     const liste = afficherRetires ? eleves : actifs;
@@ -449,48 +434,6 @@ export default function ClasseDetailPage() {
   const etablissementQuota = isTeacher && !isEstablishmentAdmin && !isSuperAdmin
     ? ''
     : classe?.establishmentId ?? '';
-
-  /** Affiche un message de quota tel quel ; sinon un message générique. */
-  const signalerErreurEleve = (error: unknown, messageParDefaut: string) => {
-    if (error instanceof QuotaDepasseError) {
-      toast.error(error.message, { duration: 6000 });
-      return;
-    }
-    toast.error(messageParDefaut);
-  };
-
-  const ajouterEleve = async (firstName: string, lastName: string, externalId: string) => {
-    try {
-      const cree = await addLearner(classId, { firstName, lastName, externalId }, etablissementQuota);
-      const suivant = [...eleves, cree];
-      setEleves(suivant);
-      await majEffectif(suivant);
-      toast.success('Élève ajouté');
-      setAjout(false);
-    } catch (error) {
-      console.error('Ajout d’un élève :', error);
-      signalerErreurEleve(error, 'Erreur lors de l’ajout de l’élève');
-    }
-  };
-
-  const importerEleves = async (
-    entrees: Array<{ firstName: string; lastName: string; externalId: string }>
-  ) => {
-    try {
-      const crees = await addLearners(classId, entrees, etablissementQuota);
-      const suivant = [...eleves, ...crees];
-      setEleves(suivant);
-      await majEffectif(suivant);
-      toast.success(`${crees.length} élève${crees.length > 1 ? 's' : ''} importé${crees.length > 1 ? 's' : ''}`);
-      setImportCsv(false);
-    } catch (error) {
-      console.error('Import CSV :', error);
-      signalerErreurEleve(error, 'Erreur lors de l’import');
-      // Rethrow : la modale d'import doit rester ouverte pour que l'utilisateur
-      // ajuste sa sélection plutôt que de perdre son fichier analysé.
-      if (error instanceof QuotaDepasseError) throw error;
-    }
-  };
 
   const confirmerRetrait = async () => {
     if (!retrait) return;
@@ -906,38 +849,29 @@ export default function ClasseDetailPage() {
             </p>
           </div>
           {/*
-            ═══ UNE SEULE ACTION VISIBLE, LE RESTE DANS UN MENU ═══
+            ═══ AUCUNE SAISIE D'ÉLÈVE ICI, ET C'EST LE PRINCIPE ═══
 
-            Cinq boutons alignés ne hiérarchisaient rien : le geste quotidien
-            (ajouter un élève) avait le même poids visuel qu'un outil de
-            dépannage annuel (recalculer les cumuls).
+            Les élèves se créent eux-mêmes en rejoignant une séance : ils
+            saisissent leur nom une fois, et l'enseignant arbitre dans la salle
+            d'attente, au seul moment où il peut vraiment le faire — il a sa
+            classe devant lui.
 
-            Le rattachement n'est plus l'action principale depuis la SALLE
-            D'ATTENTE : un élève se rattache en scannant le QR de la séance,
-            sans passer par cet écran. Il reste ici pour les cas hors séance
-            (préparer la rentrée, accueillir un arrivant en cours d'année).
+            Ont donc été retirés le 13/10/2026, avec l'auto-inscription :
+              • « Ajouter un élève » et « Importer une liste (CSV) » — saisir une
+                liste en parallèle de l'auto-inscription produirait des DOUBLONS
+                que l'enseignant devrait nettoyer à la main, puisque les deux
+                chemins créent des `learners` sans se connaître ;
+              • « Ouvrir le rattachement » et son écran de projection — un
+                SECOND code, alors que la décision produit était « un seul code,
+                celui de la séance ». Il était d'ailleurs désactivé sans liste
+                pré-saisie, donc inutilisable sans ce qu'on venait de supprimer.
+
+            Cette page est maintenant une page de CONSULTATION et d'ARBITRAGE :
+            voir, retirer, réintégrer, certifier.
           */}
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="btn-primary flex items-center gap-2" onClick={() => setAjout(true)}>
-              <Plus size={16} /> Ajouter un élève
-            </button>
             <MenuActions
               actions={[
-                {
-                  libelle: 'Importer une liste (CSV)',
-                  Icon: Upload,
-                  onClick: () => setImportCsv(true),
-                },
-                {
-                  libelle: 'Ouvrir le rattachement',
-                  Icon: KeyRound,
-                  onClick: () => setChoixDuree(true),
-                  desactive: actifs.length === 0,
-                  aide:
-                    actifs.length === 0
-                      ? 'Ajoutez d’abord les élèves de la classe'
-                      : 'Projeter un code hors séance — en séance, le QR de la salle d’attente suffit',
-                },
                 ...(peutGererCumuls
                   ? [
                       {
@@ -973,19 +907,20 @@ export default function ClasseDetailPage() {
         </div>
 
         {affiches.length === 0 ? (
+          /*
+            L'état vide n'invite plus à saisir : il EXPLIQUE comment la liste se
+            remplit. Un enseignant qui ouvre une classe neuve doit comprendre
+            qu'il n'a rien à préparer — c'est tout l'intérêt du changement, et
+            un bouton « Ajouter un élève » ici le contredirait.
+          */
           <EmptyState
             icon={<Users size={48} />}
-            title="Aucun élève"
-            description="Ajoutez les élèves un par un, ou importez la liste complète depuis un fichier CSV."
+            title="Aucun élève pour le moment"
+            description="Vos élèves apparaîtront ici dès qu'ils auront rejoint une séance : ils saisissent leur nom une seule fois, et vous validez dans la salle d'attente. Rien à préparer à l'avance."
             action={
-              <div className="flex items-center gap-3">
-                <button className="btn-secondary flex items-center gap-2" onClick={() => setImportCsv(true)}>
-                  <Upload size={16} /> Importer un CSV
-                </button>
-                <button className="btn-primary flex items-center gap-2" onClick={() => setAjout(true)}>
-                  <Plus size={16} /> Ajouter un élève
-                </button>
-              </div>
+              <Link href={`/seances/nouvelle?classe=${classId}`} className="btn-primary flex items-center gap-2">
+                <Play size={16} /> Lancer une séance
+              </Link>
             }
           />
         ) : (
@@ -1128,24 +1063,6 @@ export default function ClasseDetailPage() {
         )}
       </section>
 
-      {/* Ajout manuel */}
-      {ajout && (
-        <ModaleAjoutEleve
-          existants={eleves}
-          onClose={() => setAjout(false)}
-          onAdd={ajouterEleve}
-        />
-      )}
-
-      {/* Import CSV */}
-      {importCsv && (
-        <ImportLearnersModal
-          existants={eleves.map((e) => ({ firstName: e.firstName, lastName: e.lastName }))}
-          onClose={() => setImportCsv(false)}
-          onImport={importerEleves}
-        />
-      )}
-
       {/* Aperçu avant génération des certificats de la classe */}
       {apercuCertificats && (
         <ModaleCertificats
@@ -1153,15 +1070,6 @@ export default function ClasseDetailPage() {
           enCours={certificatsEnCours}
           onClose={() => setApercuCertificats(null)}
           onGenerer={genererLotCertificats}
-        />
-      )}
-
-      {/* Choix de la durée avant d'ouvrir la fenêtre de rattachement */}
-      {choixDuree && (
-        <ModaleDureeRattachement
-          restants={actifs.length - rattaches}
-          onClose={() => setChoixDuree(false)}
-          onOuvrir={(minutes) => router.push(`/classes/${classId}/rattachement?duree=${minutes}`)}
         />
       )}
 
@@ -1485,183 +1393,3 @@ function ModaleCertificats({
   );
 }
 
-/**
- * Choix de la durée de la fenêtre de rattachement, avant projection.
- *
- * Le choix est demandé ICI plutôt que sur l'écran projeté : ce dernier est
- * affiché au tableau, devant la classe, et ne doit contenir aucune décision à
- * prendre — juste le code, le décompte et l'avancement.
- *
- * L'ouverture effective (génération du code, écriture Firestore) a lieu sur
- * l'écran de projection : un code généré ici et jamais projeté resterait actif
- * pour rien, ce qui est exactement ce que la fenêtre éphémère cherche à éviter.
- */
-function ModaleDureeRattachement({
-  restants,
-  onClose,
-  onOuvrir,
-}: {
-  restants: number;
-  onClose: () => void;
-  onOuvrir: (minutes: number) => void;
-}) {
-  const [minutes, setMinutes] = useState<number>(DUREE_RATTACHEMENT_DEFAUT);
-
-  return (
-    <Modal open onClose={onClose} title="Ouvrir le rattachement" maxWidth="480px">
-      <div className="flex flex-col gap-4">
-        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-          Un code à 6 caractères sera affiché en grand, à projeter au tableau et à{' '}
-          <strong>dicter à voix haute</strong>. Chaque élève le saisit dans l’application, choisit
-          son nom dans la liste, et son compte est lié <strong>définitivement</strong> : il
-          rejoindra les prochaines séances depuis son profil, sans code.
-        </p>
-
-        {restants > 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-            {restants} élève{restants > 1 ? 's' : ''} n’{restants > 1 ? 'ont' : 'a'} pas encore de
-            compte lié.
-          </p>
-        ) : (
-          <div className="p-3" style={{ background: 'var(--color-info-light)', borderRadius: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-              Tous les élèves de la classe ont déjà un compte lié. Une nouvelle fenêtre n’est utile
-              que pour un élève ajouté depuis, ou pour refaire un rattachement après un retrait.
-            </span>
-          </div>
-        )}
-
-        <div>
-          <label className="label">Durée de la fenêtre</label>
-          <div className="flex items-center gap-2 flex-wrap">
-            {DUREES_RATTACHEMENT.map((d) => (
-              <button
-                key={d}
-                onClick={() => setMinutes(d)}
-                className={d === minutes ? 'btn-primary' : 'btn-secondary'}
-                style={{ minWidth: 78 }}
-              >
-                {d} min
-              </button>
-            ))}
-          </div>
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-            Passé ce délai, le code ne vaut plus rien — c’est ce qui protège la liste de vos élèves.
-            Vous pourrez le prolonger ou rouvrir une fenêtre à tout moment.
-          </p>
-        </div>
-
-        <div className="flex items-center justify-end gap-3">
-          <button className="btn-secondary" onClick={onClose}>
-            Annuler
-          </button>
-          <button className="btn-primary" onClick={() => onOuvrir(minutes)}>
-            Projeter le code
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/**
- * Modale d'ajout manuel d'un élève.
- * La détection de doublon reprend la même clé que l'import CSV (`cleEleve`) :
- * un même homonyme est signalé de la même façon, quel que soit le chemin de saisie.
- */
-function ModaleAjoutEleve({
-  existants,
-  onClose,
-  onAdd,
-}: {
-  existants: Learner[];
-  onClose: () => void;
-  onAdd: (firstName: string, lastName: string, externalId: string) => Promise<void>;
-}) {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [externalId, setExternalId] = useState('');
-  const [enCours, setEnCours] = useState(false);
-
-  const doublon = useMemo(() => {
-    if (!firstName.trim() || !lastName.trim()) return false;
-    const cle = cleEleve(firstName, lastName);
-    return existants.some((e) => cleEleve(e.firstName, e.lastName) === cle);
-  }, [firstName, lastName, existants]);
-
-  const valider = async () => {
-    const prenom = firstName.trim();
-    const nom = lastName.trim();
-    if (!prenom || !nom) {
-      toast.error('Le prénom et le nom sont obligatoires');
-      return;
-    }
-    setEnCours(true);
-    try {
-      await onAdd(prenom, nom, externalId.trim());
-    } finally {
-      setEnCours(false);
-    }
-  };
-
-  return (
-    <Modal open onClose={onClose} title="Ajouter un élève" maxWidth="440px">
-      <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Prénom</label>
-            <input
-              className="input-field"
-              value={firstName}
-              autoFocus
-              placeholder="Fatou"
-              onChange={(e) => setFirstName(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="label">Nom</label>
-            <input
-              className="input-field"
-              value={lastName}
-              placeholder="Diop"
-              onChange={(e) => setLastName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') valider();
-              }}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="label">Identifiant de l’établissement (facultatif)</label>
-          <input
-            className="input-field"
-            value={externalId}
-            placeholder="2026-041"
-            onChange={(e) => setExternalId(e.target.value)}
-          />
-        </div>
-
-        {doublon && (
-          <div
-            className="flex items-start gap-2 p-3"
-            style={{ background: 'var(--color-warning-light)', borderRadius: 8 }}
-          >
-            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-              Un élève portant ce prénom et ce nom figure déjà dans la classe. Vous pouvez tout de
-              même l’ajouter s’il s’agit d’un homonyme.
-            </span>
-          </div>
-        )}
-
-        <div className="flex items-center justify-end gap-3">
-          <button className="btn-secondary" onClick={onClose} disabled={enCours}>
-            Annuler
-          </button>
-          <button className="btn-primary" onClick={valider} disabled={enCours}>
-            {enCours ? 'Ajout…' : 'Ajouter l’élève'}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
