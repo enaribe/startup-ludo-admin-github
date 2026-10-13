@@ -23,7 +23,9 @@ export type GenerationType =
   | 'edition_projects_import'
   | 'personas'
   /** Mode Classe : contenu d'une séance, généré depuis le cours de l'enseignant. */
-  | 'class_session_content';
+  | 'class_session_content'
+  /** Mode Classe : contrôle thématique d'un cours déposé, AVANT toute génération. */
+  | 'analyse_thematique';
 
 /**
  * Liste FERMÉE des catégories de quiz.
@@ -740,6 +742,87 @@ AUTRES REGLES :
 
       if (input.trim()) parts.push(`\n=== CONSIGNES DE L'ENSEIGNANT ===\n${input.trim()}`);
       return parts.join('\n');
+    },
+  },
+
+  /*
+    CONTRÔLE THÉMATIQUE — ne génère RIEN, il classe.
+
+    Ce prompt n'hérite volontairement PAS de `BASE_SYSTEM` : celui-ci ordonne de
+    produire du contenu de jeu éducatif, ce qui pousserait le modèle à fabriquer
+    des quiz au lieu de rendre un verdict, et à se montrer complaisant sur un
+    document hors-sujet (« on peut bien en tirer quelque chose »). Un classifieur
+    doit rester indifférent à l'usage qu'on fera de sa réponse.
+
+    LE BIAIS EST ASSUMÉ ET EXPLICITE : en cas de doute, le prompt impose
+    `incertain`, qui laisse passer. Refuser à tort le cours d'un enseignant
+    devant sa classe est bien plus grave que laisser passer un document limite,
+    que l'aperçu du contenu lui permettra de juger lui-même.
+  */
+  analyse_thematique: {
+    label: 'Contrôle thématique',
+    placeholder: '',
+    description: 'Vérifie qu’un document déposé traite bien d’entrepreneuriat',
+    systemPrompt: `Tu es un classificateur de documents pedagogiques. Tu ne generes aucun contenu, tu rends un VERDICT.
+
+On te soumet un extrait du support de cours d'un enseignant. Tu dois dire s'il traite d'ENTREPRENEURIAT ou de gestion d'entreprise.
+
+Reponds UNIQUEMENT avec cet objet JSON, sans markdown ni texte autour :
+
+{
+  "verdict": "entrepreneuriat" | "hors-sujet" | "incertain",
+  "confiance": 0.0,
+  "theme": "le sujet reel du document, en 1 a 4 mots francais",
+  "motif": "une phrase expliquant le verdict, adressee a l'enseignant",
+  "notions": ["notion entrepreneuriale presente", "..."]
+}
+
+EST DE L'ENTREPRENEURIAT (verdict "entrepreneuriat") :
+- creation et gestion d'entreprise, business model, business plan, etude de marche
+- financement : credit, microfinance, levee de fonds, investisseurs, subventions
+- marketing, vente, commercialisation, relation client, communication commerciale
+- comptabilite, gestion financiere, fiscalite, tresorerie, analyse de couts
+- management, ressources humaines, organisation du travail, leadership
+- strategie, innovation, concurrence, developpement d'activite
+- cadre juridique des entreprises, statuts, formalisation, secteur informel
+- economie appliquee a l'entreprise, economie sociale et solidaire, cooperatives
+
+N'EST PAS DE L'ENTREPRENEURIAT (verdict "hors-sujet") :
+- sciences sans lien avec l'entreprise : mathematiques pures, physique, chimie, biologie, geologie
+- lettres, langues, grammaire, litterature, philosophie
+- histoire, geographie physique, education civique sans volet economique
+- sport, arts, musique
+- informatique purement technique (syntaxe d'un langage, reseaux) sans volet projet ou produit
+- documents administratifs : emploi du temps, reglement interieur, liste d'eleves, note de service, facture, contrat de travail
+- tout texte dont le sujet est ailleurs, meme s'il cite une entreprise en exemple
+
+REGLES DE DECISION (IMPERATIVES) :
+- Un document qui CONTIENT une partie entrepreneuriale substantielle vaut "entrepreneuriat", meme s'il traite aussi d'autre chose. Un chapitre sur le financement dans un manuel d'economie generale suffit.
+- Citer une entreprise, une marque ou de l'argent ne suffit PAS : un probleme de mathematiques sur le prix des pommes reste des mathematiques. Demande-toi ce que l'eleve APPREND.
+- Si tu hesites, reponds "incertain". N'utilise "hors-sujet" que lorsque le sujet reel est clairement ailleurs : ce verdict bloque le travail de l'enseignant.
+- "theme" doit nommer le sujet REEL meme quand le verdict est "entrepreneuriat" (ex. "financement des PME").
+- "notions" ne liste que des notions REELLEMENT presentes. Tableau vide si le document est hors-sujet.
+- "confiance" exprime ta certitude sur le verdict, de 0 a 1.`,
+    buildUserPrompt: (_input, ctx) => {
+      const extrait = String(ctx?.extrait ?? '').trim();
+      // Vide → la garde de `/api/generate` renvoie 400 sans appeler le
+      // fournisseur, et `analyserDocument` traduit l'échec en « incertain ».
+      if (!extrait) return '';
+      const longueur = Number(ctx?.longueur);
+      const taille = Number.isFinite(longueur)
+        ? `Longueur totale du document : ${longueur} caracteres.`
+        : '';
+      // L'extrait est signalé COMME un prélèvement : sans ça, le modèle juge
+      // parfois le document « incomplet » au lieu d'en juger le THÈME.
+      return [
+        taille,
+        'Extrait preleve au debut, au milieu et a la fin du document (les coupes sont marquees [...]).',
+        '',
+        '=== EXTRAIT ===',
+        extrait,
+      ]
+        .filter(Boolean)
+        .join('\n');
     },
   },
 };

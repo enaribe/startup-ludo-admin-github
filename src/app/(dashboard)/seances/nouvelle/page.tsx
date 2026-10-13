@@ -66,6 +66,7 @@ import {
   mixPourDuree,
   type MixSeance,
 } from '@/lib/class-session-generation';
+import { ErreurHorsSujet, type AnalyseThematique } from '@/lib/analyse-thematique';
 import { generateId } from '@/lib/utils';
 import {
   SCHOOL_LEVEL_LABELS,
@@ -77,6 +78,7 @@ import {
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import WizardStepper from '@/components/school/WizardStepper';
+import RefusThematique from '@/components/school/RefusThematique';
 import ApercuContenuSeance from '@/components/school/ApercuContenuSeance';
 import AjoutContenuSeance from '@/components/school/AjoutContenuSeance';
 
@@ -126,7 +128,19 @@ export default function NouvelleSeancePage() {
   const [editionId, setEditionId] = useState('');
   const [seanceSource, setSeanceSource] = useState<ClassSession | null>(null);
   const [consignes, setConsignes] = useState('');
-  const [coursDeposes, setCoursDeposes] = useState<{ nom: string; caracteres: number }[]>([]);
+  const [coursDeposes, setCoursDeposes] = useState<
+    { nom: string; caracteres: number; theme: string; incertain: boolean }[]
+  >([]);
+  /**
+   * Dernier verdict thématique à signaler : refus, ou acceptation douteuse.
+   *
+   * Un SEUL emplacement et non une liste : l'enseignant dépose ses fichiers un
+   * par un et réagit au dernier. Empiler les verdicts transformerait le haut de
+   * l'écran en journal d'événements, que personne ne lit.
+   */
+  const [verdict, setVerdict] = useState<{ fichier: string; analyse: AnalyseThematique } | null>(
+    null
+  );
   const [contenu, setContenu] = useState<ClassSessionContent | null>(null);
   const [enExtraction, setEnExtraction] = useState(false);
   const [enGeneration, setEnGeneration] = useState(false);
@@ -233,11 +247,37 @@ export default function NouvelleSeancePage() {
   const deposer = useCallback(
     async (fichier: File) => {
       setEnExtraction(true);
+      setVerdict(null);
       try {
         const meta = await deposerCours(sessionId, fichier);
-        setCoursDeposes((prev) => [...prev, { nom: meta.name, caracteres: meta.charCount }]);
+        const incertain = meta.analyse.verdict === 'incertain';
+        setCoursDeposes((prev) => [
+          ...prev,
+          {
+            nom: meta.name,
+            caracteres: meta.charCount,
+            theme: meta.analyse.theme,
+            incertain,
+          },
+        ]);
+        // Un verdict incertain n'empêche rien, mais il doit être VU : c'est le
+        // cas où le contenu généré risque de dériver du sujet, et l'enseignant
+        // est le seul à pouvoir en juger dans l'aperçu.
+        if (incertain) setVerdict({ fichier: meta.name, analyse: meta.analyse });
         toast.success(`Cours indexé (${meta.charCount.toLocaleString('fr-FR')} caractères)`);
       } catch (error) {
+        /*
+          Le refus thématique n'est PAS une erreur technique : il s'affiche dans
+          un panneau qui explique et qui reste, là où un toast s'évanouit avant
+          d'avoir été lu. Le toast est conservé en complément, pour que le refus
+          soit perçu immédiatement même si le panneau est hors du champ de
+          vision après un défilement.
+        */
+        if (error instanceof ErreurHorsSujet) {
+          setVerdict({ fichier: fichier.name, analyse: error.analyse });
+          toast.error('Document hors sujet : il n’a pas été ajouté.');
+          return;
+        }
         const message = error instanceof Error ? error.message : 'Extraction impossible';
         toast.error(message);
       } finally {
@@ -471,6 +511,8 @@ export default function NouvelleSeancePage() {
           coursDeposes={coursDeposes}
           onDeposer={deposer}
           enExtraction={enExtraction}
+          verdict={verdict}
+          onFermerVerdict={() => setVerdict(null)}
           mix={mix}
           onMix={setMix}
           onGenerer={generer}
@@ -608,6 +650,8 @@ function EtapeSeance({
   coursDeposes,
   onDeposer,
   enExtraction,
+  verdict,
+  onFermerVerdict,
   mix,
   onMix,
   onGenerer,
@@ -635,9 +679,12 @@ function EtapeSeance({
   onReutiliser: (s: ClassSession) => void;
   consignes: string;
   onConsignes: (v: string) => void;
-  coursDeposes: { nom: string; caracteres: number }[];
+  coursDeposes: { nom: string; caracteres: number; theme: string; incertain: boolean }[];
   onDeposer: (f: File) => void;
   enExtraction: boolean;
+  /** Verdict thématique à signaler (refus ou acceptation douteuse), si besoin. */
+  verdict: { fichier: string; analyse: AnalyseThematique } | null;
+  onFermerVerdict: () => void;
   mix: MixSeance;
   onMix: (m: MixSeance) => void;
   onGenerer: () => void;
@@ -882,7 +929,19 @@ function EtapeSeance({
               Déposez vos supports : les quiz du jeu sont générés sur vos notions et le rapport de
               séance en hérite. Le fichier n’est pas conservé — seul son texte est indexé.
             </p>
+            <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 6, lineHeight: 1.55 }}>
+              Le contenu doit porter sur l’entrepreneuriat ou la gestion : chaque document est
+              vérifié au dépôt, et un support étranger au sujet est refusé.
+            </p>
           </div>
+
+          {verdict && (
+            <RefusThematique
+              fichier={verdict.fichier}
+              analyse={verdict.analyse}
+              onFermer={onFermerVerdict}
+            />
+          )}
 
           <label
             className="flex flex-col items-center justify-center gap-2"
@@ -929,9 +988,17 @@ function EtapeSeance({
           </label>
           {coursDeposes.map((doc, i) => (
             <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
-              <FileText size={13} style={{ color: 'var(--color-success)' }} />
+              <FileText
+                size={13}
+                style={{ color: doc.incertain ? '#B87A0C' : 'var(--color-success)' }}
+              />
               <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
                 {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
+                {/* Le thème détecté est affiché même quand il est correct : c'est
+                    la preuve que le contrôle a bien eu lieu sur CE fichier. */}
+                {doc.theme && doc.theme !== 'indéterminé' && doc.theme !== 'inconnu' && (
+                  <span style={{ color: 'var(--color-text-muted)' }}> · {doc.theme}</span>
+                )}
               </span>
             </div>
           ))}

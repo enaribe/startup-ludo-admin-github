@@ -6,10 +6,17 @@
  *
  *   dépôt du cours (PDF/DOCX/MD/TXT, 25 Mo)
  *     └─ POST /api/extract            → mammoth (DOCX) / pdf-parse (PDF)
- *         └─ saveSessionSourceDoc()   → classSessions/{id}/sourceDocs
- *             └─ getSessionSourceText() injecté comme `sourceText` dans le prompt
- *                 └─ POST /api/generate (type `class_session_content`)
- *                     └─ quiz, duels, financements, opportunités ancrés sur SON cours
+ *         └─ analyserDocument()       → REFUSE un cours hors entrepreneuriat
+ *             └─ saveSessionSourceDoc()   → classSessions/{id}/sourceDocs
+ *                 └─ getSessionSourceText() injecté comme `sourceText` dans le prompt
+ *                     └─ POST /api/generate (type `class_session_content`)
+ *                         └─ quiz, duels, financements… ancrés sur SON cours
+ *
+ * CONTRÔLE THÉMATIQUE — un document qui ne parle pas d'entrepreneuriat est
+ * refusé au dépôt, avec le thème détecté en clair. Voir `analyse-thematique.ts`
+ * pour le pourquoi : l'enjeu n'est pas le coût de l'appel, c'est que les
+ * catégories de quiz sont une liste FERMÉE et qu'un cours de géologie en
+ * ressortirait étiqueté « business-model », faussant le rapport de séance.
  *
  * NORMALISATION — ce module refuse de faire confiance à la sortie du modèle. Les
  * catégories sont ramenées de force dans la liste fermée et la difficulté est
@@ -19,6 +26,12 @@
  */
 
 import { appelerExtraction, appelerGeneration } from '@/lib/ai-client';
+import {
+  analyserDocument,
+  ErreurHorsSujet,
+  preVerdictLexical,
+  type AnalyseThematique,
+} from '@/lib/analyse-thematique';
 import { normaliserCategorie, normaliserDifficulte } from '@/lib/contenu-normalisation';
 import {
   getSessionSourceText,
@@ -89,6 +102,19 @@ export interface ContexteGeneration {
 }
 
 /**
+ * Cours déposé, accompagné du verdict thématique qui l'a laissé passer.
+ *
+ * L'analyse est REMONTÉE à l'appelant et non simplement consommée : un verdict
+ * `incertain` mérite un avertissement à l'écran (« ce document semble porter sur
+ * X »), ce que l'absence d'exception ne permettrait pas de distinguer d'un
+ * document franchement entrepreneurial.
+ */
+export interface DepotCours extends SeanceSourceDoc {
+  /** Verdict thématique du document. Jamais `hors-sujet` : il aurait levé. */
+  analyse: AnalyseThematique;
+}
+
+/**
  * Dépose un cours sur une séance : extraction du texte puis stockage.
  *
  * Le fichier ORIGINAL n'est pas uploadé dans Storage ici, contrairement à l'écran
@@ -97,22 +123,39 @@ export interface ContexteGeneration {
  * stocker réduit d'autant la surface de données scolaires conservées. Un
  * enseignant qui veut joindre le document aux élèves passe par `attachmentUrls`.
  *
+ * @throws ErreurHorsSujet si le document ne traite pas d'entrepreneuriat.
  * @throws Error si l'extraction échoue (format non supporté, PDF scanné, 401…).
  */
-export async function deposerCours(sessionId: string, file: File): Promise<SeanceSourceDoc> {
+export async function deposerCours(sessionId: string, file: File): Promise<DepotCours> {
   const res = await appelerExtraction(file);
   const extrait = await res.json();
   if (!res.ok || extrait.error) {
     throw new Error(extrait.error || "Extraction impossible : vérifiez le format du fichier.");
   }
 
+  const texte = extrait.text as string;
+
+  /*
+    CONTRÔLE THÉMATIQUE AVANT STOCKAGE.
+
+    L'ordre importe sur deux plans. D'abord l'enseignant : il apprend le refus
+    immédiatement, au moment où il choisit son fichier, et non trois réglages
+    plus tard en cliquant « Générer ». Ensuite les données : un document
+    hors-sujet n'est JAMAIS écrit en base, donc il ne peut pas se retrouver
+    dans le `sourceText` d'une génération ultérieure par un chemin détourné —
+    et aucun texte scolaire étranger au produit n'est conservé.
+  */
+  const analyse = await analyserDocument(texte);
+  if (analyse.verdict === 'hors-sujet') throw new ErreurHorsSujet(analyse);
+
   const docId = `src_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  return saveSessionSourceDoc(
+  const meta = await saveSessionSourceDoc(
     sessionId,
     docId,
     { name: file.name, pages: extrait.pages ?? 0 },
-    extrait.text as string
+    texte
   );
+  return { ...meta, analyse };
 }
 
 /**
@@ -122,6 +165,7 @@ export async function deposerCours(sessionId: string, file: File): Promise<Seanc
  * @param consignes  Instructions libres de l'enseignant (peut être vide).
  * @param mix        Quantités demandées par type.
  * @param contexte   Classe, niveau, durée — injectés dans le prompt.
+ * @throws ErreurHorsSujet si le cours en base ne traite pas d'entrepreneuriat.
  * @throws Error si l'API échoue ou renvoie autre chose qu'un objet.
  */
 export async function genererContenuSeance(
@@ -131,6 +175,26 @@ export async function genererContenuSeance(
   contexte: ContexteGeneration
 ): Promise<ClassSessionContent> {
   const sourceText = await getSessionSourceText(sessionId).catch(() => '');
+
+  /*
+    SECOND RIDEAU, GRATUIT.
+
+    `deposerCours` est la garde principale, mais elle ne couvre pas tout : les
+    documents déposés AVANT ce contrôle sont déjà en base, et une génération
+    peut être relancée des semaines plus tard sur une séance ancienne. On
+    revérifie donc ici le texte réellement envoyé au modèle.
+
+    Volontairement le pré-filtre LEXICAL et non `analyserDocument` : il est
+    instantané et sans coût, là où l'analyse complète ajouterait un appel IA à
+    chaque génération, chaque régénération et chaque complément. Il ne tranche
+    que les cas francs — zéro notion entrepreneuriale sur un texte entier — ce
+    qui est exactement le périmètre d'un garde-fou de second rideau. Les cas
+    limites restent le domaine du contrôle au dépôt.
+  */
+  if (sourceText.trim()) {
+    const relecture = preVerdictLexical(sourceText);
+    if (relecture?.verdict === 'hors-sujet') throw new ErreurHorsSujet(relecture);
+  }
 
   const res = await appelerGeneration({
     type: 'class_session_content',
