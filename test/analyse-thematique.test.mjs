@@ -25,6 +25,7 @@ import {
   preVerdictLexical,
   toucheAuVoisinage,
 } from '../src/lib/analyse-thematique.ts';
+import { DOMAINE, HORS_SUJET, LIMITROPHES } from './corpus-thematique.mjs';
 
 /**
  * Texte contenant chaque racine de la liste, sous une forme et sous l'autre.
@@ -149,87 +150,110 @@ test('AUCUNE racine n’est un doublon accentué d’une autre', () => {
   }
 });
 
-// ═══ CALIBRAGE SUR DES DOCUMENTS RÉELS ═══
+// ═══ CALIBRAGE SUR LE CORPUS DE RÉFÉRENCE ═══
 /*
-  Ces cas sont la justification du seuil d'acceptation. Ils encadrent la décision
-  par du texte réaliste des deux côtés de la frontière : si quelqu'un déplace le
-  seuil, c'est ici que ça casse, avec le document concret qui en souffre.
+  Ces cas sont la JUSTIFICATION des deux listes de racines et du seuil
+  d'acceptation. Ils encadrent la décision par du texte réaliste des trois côtés
+  de la frontière, et c'est ici que ça casse si quelqu'un déplace le seuil ou
+  élargit une liste — avec, nommé, le document concret qui en souffre.
+
+  Le corpus vit dans `corpus-thematique.mjs` pour être partagé avec l'audit
+  systématique plus bas.
 */
 
-const COURS_HORS_SUJET = {
-  grammaire:
-    "Le complément d'objet direct répond à la question « qui ? » ou « quoi ? ». " +
-    "L'accord du participe passé avec l'auxiliaire être se fait avec le sujet. Les " +
-    'propositions subordonnées relatives sont introduites par un pronom relatif.',
-  'histoire — partage colonial':
-    "La conférence de Berlin de 1884 organise le partage de l'Afrique entre les " +
-    'puissances européennes. Les tracés frontaliers ignorent les réalités ethniques. ' +
-    'Les indépendances africaines surviennent majoritairement en 1960.',
-  'EPS — athlétisme':
-    "L'échauffement prévient les blessures musculaires. Le relais 4x100 mètres exige " +
-    'une transmission précise du témoin. Les étirements se pratiquent à froid ou à ' +
-    "chaud. Le saut en longueur comporte quatre phases d'exécution.",
-  'informatique — purement technique':
-    "Une boucle for itère sur une séquence. Les tableaux sont indexés à partir de " +
-    "zéro. La récursivité consiste pour une fonction à s'appeler elle-même. Le " +
-    "protocole TCP garantit l'ordre des paquets. Une adresse IPv4 comporte quatre octets.",
-  'SVT — photosynthèse':
-    "La photosynthèse permet aux plantes chlorophylliennes de produire de la matière " +
-    "organique à partir de dioxyde de carbone et d'eau. Les chloroplastes contiennent " +
-    "la chlorophylle. La respiration cellulaire libère l'énergie du glucose dans les " +
-    'mitochondries. Les échanges gazeux sont régulés par les stomates.',
-  'mathématiques — proportionnalité avec des prix':
-    "Un commerçant vend 3 kg de riz pour 2400 francs. Calculer le prix de 7 kg. Une " +
-    "voiture consomme 8 litres aux 100 km : quelle quantité pour 350 km ? Résoudre " +
-    "l'équation 3x + 5 = 20. Le théorème de Thalès permet de calculer une longueur " +
-    "manquante. Calculer l'aire d'un triangle de base 6 cm et de hauteur 4 cm.",
-  'administratif — règlement intérieur':
-    "Les élèves entrent dans l'établissement à 7h30. Le port de l'uniforme est " +
-    'obligatoire. Tout retard doit être justifié auprès du surveillant général. ' +
-    "L'usage du téléphone est interdit en classe. Les sorties exigent une décharge signée.",
-};
-
-for (const [nom, texte] of Object.entries(COURS_HORS_SUJET)) {
-  test(`refusé localement : ${nom}`, () => {
+for (const [nom, texte] of Object.entries(HORS_SUJET)) {
+  test(`refusé sans appel IA : ${nom}`, () => {
     const v = preVerdictLexical(texte);
     assert.ok(v, `« ${nom} » doit être tranché sans dépenser un appel IA`);
-    assert.equal(v.verdict, 'hors-sujet');
+    assert.equal(
+      v.verdict,
+      'hors-sujet',
+      `« ${nom} » est étranger au produit : un enseignant ne doit pas pouvoir en tirer des quiz`
+    );
   });
 }
 
-const COURS_DU_DOMAINE = {
-  'entrepreneuriat — business model':
-    "Le business model canvas comporte neuf blocs dont la proposition de valeur et le " +
-    "segment de clientèle. L'étude de marché précède le plan d'affaires. L'entrepreneur " +
-    'évalue son seuil de rentabilité et son besoin en fonds de roulement. Le financement ' +
-    'mobilise fonds propres, crédit bancaire et microfinance. Les investisseurs examinent le pitch.',
-  'gestion commerciale — sans le mot « entrepreneuriat »':
-    // Cas limite VOLONTAIRE : aucune occurrence de la racine « entrepre », et
-    // pourtant c'est pleinement le domaine du produit.
-    'La facturation suit la livraison. La marge commerciale est la différence entre le ' +
-    'prix de vente et le coût d’achat. La comptabilité enregistre chaque opération et la ' +
-    'trésorerie se suit au jour le jour. Le fournisseur accorde parfois un délai de ' +
-    'paiement. La clientèle fidèle génère un chiffre d’affaires récurrent.',
-};
-
-for (const [nom, texte] of Object.entries(COURS_DU_DOMAINE)) {
-  test(`accepté localement : ${nom}`, () => {
+for (const [nom, texte] of Object.entries(DOMAINE)) {
+  test(`accepté sans appel IA : ${nom}`, () => {
     const v = preVerdictLexical(texte);
-    assert.ok(v, `« ${nom} » doit être validé sans dépenser un appel IA`);
+    assert.ok(
+      v,
+      `« ${nom} » est pleinement le domaine du produit : le reconnaître ne doit coûter aucun appel`
+    );
     assert.equal(v.verdict, 'entrepreneuriat');
   });
 }
 
-test('un cours d’économie générale n’est NI accepté NI refusé localement', () => {
-  // La frontière du produit : l'économie macro n'est pas de l'entrepreneuriat,
-  // mais le refuser sur du vocabulaire serait arbitraire. C'est au classifieur
-  // de juger, et ce test garantit qu'il est bien convoqué.
-  const texte =
-    "Le produit intérieur brut mesure la valeur ajoutée produite sur un territoire. " +
-    "L'inflation est la hausse générale des prix. La politique monétaire est conduite " +
-    'par la banque centrale. Le chômage structurel se distingue du conjoncturel. La ' +
-    'balance commerciale compare exportations et importations.';
-  assert.equal(preVerdictLexical(texte), null);
+for (const [nom, texte] of Object.entries(LIMITROPHES)) {
+  test(`soumis au classifieur, jamais refusé : ${nom}`, () => {
+    const v = preVerdictLexical(texte);
+    // Ni refus (faux positif le plus coûteux du module) ni acceptation aveugle :
+    // ces cours demandent qu'on lise leur SENS.
+    assert.notEqual(
+      v?.verdict,
+      'hors-sujet',
+      `« ${nom} » peut porter un volet entrepreneurial réel : le refuser sans le lire serait une faute`
+    );
+  });
+}
+
+// ═══ AUDIT SYSTÉMATIQUE DES DEUX LISTES ═══
+/*
+  LE TEST LE PLUS UTILE DE CE FICHIER. Les cas ci-dessus vérifient des verdicts ;
+  celui-ci vérifie CHAQUE RACINE, une par une, contre tout le corpus hors-sujet.
+
+  Il attrape la faute que la relecture ne voit pas : une racine trop courte qui
+  matche à l'intérieur d'un autre mot. Trois ont été trouvées ainsi pendant
+  l'écriture du module — « rse » dans « adve_rse_ », « ong » dans « l_ong_ueur »,
+  « associe » dans « as_socie_té ». Aucune n'était visible en lisant la liste.
+*/
+
+test('AUCUNE racine entrepreneuriale ne matche un document hors-sujet', () => {
+  const fautives = new Map();
+  for (const [nom, texte] of Object.entries(HORS_SUJET)) {
+    for (const racine of compterIndicesEntrepreneuriat(texte)) {
+      if (!fautives.has(racine)) fautives.set(racine, []);
+      fautives.get(racine).push(nom);
+    }
+  }
+  assert.equal(
+    fautives.size,
+    0,
+    'racines à retirer ou à rallonger :\n' +
+      [...fautives.entries()].map(([r, ou]) => `  « ${r} » → ${ou.join(', ')}`).join('\n')
+  );
+});
+
+test('AUCUN mot du voisinage ne désarme le refus sur un document hors-sujet', () => {
+  /*
+    Symétrique du précédent, et tout aussi nécessaire. La liste de voisinage est
+    volontairement vague, donc tentante à élargir — mais chaque mot trop large
+    envoie à l'IA des documents qu'on sait déjà refuser, et fait payer un appel
+    pour un cours de physique. « produit » (le produit des masses), « numerique »
+    (valeur numérique), « direction » (direction d'un vecteur) et « evaluation »
+    (évaluation scolaire) ont tous été retirés pour cette raison.
+  */
+  const fautifs = [];
+  for (const [nom, texte] of Object.entries(HORS_SUJET)) {
+    if (toucheAuVoisinage(texte)) fautifs.push(nom);
+  }
+  assert.deepEqual(
+    fautifs,
+    [],
+    'ces documents hors-sujet sont vus comme limitrophes, donc envoyés à l’IA pour rien'
+  );
+});
+
+test('CHAQUE cours limitrophe touche bien au voisinage', () => {
+  // L'inverse du test précédent : si la liste de voisinage devient trop
+  // étroite, ces cours tombent dans le refus local. C'est le garde-fou contre
+  // un nettoyage trop zélé.
+  for (const [nom, texte] of Object.entries(LIMITROPHES)) {
+    assert.ok(
+      toucheAuVoisinage(texte),
+      `« ${nom} » n’est plus reconnu comme limitrophe : il serait refusé sans être lu`
+    );
+  }
 });
 
 // ═══ PRÉ-VERDICT LEXICAL ═══
@@ -293,26 +317,13 @@ test('le refus local exige ZÉRO indice, pas « peu »', () => {
   d'économie, de droit ou de gestion de projet peut porter un volet
   entrepreneurial réel sans employer le vocabulaire canonique. Le refuser sur
   l'absence de « business model » serait un faux positif — un enseignant bloqué.
+
+  Le balayage complet des deux listes est fait par l'audit systématique
+  ci-dessus ; les deux cas ci-dessous nomment les situations les plus probables.
 */
 
-test('les disciplines hors-sujet ne touchent PAS au voisinage économique', () => {
-  // Si ce test casse, c'est qu'une racine de voisinage est devenue trop large et
-  // qu'elle vient de désarmer le refus local sur un document franchement
-  // étranger au produit.
-  for (const [nom, texte] of Object.entries(COURS_HORS_SUJET)) {
-    assert.equal(
-      toucheAuVoisinage(texte),
-      false,
-      `« ${nom} » ne doit pas être vu comme limitrophe du sujet`
-    );
-  }
-});
-
 test('un cours d’économie touche au voisinage et échappe au refus', () => {
-  const texte =
-    "L'inflation est la hausse générale des prix. La politique monétaire est conduite " +
-    'par la banque centrale. Le chômage structurel se distingue du conjoncturel. La ' +
-    'balance commerciale compare exportations et importations.';
+  const texte = LIMITROPHES['économie générale'];
   assert.ok(toucheAuVoisinage(texte), 'l’économie est limitrophe du sujet');
   assert.equal(
     preVerdictLexical(texte),
@@ -322,13 +333,9 @@ test('un cours d’économie touche au voisinage et échappe au refus', () => {
 });
 
 test('un cours de droit du travail échappe au refus', () => {
-  // Zéro notion canonique, mais « contrat », « salarié » et « emploi » font du
+  // Zéro notion canonique, mais « contrat », « salarié » et « syndicat » font du
   // volet entrepreneurial une hypothèse sérieuse.
-  const texte =
-    "Le contrat à durée indéterminée est la forme normale de la relation de travail. " +
-    'La période d’essai se calcule en jours calendaires. Le salarié bénéficie d’un ' +
-    'congé annuel. La rupture conventionnelle suppose un accord des deux parties.';
-  assert.equal(preVerdictLexical(texte), null);
+  assert.equal(preVerdictLexical(LIMITROPHES['droit du travail']), null);
 });
 
 // ═══ ÉCHANTILLONNAGE ═══

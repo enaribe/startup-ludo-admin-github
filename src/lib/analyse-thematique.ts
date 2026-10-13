@@ -63,140 +63,449 @@ export interface AnalyseThematique {
 }
 
 /**
- * Vocabulaire entrepreneurial de référence.
+ * Vocabulaire entrepreneurial de référence — la liste qui VALIDE.
  *
- * Choix assumé : des RACINES, pas des mots entiers, pour attraper les formes
- * fléchies sans liste de variantes (« financement / financements / financer »).
- * Les racines sont volontairement longues pour éviter les faux positifs — par
- * exemple `entrepre` et non `entre`, qui matcherait « entre deux » et
- * « entretien ».
+ * Organisée par domaine métier, parce que c'est par là qu'on l'enrichit : les
+ * enseignants ne déposent pas que des cours d'« entrepreneuriat », ils déposent
+ * de la comptabilité, de la fiscalité, des ressources humaines, de la
+ * logistique. Un cours de comptabilité générale n'emploie jamais le mot
+ * « entrepreneuriat » et relève pourtant pleinement du produit.
  *
- * Cette liste n'est PAS un classifieur : elle ne sert qu'à repérer les cas
- * francs. Sa qualité se mesure à son absence de faux positifs, pas à sa
- * couverture — un oubli envoie simplement le document à l'étage IA, ce qui est
- * le comportement correct.
+ * Des RACINES, pas des mots entiers, pour attraper les formes fléchies sans
+ * lister les variantes : `entrepre` couvre entrepreneuriat, entreprendre,
+ * entrepreneur, entrepreneuriale.
  *
- * ⚠️ TOUTES LES ENTRÉES SONT SANS ACCENT ET SANS APOSTROPHE, et doivent le
- * rester. `replier()` dépouille le texte ET les racines avant comparaison :
- * ajouter « rentabilité » à côté de « rentabilite » ne gagne aucune détection,
- * puisque les deux matchent les mêmes textes — mais le doublon est compté DEUX
- * FOIS. Il fausserait le seuil d'acceptation (8 racines DISTINCTES) et
- * afficherait « rentabilite · rentabilité » à l'enseignant. Une forme par
- * notion, dépouillée.
+ * ⚠️ TROIS RÈGLES D'ÉCRITURE, chacune apprise d'un défaut constaté :
+ *
+ *  1. SANS ACCENT NI APOSTROPHE. `replier()` dépouille le texte ET les racines
+ *     avant comparaison : ajouter « rentabilité » à côté de « rentabilite » ne
+ *     gagne aucune détection, mais le doublon est compté DEUX FOIS. Il fausse le
+ *     seuil et affiche « rentabilite · rentabilité » à l'enseignant.
+ *
+ *  2. JAMAIS DE RACINE COURTE. La comparaison est un `includes` sans frontière
+ *     de mot, donc une racine de trois ou quatre lettres est un FRAGMENT, pas
+ *     une racine. Trois ont été trouvées à l'audit : « rse » matchait
+ *     « adverse », « ong » matchait « longueur », « associe » matchait
+ *     « société ». Aucune n'était visible en relisant la liste.
+ *
+ *  3. RIEN QUI VIVE AUSSI HORS DU DOMAINE. Cette liste VALIDE un document : un
+ *     mot employé ailleurs y fait entrer du hors-sujet. « productivite »
+ *     (agricole), « evaluation » (scolaire), « certification » (ISO),
+ *     « segmentation » (d'image) et « leadership » (politique) ont tous été
+ *     retirés pour cette raison. Le doute se tranche en faveur du retrait :
+ *     une racine en moins envoie le document à l'IA, qui le jugera — une racine
+ *     en trop laisse passer un cours de géologie.
+ *
+ * Toute modification est confrontée au corpus de `test/corpus-thematique.mjs`
+ * par un audit qui balaie chaque racine. C'est ce test, et non la relecture, qui
+ * garantit la propriété 2.
  */
 const RACINES_ENTREPRENEURIAT = [
-  "entrepre", // entrepreneuriat, entreprendre, entrepreneur
-  "startup",
-  "start-up",
-  "business model",
-  "business plan",
-  "modele economique",
-  "proposition de valeur",
-  "etude de marche",
-  "segment de clientele",
-  "chiffre d affaires",
-  "rentabilite", // couvre aussi « seuil de rentabilite »
-  "levee de fonds",
-  "investisseur",
-  "capital-risque",
-  "capital risque",
-  "microfinance",
-  "micro-credit",
-  "incubateur",
-  "accelerateur",
-  "pitch",
-  "plan d affaires",
-  "tresorerie",
-  "fonds de roulement",
-  "marge commerciale",
-  "creation d entreprise",
-  "porteur de projet",
-  "pme",
-  "tpe",
-  "commercialisation",
-  "strategie commerciale",
-  "avantage concurrentiel",
-  "concurrence",
-  "clientele",
-  "fournisseur",
-  "statut juridique",
-  "immatriculation",
-  "formalisation",
-  "secteur informel",
-  "innovation",
-  "prototype",
-  "mvp",
-  "parts de marche",
-  "fonds propres",
-  "subvention",
-  "credit bancaire",
-  "garantie bancaire",
-  "comptabilite",
-  "facturation",
-  "fiscalite",
-  "cooperative",
-  "gestion d entreprise",
-  "ressources humaines",
-  "recrutement",
-  "marketing",
-  "publicite",
-  "reseau de distribution",
+  // ─── Création et statut de l'entreprise ───
+  'entrepre', // entrepreneuriat, entreprendre, entrepreneur, entrepreneurial
+  'startup',
+  'start-up',
+  'creation d entreprise',
+  'porteur de projet',
+  'createur d entreprise',
+  'pme',
+  'tpe',
+  'auto-entrepreneur',
+  'micro-entreprise',
+  'statut juridique',
+  'immatriculation',
+  'registre du commerce',
+  'personnalite morale',
+  'objet social',
+  'capital social',
+  'actionnaire',
+  'sarl',
+  'suarl',
+  'sasu',
+  'societe anonyme',
+  'entreprise individuelle',
+  'groupement d interet',
+  'formalisation',
+  'secteur informel',
+  'cessation d activite',
+  'liquidation judiciaire',
+
+  // ─── Modèle économique et stratégie ───
+  'business model',
+  'business plan',
+  'modele economique',
+  'modele d affaires',
+  'plan d affaires',
+  'proposition de valeur',
+  'avantage concurrentiel',
+  'avantage competitif',
+  'segment de clientele',
+  'positionnement',
+  'etude de marche',
+  'parts de marche',
+  'part de marche',
+  'veille concurrentielle',
+  'analyse swot',
+  'matrice swot',
+  'diversification',
+  'scalabilite',
+  'passage a l echelle',
+  'chaine de valeur',
+
+  // ─── Financement ───
+  'financement',
+  'levee de fonds',
+  'investisseur',
+  'business angel',
+  'capital-risque',
+  'capital risque',
+  'capital-investissement',
+  'microfinance',
+  'micro-credit',
+  'microcredit',
+  'tontine',
+  'fonds propres',
+  'fonds de roulement',
+  'besoin en fonds',
+  'apport personnel',
+  'credit bancaire',
+  'garantie bancaire',
+  'caution solidaire',
+  'nantissement',
+  'subvention',
+  'financement participatif',
+  'crowdfunding',
+  'prise de participation',
+  'valorisation pre-money',
+  'pacte d actionnaires',
+  'due diligence',
+  'term sheet',
+  'dilution',
+  'echeancier de remboursement',
+  'taux de remboursement',
+  'credit-bail',
+  'leasing',
+
+  // ─── Comptabilité, finance, fiscalité ───
+  'comptabilite',
+  'bilan comptable',
+  'compte de resultat',
+  'actif et passif',
+  'ecriture comptable',
+  'grand livre',
+  'journal comptable',
+  'amortissement',
+  'immobilisation',
+  'provision pour risque',
+  'tresorerie',
+  'flux de tresorerie',
+  'plan de tresorerie',
+  'chiffre d affaires',
+  'rentabilite',
+  'marge commerciale',
+  'marge brute',
+  'marge nette',
+  'valeur ajoutee',
+  'excedent brut',
+  'point mort',
+  'charges fixes',
+  'charges variables',
+  'cout de revient',
+  'prix de revient',
+  'facturation',
+  'bon de commande',
+  'recouvrement',
+  'delai de paiement',
+  'fiscalite',
+  'impot sur les societes',
+  'patente',
+  'declaration fiscale',
+  'controle fiscal',
+  'regime du forfait',
+  'benefice imposable',
+  'assiette fiscale',
+  'acompte provisionnel',
+  'retenue a la source',
+  'obligation declarative',
+  'exoneration fiscale',
+  'redressement fiscal',
+  'numero d identification fiscale',
+  'exercice comptable',
+  'tva collectee',
+  'tva deductible',
+  'bilan',
+  'actif immobilise',
+  'actif circulant',
+  'capitaux propres',
+  'dette financiere',
+  'solde intermediaire',
+  'liasse fiscale',
+  'piece justificative',
+  'rapprochement bancaire',
+  'balance agee',
+  'compte client',
+  'compte fournisseur',
+  'ecriture de cloture',
+  'budget previsionnel',
+  'compte d exploitation',
+
+  // ─── Marketing, vente, clientèle ───
+  'marketing',
+  'mix marketing',
+  'etude de clientele',
+  'clientele',
+  'fidelisation',
+  'prospection',
+  'force de vente',
+  'argumentaire de vente',
+  'technique de vente',
+  'negociation commerciale',
+  'strategie commerciale',
+  'politique de prix',
+  'commercialisation',
+  'notoriete',
+  'image de marque',
+  'identite visuelle',
+  'publicite',
+  'communication commerciale',
+  'promotion des ventes',
+  'reseau de distribution',
+  'canal de distribution',
+  'point de vente',
+  'merchandising',
+  'taux de conversion',
+  'panier moyen',
+  'relation client',
+  'satisfaction client',
+  'service apres-vente',
+  'e-commerce',
+  'vente en ligne',
+
+  // ─── Management et ressources humaines ───
+  'gestion d entreprise',
+  'ressources humaines',
+  'recrutement',
+  'entretien d embauche',
+  'fiche de poste',
+  'contrat de travail',
+  'bulletin de paie',
+  'fiche de paie',
+  'masse salariale',
+  'cotisation sociale',
+  'convention collective',
+  'formation continue',
+  'gestion des competences',
+  'management d equipe',
+  'motivation des equipes',
+  'organigramme',
+  'conduite du changement',
+  'teletravail',
+
+  // ─── Production, achats, logistique ───
+  'gestion des stocks',
+  'rupture de stock',
+  'approvisionnement',
+  'fournisseur',
+  'juste-a-temps',
+  'chaine logistique',
+  'supply chain',
+  'controle qualite',
+  'norme de qualite',
+  'cahier des charges',
+  'sous-traitance',
+  'capacite de production',
+
+  // ─── Innovation, produit, propriété ───
+  'innovation',
+  'prototype',
+  'produit minimum viable',
+  'brevet',
+  'propriete intellectuelle',
+  'marque deposee',
+  'licence d exploitation',
+  'recherche et developpement',
+  'incubateur',
+  'accelerateur',
+  'pepiniere d entreprise',
+  'transformation digitale',
+  'idee de projet',
+  'faisabilite technique',
+  'etude de faisabilite',
+  'validation du marche',
+  'iteration produit',
+  'test utilisateur',
+  'appetence du marche',
+  'rupture technologique',
+  'depot de brevet',
+
+  // ─── Pitch et présentation ───
+  'pitch',
+  'elevator pitch',
+  'deck de presentation',
+  'concours de projet',
+
+  // ─── Économie sociale et coopératives ───
+  'cooperative',
+  'mutuelle',
+  'economie sociale',
+  'entreprise sociale',
+  'impact social',
+  'groupement feminin',
+  'interet general',
+  'responsabilite societale',
+  'education financiere',
+  'institution de microfinance',
+  'petit credit',
+  'groupement d epargne',
+  'credit solidaire',
+  'decaissement',
+  'echeance de pret',
+  'tontine',
+  'mutualisation du risque',
+  'inclusion financiere',
 ];
 
 /**
- * Vocabulaire du VOISINAGE : économie, droit, social, technique de projet.
+ * Vocabulaire du VOISINAGE — la liste qui INTERDIT LE REFUS.
  *
- * Ces mots ne valident rien — un cours d'économie macro n'est pas un cours
- * d'entrepreneuriat. Mais leur présence INTERDIT LE REFUS LOCAL : ce sont des
- * disciplines limitrophes, où le volet entrepreneurial peut être réel sans
- * employer le vocabulaire canonique (« le financement de l'activité » sans
- * jamais écrire « financement »). Trancher ces cas sans lire le sens produirait
- * précisément le faux positif qu'on refuse : un enseignant d'économie bloqué.
+ * Elle ne valide jamais rien. Un cours d'économie macro n'est pas un cours
+ * d'entrepreneuriat ; mais la présence de ces mots interdit de le refuser SANS
+ * LE LIRE, parce que ces disciplines limitrophes — économie, droit du travail,
+ * gestion de projet, développement local — peuvent porter un volet
+ * entrepreneurial réel sans employer le vocabulaire canonique. Un document qui
+ * en contient part donc à l'étage IA, qui saura juger.
  *
- * Un document qui en contient part donc à l'étage IA, qui lui saura juger.
+ * ⚠️ LE COMPROMIS EST INVERSE DE CELUI DE LA LISTE A, et c'est le piège :
+ * élargir celle-ci paraît gratuit (au pire un appel IA de plus), mais chaque mot
+ * trop large DÉSARME LE REFUS sur des documents qu'on savait déjà rejeter, et
+ * fait payer un appel pour un cours de physique. Retirés à l'audit pour cette
+ * raison : « produit » (le produit des masses), « numerique » (valeur
+ * numérique), « direction » (direction d'un vecteur), « indicateur »
+ * (indicateur coloré), « coordination » (coordination motrice), « filiere »
+ * (filière scolaire), « evaluation » (évaluation scolaire).
+ *
+ * Deux mots ont été GARDÉS mais désambiguïsés, parce qu'ils protégeaient chacun
+ * un cours limitrophe réel : « capital » seul matchait un énoncé de maths sur un
+ * placement, « emploi » seul matchait « l'emploi du temps ».
+ *
+ * Deux tests encadrent donc cette liste en tenaille : aucun mot ne doit matcher
+ * le corpus hors-sujet, et chaque cours limitrophe doit continuer d'en matcher
+ * au moins un.
  */
 const RACINES_VOISINAGE = [
+  // ─── Économie générale ───
   'economie',
   'economique',
+  'macroeconomie',
+  'microeconomie',
+  'inflation',
+  'recession',
+  'produit interieur brut',
+  'pib',
+  'offre et demande',
+  'valeur ajoutee',
+  'pouvoir d achat',
+  'balance commerciale',
+  'exportation',
+  'importation',
+  'monnaie',
+  'monetaire',
+  'devise',
+  'taux de change',
+  'taux d interet',
+  'liberalisme',
+  'protectionnisme',
+  'developpement economique',
+
+  // ─── Entreprise et commerce, au sens large ───
   'entreprise',
   'societe commerciale',
+  'firme',
   'commerce',
   'commercial',
   'marche',
   'client',
+  'consommateur',
   'vente',
   'vendre',
+  'vendeur',
   'achat',
+  'acheteur',
   'prix de vente',
   'cout',
+  'tarif',
   'benefice',
   'profit',
-  'capital',
+  'concurrent',
+  'boutique',
+  'magasin',
+  'negoce',
+
+  // ─── Argent, banque, finance ───
+  'capital humain', // « capital » seul matche un énoncé de maths sur un placement
   'credit',
+  'emprunt',
+  'dette',
   'banque',
   'bancaire',
   'epargne',
   'investissement',
+  'investir',
   'budget',
-  'inflation',
-  'offre et demande',
-  'valeur ajoutee',
+  'depense',
+  'recette',
+  'revenu',
+  'paiement',
+  'versement',
+  'caisse',
+  'monetique',
+  'mobile money',
+  'transfert d argent',
+  'assurance',
+  'interet compose',
+
+  // ─── Travail, emploi, social ───
   'salarie',
-  'emploi',
-  'production',
-  'projet',
+  'salaire',
+  'emploi urbain', // « emploi » seul matche « l'emploi du temps »
+  'creation d emploi',
+  'marche du travail',
+  'employeur',
+  'employe',
+  'travailleur',
+  'chomage',
+  'metier',
+  'profession',
+  'syndicat',
+  'cotisation',
+  'retraite',
+  'condition de travail',
+  'droit du travail',
+  'code du travail',
+
+  // ─── Gestion, organisation, projet ───
   'gestion',
+  'gerer',
   'management',
   'strategie',
   'organisation',
+  'projet',
+  'rapport d activite',
+  'responsable',
+
+  // ─── Droit, administration, contrat ───
   'contrat',
-  'facture',
-  'impot',
-  'taxe',
+
+  // ─── Acteurs et contextes locaux ───
   'cooperation',
-  'artisan',
+  'cooperative',
+  'mutuelle',
   'agriculteur',
-  'metier',
+  'eleveur',
+  'transformation agroalimentaire',
+  'bailleur',
+  'femme rurale',
+
 ];
 
 /**
@@ -207,19 +516,22 @@ const RACINES_VOISINAGE = [
  * le centre économiserait des appels au prix de verdicts locaux hasardeux —
  * exactement ce qu'on ne veut pas sur un refus montré à un enseignant.
  *
- * LE 6 EST MESURÉ, PAS DEVINÉ. Calibré sur des cours types : un chapitre
- * d'entrepreneuriat en relève une quinzaine, un cours de gestion commerciale
- * (facturation, marge, trésorerie, comptabilité, clientèle, fournisseur) en
- * relève 7 — il doit passer sans appel, c'est pleinement le domaine. En face, un
- * cours de SVT, un exercice de mathématiques sur des prix et un règlement
- * intérieur en relèvent ZÉRO. L'écart entre 0 et 7 est si net qu'aucun seuil
- * intermédiaire n'est délicat à placer.
+ * LE 5 EST MESURÉ, PAS DEVINÉ, et il dépend de la DENSITÉ de la liste de
+ * racines : les deux se recalibrent ensemble. Sur douze extraits courts de cours
+ * du domaine (comptabilité, droit des affaires, RH, microfinance, logistique,
+ * marketing, fiscalité…), le compte va de 4 à 9 notions distinctes. Sur
+ * vingt-quatre textes hors-sujet — sciences, lettres, histoire, informatique,
+ * agriculture, cuisine, EPS, administratif —, il vaut ZÉRO partout. Le fossé est
+ * total : aucun seuil entre 1 et 10 ne risque un faux positif, et la seule
+ * question est de savoir combien de cours du domaine on veut reconnaître sans
+ * dépenser un appel. Les extraits de test font quatre à cinq phrases ; un vrai
+ * polycopié de cours en relève bien davantage.
  *
  * Le refus, lui, exige ZÉRO notion : un seul indice suffit à envoyer le document
  * à l'IA plutôt qu'à le rejeter. Asymétrie voulue — refuser à tort est la faute
  * la plus coûteuse de ce module.
  */
-const SEUIL_ACCEPTATION_LOCALE = 6;
+const SEUIL_ACCEPTATION_LOCALE = 5;
 const SEUIL_REFUS_LOCAL = 0;
 
 /**
