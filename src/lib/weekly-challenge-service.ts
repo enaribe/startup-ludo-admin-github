@@ -56,6 +56,7 @@ import {
   type DefiScore,
   type DefiSource,
   type MixDefi,
+  type ProjetDefi,
   type QuestionIdeation,
   type WeeklyChallenge,
 } from '@/types/weeklyChallenge';
@@ -145,6 +146,8 @@ export interface SaisieDefi {
    * appelant qui ignore ce champ ne doit pas vider le travail d'un autre.
    */
   questionsIdeation?: QuestionIdeation[];
+  /** Projets tout faits du défi. Même règle que `questionsIdeation`. */
+  projets?: ProjetDefi[];
 }
 
 /**

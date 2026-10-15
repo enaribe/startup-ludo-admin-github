@@ -57,6 +57,7 @@ import {
   MIX_DEFI_DEFAUT,
   type DefiScore,
   type MixDefi,
+  type ProjetDefi,
   type QuestionIdeation,
   type StatutDefi,
   type WeeklyChallenge,
@@ -146,6 +147,15 @@ export default function PageDefi() {
     d'idéation génériques. Un défi publié sans questionnaire reste jouable.
   */
   const [questions, setQuestions] = useState<QuestionIdeation[]>([]);
+  /*
+    PROJETS TOUT FAITS, écrits pour LE THÈME de la semaine.
+
+    Ils ne remplacent pas les projets génériques du jeu : ils existent pour
+    qu'un joueur pressé parte avec une entreprise qui a quelque chose à voir
+    avec le défi. Sans eux, le mobile n'affiche pas cette voie — et ne se
+    rabat PAS sur les projets du plateau, qui ignorent le thème.
+  */
+  const [projets, setProjets] = useState<ProjetDefi[]>([]);
   const [debutAt, setDebutAt] = useState(0);
   const [finAt, setFinAt] = useState(0);
   /*
@@ -189,6 +199,7 @@ export default function PageDefi() {
         setFinAt(d.finAt);
         setBannerUrl(d.bannerUrl ?? '');
         setQuestions(d.questionsIdeation ?? []);
+        setProjets(d.projets ?? []);
         // Le classement n'a de sens qu'une fois le défi lancé.
         if (d.statut !== 'brouillon') setScores(await getClassementDefi(d.id));
       }
@@ -271,6 +282,7 @@ export default function PageDefi() {
         // efface donc les questions, ce qui est le comportement attendu du
         // bouton de suppression de la dernière ligne.
         questionsIdeation: questions,
+        projets,
       });
 
       if (statut === 'ouvert') {
@@ -477,12 +489,25 @@ export default function PageDefi() {
     d'image peut être `null`, `''` ou la clé absente, les trois valant « pas
     d'image ».
   */
+  /*
+    ⚠️ TOUT CHAMP ÉDITABLE DOIT FIGURER ICI.
+
+    DÉFAUT CORRIGÉ : le questionnaire et les projets n'y étaient pas. Un admin
+    qui ajoutait des questions voyait le bouton « Enregistrer » rester inerte,
+    et perdait son travail en quittant la page — sans message, sans trace.
+
+    La comparaison des listes passe par JSON : elles sont courtes (4 entrées au
+    plus) et leurs champs sont des chaînes, donc l'ordre des clés est stable.
+  */
+  const memeListe = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const themeModifie =
     titre !== defi.titre ||
     description !== defi.description ||
     debutAt !== defi.debutAt ||
     finAt !== defi.finAt ||
-    bannerUrl !== (defi.bannerUrl ?? '');
+    bannerUrl !== (defi.bannerUrl ?? '') ||
+    !memeListe(questions, defi.questionsIdeation ?? []) ||
+    !memeListe(projets, defi.projets ?? []);
   const aEnregistrer = !clos && (themeModifie || brouillonContenu !== null);
 
   return (
@@ -681,10 +706,124 @@ export default function PageDefi() {
         </div>
       </section>
 
-      {/* ═══ 3. Le contenu ═══ */}
+      {/* ═══ 3. Les projets tout faits ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
           numero={3}
+          titre="Les projets proposés"
+          aide="Des entreprises toutes prêtes, pour le joueur qui ne veut pas construire son idée."
+          fait={projets.length > 0}
+        />
+
+        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.55 }}>
+          Facultatif, mais écrivez-les pour LE thème de la semaine. Sans projet
+          ici, cette voie n’est pas proposée au joueur — l’application ne se
+          rabat pas sur les projets génériques du jeu, qui seraient hors sujet.
+        </p>
+
+        {/*
+          AVERTISSEMENT PLUTÔT QUE BLOCAGE.
+
+          Un défi sans question ET sans projet ne laisse au joueur aucune façon
+          de créer son entreprise : il arriverait sur un écran vide. On le dit
+          ici, au moment où l'admin peut encore corriger, plutôt que de refuser
+          l'ouverture et le laisser chercher pourquoi.
+        */}
+        {questions.length === 0 && projets.length === 0 ? (
+          <div
+            className="flex items-start gap-2 mb-4"
+            style={{
+              padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(255,188,64,0.1)', border: '1px solid rgba(255,188,64,0.3)',
+            }}
+          >
+            <AlertTriangle size={15} style={{ color: '#B87A0C', flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+              Ni question ni projet : le joueur n’aura aucune façon de créer son
+              entreprise. Remplissez au moins une des deux sections.
+            </span>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3">
+          {projets.map((p, i) => (
+            <div
+              key={p.id}
+              style={{
+                border: '1.5px solid var(--color-card-border)',
+                borderRadius: 12,
+                padding: 14,
+                background: '#FFFFFF',
+              }}
+            >
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                  Projet {i + 1}
+                </span>
+                <button
+                  type="button"
+                  disabled={clos}
+                  onClick={() => setProjets(projets.filter((_, j) => j !== i))}
+                  title="Retirer ce projet"
+                  style={{
+                    background: 'none', border: 'none', cursor: clos ? 'not-allowed' : 'pointer',
+                    color: 'var(--color-text-muted)', padding: 2, opacity: clos ? 0.4 : 1,
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <input
+                className="input-field"
+                value={p.nom}
+                disabled={clos}
+                placeholder="AgriLink"
+                onChange={(e) =>
+                  setProjets(projets.map((x, j) => (j === i ? { ...x, nom: e.target.value } : x)))
+                }
+              />
+              <textarea
+                className="input-field"
+                style={{ marginTop: 8, fontSize: 12.5 }}
+                rows={2}
+                value={p.description}
+                disabled={clos}
+                placeholder="Ce que fait l’entreprise, en une ou deux phrases."
+                onChange={(e) =>
+                  setProjets(
+                    projets.map((x, j) => (j === i ? { ...x, description: e.target.value } : x))
+                  )
+                }
+              />
+            </div>
+          ))}
+
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={clos || projets.length >= 6}
+            style={{ alignSelf: 'flex-start', opacity: clos || projets.length >= 6 ? 0.5 : 1 }}
+            onClick={() =>
+              setProjets([
+                ...projets,
+                // Id horodaté : stable pour React et indépendant de la position,
+                // pour qu'un retrait au milieu ne redistribue pas les ids.
+                { id: `p_${Date.now()}`, nom: '', description: '' },
+              ])
+            }
+            title={projets.length >= 6 ? 'Six projets au maximum' : undefined}
+          >
+            <Plus size={14} style={{ display: 'inline', marginRight: 6 }} />
+            Ajouter un projet
+          </button>
+        </div>
+      </section>
+
+      {/* ═══ 4. Le contenu ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={4}
           titre="Le contenu"
           aide="Les cartes jouées pendant le défi. Importez un JSON, ou générez-le depuis un document."
           fait={cartesEnregistrees > 0}
@@ -1012,10 +1151,10 @@ export default function PageDefi() {
         ) : null}
       </section>
 
-      {/* ═══ 4. Ouvrir, puis clôturer ═══ */}
+      {/* ═══ 5. Ouvrir, puis clôturer ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
-          numero={4}
+          numero={5}
           titre="Mise en ligne"
           aide="Un seul défi peut être en cours à la fois."
           fait={defi.statut !== 'brouillon'}

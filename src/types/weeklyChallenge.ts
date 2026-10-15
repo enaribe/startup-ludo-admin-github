@@ -130,6 +130,28 @@ export interface QuestionIdeation {
   exemple?: string;
 }
 
+/**
+ * Un projet tout fait, proposé au joueur qui ne veut pas construire son idée.
+ *
+ * ═══ PROPRE AU DÉFI, ET FACULTATIF ═══
+ *
+ * Ces projets sont écrits pour LE THÈME de la semaine. Ils ne remplacent pas
+ * les projets génériques du jeu : ils existent pour qu'un joueur pressé parte
+ * avec une entreprise qui a quelque chose à voir avec le défi.
+ *
+ * Absents, le mobile n'affiche RIEN à leur place — pas de repli sur les projets
+ * génériques du plateau. Proposer « AgriLink » sur un défi consacré au pitch
+ * donnerait une liste hors sujet, et le joueur croirait que c'est voulu.
+ */
+export interface ProjetDefi {
+  /** Stable, pour que le choix d'un joueur ne dépende pas de l'ordre. */
+  id: string;
+  /** Un vrai nom de marque, court. */
+  nom: string;
+  /** Une à deux phrases. Ce que fait l'entreprise. */
+  description: string;
+}
+
 export interface WeeklyChallenge {
   /** Id du document. Convention : `AAAA-Sxx` (ex. `2026-S42`), lisible en base. */
   id: string;
@@ -211,6 +233,18 @@ export interface WeeklyChallenge {
    * jouable — le parcours ne doit pas dépendre d'un champ facultatif.
    */
   questionsIdeation?: QuestionIdeation[];
+
+  /**
+   * Projets tout faits proposés pour CE défi.
+   *
+   * VIDE OU ABSENT : le mobile n'affiche pas la voie « projet tout fait ». Il
+   * ne se rabat PAS sur les projets génériques du plateau — ils ignorent le
+   * thème de la semaine, et une liste hors sujet est pire que pas de liste.
+   *
+   * Un défi sans projets ET sans questions ne propose donc aucune voie : c'est
+   * au back-office d'en fournir au moins une, et l'écran le dit.
+   */
+  projets?: ProjetDefi[];
 
   /** Ouverture, en millisecondes epoch (UTC). */
   debutAt: number;

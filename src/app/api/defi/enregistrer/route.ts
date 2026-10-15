@@ -3,7 +3,7 @@
  *
  *  POST /api/defi/enregistrer
  *      Authorization: Bearer <idToken super admin>
- *      { id?, titre, description, statut, debutAt, finAt, bannerUrl?, questionsIdeation? }
+ *      { id?, titre, description, statut, debutAt, finAt, bannerUrl?, questionsIdeation?, projets? }
  *      → 200 { ok: true, id }
  *      → 403 si l'appelant n'est pas super admin
  *      → 409 si l'ouverture entre en conflit avec un défi déjà ouvert
@@ -82,6 +82,25 @@ export async function POST(request: NextRequest) {
         // `exemple` vide n'est pas écrit : Firestore stockerait une chaîne que
         // le mobile afficherait comme un indice… vide.
         .map((q) => (q.exemple ? q : { id: q.id, texte: q.texte }))
+    : null;
+
+  /*
+    PROJETS TOUT FAITS — même traitement que le questionnaire.
+
+    Une entrée sans nom est écartée : elle produirait une carte muette que le
+    joueur ne pourrait pas distinguer des autres. La description, elle, est
+    tolérée vide — un nom seul reste choisissable.
+  */
+  const projetsFournis = Object.prototype.hasOwnProperty.call(corps, 'projets');
+  const brutProjets = (corps as { projets?: unknown }).projets;
+  const projets = projetsFournis
+    ? (Array.isArray(brutProjets) ? brutProjets : [])
+        .map((p, i) => ({
+          id: String((p as { id?: unknown })?.id ?? '').trim() || `p${i + 1}`,
+          nom: String((p as { nom?: unknown })?.nom ?? '').trim(),
+          description: String((p as { description?: unknown })?.description ?? '').trim(),
+        }))
+        .filter((p) => p.nom)
     : null;
 
   const banniereFournie = Object.prototype.hasOwnProperty.call(corps, 'bannerUrl');
@@ -200,6 +219,7 @@ export async function POST(request: NextRequest) {
       finAt,
       ...(banniereFournie ? { bannerUrl } : {}),
       ...(questionsIdeation !== null ? { questionsIdeation } : {}),
+      ...(projets !== null ? { projets } : {}),
       // `champion` et `participants` ne sont JAMAIS écrits ici : ils
       // appartiennent à la clôture. Les inclure permettrait de désigner un
       // champion à la main, ce qui viderait le classement de son sens.
@@ -215,6 +235,7 @@ export async function POST(request: NextRequest) {
             // complet évite d'avoir à s'en souvenir.
             bannerUrl: null,
             questionsIdeation: [],
+            projets: [],
             creeAt: maintenant,
           }),
       majAt: maintenant,
