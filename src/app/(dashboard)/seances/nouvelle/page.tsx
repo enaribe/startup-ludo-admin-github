@@ -1,21 +1,31 @@
 'use client';
 
 /**
- * Mode Classe — wizard de création d'une séance (3 étapes).
+ * Mode Classe — wizard de création d'une séance (3 ou 4 écrans).
  *
- * ① La séance    — QUATRE façons de préparer, à plat et sur un pied d'égalité :
- *                  séance prête à l'emploi, génération depuis son cours (voie
- *                  principale), réutilisation d'une séance, contenu générique.
+ * UN ÉCRAN, UNE QUESTION. Le fil n'a pas la même longueur pour tous :
  *
- *                  Les réglages d'une façon vivent DANS son option et n'existent
- *                  que si elle est choisie. L'écran portait auparavant deux
- *                  cartes comparatives dont celle de droite contenait un second
- *                  choix à trois branches, plus une zone de dépôt posée sous les
- *                  deux — retour d'usage : « trop de choses sur un même écran ».
- *                  Ce qui a un défaut utilisable (intitulé, édition, dosage du
- *                  contenu) est replié, avec sa valeur courante sur le titre.
- * ② La classe    — classe parmi celles de l'enseignant, durée 20–45 min.
- * ③ Récapitulatif — Lancer maintenant, ou programmer.
+ *   ① La séance     — la seule question : COMMENT préparer ? Quatre façons à
+ *                     plat (prête à l'emploi, depuis son cours, réutiliser,
+ *                     contenu générique). Rien d'autre que de quoi choisir.
+ *   ② Le contenu    — SEULEMENT pour « depuis mon cours » et « réutiliser » :
+ *                     dépôt, consignes, dosage, génération, aperçu éditable.
+ *   ③ La classe     — classe parmi celles de l'enseignant, durée 20–45 min.
+ *   ④ Récapitulatif — Lancer maintenant, ou programmer.
+ *
+ * POURQUOI CE DÉCOUPAGE. Tout vivait sur l'écran ①, qui était donc dimensionné
+ * pour le cas le plus lourd — générer depuis un cours — et faisait payer cette
+ * longueur aux trois autres façons, qui ne demandent qu'un clic. Deux retours
+ * successifs : « trop de choses sur un même écran », puis, après un premier
+ * correctif par repli, « je ne veux pas que le user se mette à scroller
+ * autant ». Replier ne suffisait pas : les réglages d'une option s'ajoutaient
+ * SOUS les trois autres, qui restaient à l'écran.
+ *
+ * L'écran ② n'est donc pas une étape fixe : `etapesPour()` le retire quand il
+ * n'aurait rien à montrer. Une séance prête va directement au choix de la
+ * classe — ajouter un écran traversable en un clic aurait remplacé « c'est trop
+ * long » par « pourquoi cet écran ». Les étapes sont désignées par une CLÉ et
+ * non par un rang, pour cette raison exacte (cf. `CleEtape`).
  *
  * NAVIGATION LIBRE — toutes les étapes restent cliquables (cf. `WizardStepper`,
  * qui corrige le défaut d'affordance du wizard sponsor). La validation porte sur
@@ -91,7 +101,42 @@ import RefusThematique from '@/components/school/RefusThematique';
 import ApercuContenuSeance from '@/components/school/ApercuContenuSeance';
 import AjoutContenuSeance from '@/components/school/AjoutContenuSeance';
 
-const ETAPES = ['La séance', 'La classe', 'Récapitulatif'] as const;
+/**
+ * Les écrans possibles du parcours, désignés par un NOM et non par un rang.
+ *
+ * ═══ POURQUOI DES CLÉS, ET NON UN INDEX ═══
+ *
+ * Le fil n'a pas la même longueur selon la façon de préparer : préparer un
+ * contenu depuis un cours (ou relire une séance réutilisée) ajoute un écran que
+ * « séance prête » et « contenu générique » n'ont aucune raison de traverser.
+ *
+ * Avec des index, « étape 2 » désignerait la classe dans un cas et le contenu
+ * dans l'autre : un enseignant qui change d'avis à l'écran 1 se retrouverait
+ * ailleurs qu'il ne croit, sans rien de visible pour le signaler. La clé
+ * supprime la question — `'classe'` désigne toujours la classe.
+ */
+type CleEtape = 'seance' | 'contenu' | 'classe' | 'recap';
+
+const LIBELLES_ETAPES: Record<CleEtape, string> = {
+  seance: 'La séance',
+  contenu: 'Le contenu',
+  classe: 'La classe',
+  recap: 'Récapitulatif',
+};
+
+/**
+ * Les écrans à traverser pour une façon de préparer donnée.
+ *
+ * L'écran « Le contenu » n'existe que là où il y a quelque chose à faire ou à
+ * relire : déposer un cours et générer, ou vérifier ce qu'une séance réutilisée
+ * apporte. Une séance prête et le contenu générique n'ont rien à y montrer —
+ * les faire passer par un écran traversable en un clic remplacerait « c'est
+ * trop long » par « pourquoi cet écran ».
+ */
+function etapesPour(voie: VoieContenu, seancePrete: boolean): readonly CleEtape[] {
+  if (seancePrete || voie === 'edition') return ['seance', 'classe', 'recap'];
+  return ['seance', 'contenu', 'classe', 'recap'];
+}
 
 /**
  * Séances prêtes à l'emploi (spec v2.1, voie A) : un clic préconfigure titre,
@@ -115,7 +160,7 @@ export default function NouvelleSeancePage() {
   const searchParams = useSearchParams();
   const { admin, scopedClassIds, scopedEstablishmentId, loading: authLoading } = useAuth();
 
-  const [etape, setEtape] = useState(0);
+  const [etape, setEtape] = useState<CleEtape>('seance');
   const [chargement, setChargement] = useState(true);
 
   // ===== Données de référence =====
@@ -483,7 +528,25 @@ export default function NouvelleSeancePage() {
     );
   }
 
-  const derniereEtape = etape === ETAPES.length - 1;
+  /*
+    ═══ LE FIL SE CALCULE, IL N'EST PAS FIGÉ ═══
+
+    Les écrans dépendent de la façon de préparer choisie à l'écran 1. Tout ce
+    qui suit en découle, pour qu'il n'existe qu'UNE définition du parcours :
+    changer `etapesPour` suffit à changer le fil, les flèches et le pied de page.
+  */
+  const etapes = etapesPour(voie, seancePreteId !== null);
+  const rang = Math.max(0, etapes.indexOf(etape));
+  const derniereEtape = rang === etapes.length - 1;
+  const premiereEtape = rang === 0;
+
+  /*
+    FILET DE SÉCURITÉ. Changer de façon de préparer peut retirer du fil l'écran
+    affiché : un enseignant sur « Le contenu » qui revient choisir « séance
+    prête » se retrouverait sur un écran que le parcours ne contient plus —
+    page blanche, sans rien pour en sortir. On le ramène alors au choix.
+  */
+  const etapeAffichee: CleEtape = etapes.includes(etape) ? etape : 'seance';
 
   return (
     <div className="flex flex-col gap-5" style={{ maxWidth: 1320 }}>
@@ -497,9 +560,13 @@ export default function NouvelleSeancePage() {
         </p>
       </div>
 
-      <WizardStepper etapes={ETAPES} etape={etape} onAller={setEtape} />
+      <WizardStepper
+        etapes={etapes.map((c) => LIBELLES_ETAPES[c])}
+        etape={rang}
+        onAller={(i) => setEtape(etapes[i])}
+      />
 
-      {etape === 0 && (
+      {etapeAffichee === 'seance' && (
         <EtapeSeance
           voie={voie}
           onVoie={setVoie}
@@ -515,6 +582,15 @@ export default function NouvelleSeancePage() {
           seancesPassees={seancesPassees}
           seanceSource={seanceSource}
           onReutiliser={reutiliser}
+          onContenu={majContenu}
+        />
+      )}
+
+      {etapeAffichee === 'contenu' && (
+        <EtapeContenu
+          voie={voie}
+          titre={titre}
+          seanceSource={seanceSource}
           consignes={consignes}
           onConsignes={setConsignes}
           coursDeposes={coursDeposes}
@@ -530,10 +606,11 @@ export default function NouvelleSeancePage() {
           enAjout={enAjout}
           contenu={contenu}
           onContenu={majContenu}
+          onRevenirAuChoix={() => setEtape('seance')}
         />
       )}
 
-      {etape === 1 && (
+      {etapeAffichee === 'classe' && (
         <EtapeClasse
           classes={classes}
           classId={classId}
@@ -544,7 +621,7 @@ export default function NouvelleSeancePage() {
         />
       )}
 
-      {etape === 2 && (
+      {etapeAffichee === 'recap' && (
         <EtapeRecap
           titre={titre}
           voie={voie}
@@ -567,17 +644,32 @@ export default function NouvelleSeancePage() {
         <button
           type="button"
           className="btn-secondary flex items-center gap-2"
-          onClick={() => (etape === 0 ? router.push('/seances') : setEtape(etape - 1))}
+          onClick={() => (premiereEtape ? router.push('/seances') : setEtape(etapes[rang - 1]))}
           style={{ fontSize: 13 }}
         >
           <ArrowLeft size={14} />
-          {etape === 0 ? 'Annuler' : 'Précédent'}
+          {premiereEtape ? 'Annuler' : 'Précédent'}
         </button>
 
-        {/* Indication centrale : où on en est, ce qui manque. */}
+        {/*
+          ═══ CE QUI MANQUE, LÀ OÙ ON EST ═══
+
+          DÉFAUT CORRIGÉ : hors du récapitulatif, l'absence de contenu affichait
+          une coche verte et « Zéro préparation — il ne reste que la classe ».
+          Sur l'écran de génération, cocher vert un contenu qui n'existe pas
+          envoie l'enseignant plus loin convaincu d'avoir fini, pour buter sur un
+          bouton Lancer grisé deux écrans après.
+
+          Les étapes sont nommées et non numérotées : leur rang change avec la
+          façon de préparer, donc aucun message ne peut citer « l'étape 2 ».
+        */}
         <span className="flex items-center gap-2" style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
-          {derniereEtape && !peutLancer ? (
-            !contenuPret ? 'Définissez le contenu à l’étape 1.' : 'Choisissez une classe à l’étape 2.'
+          {etapeAffichee === 'contenu' && !contenuPret ? (
+            voie === 'generation'
+              ? 'Déposez un document, puis générez le contenu.'
+              : 'Choisissez la séance à reprendre.'
+          ) : derniereEtape && !peutLancer ? (
+            !contenuPret ? 'Définissez le contenu avant de lancer.' : 'Choisissez une classe.'
           ) : contenuPret ? (
             <>
               <Check size={14} style={{ color: 'var(--color-success)' }} />
@@ -588,7 +680,7 @@ export default function NouvelleSeancePage() {
           ) : (
             <>
               <Check size={14} style={{ color: 'var(--color-success)' }} />
-              Zéro préparation — vous pouvez lancer dès l’étape 2.
+              Zéro préparation — il ne reste que la classe à choisir.
             </>
           )}
         </span>
@@ -619,7 +711,7 @@ export default function NouvelleSeancePage() {
           <button
             type="button"
             className="btn-primary flex items-center gap-2"
-            onClick={() => setEtape(etape + 1)}
+            onClick={() => setEtape(etapes[rang + 1])}
             style={{ fontSize: 13 }}
           >
             Suivant
@@ -634,10 +726,25 @@ export default function NouvelleSeancePage() {
 // ===================== ÉTAPE 1 — LA SÉANCE =====================
 
 /**
- * Étape 1 (maquette « Lancer une session ») : deux cartes côte à côte.
- * À gauche les séances prêtes à l'emploi (un clic préconfigure tout), à droite
- * la séance personnalisée — où vivent les trois vraies sources de contenu
- * (génération depuis le cours, réutilisation, édition seule).
+ * Écran 1 — UNE SEULE QUESTION : comment préparer cette séance ?
+ *
+ * ═══ CE QUI A CHANGÉ, ET POURQUOI ═══
+ *
+ * Cet écran portait autrefois le choix ET tout ce que le choix impliquait :
+ * zone de dépôt, consignes, dosage, bouton de génération, aperçu éditable. Il
+ * était donc dimensionné pour le cas le plus lourd (générer depuis un cours),
+ * et les trois autres façons — qui ne demandent rien de plus qu'un clic —
+ * payaient cette longueur. Retour d'usage : « trop de choses sur un même
+ * écran », puis, après un premier correctif par repli : « je ne veux pas que le
+ * user se mette à scroller autant ».
+ *
+ * Replier ne suffisait pas : les réglages d'une option dépliée s'ajoutaient
+ * SOUS les trois autres options, qui restaient à l'écran. La page restait
+ * longue. Ce qu'il fallait, c'est séparer — le choix ici, ses conséquences à
+ * l'écran suivant, qui n'existe que pour les façons qui en ont besoin.
+ *
+ * Il ne reste donc ici que quatre lignes et deux réglages repliés : l'écran
+ * tient sans défilement, et chaque ligne est une issue réelle du parcours.
  */
 function EtapeSeance({
   voie,
@@ -654,20 +761,6 @@ function EtapeSeance({
   seancesPassees,
   seanceSource,
   onReutiliser,
-  consignes,
-  onConsignes,
-  coursDeposes,
-  onDeposer,
-  enExtraction,
-  verdict,
-  onFermerVerdict,
-  mix,
-  onMix,
-  onGenerer,
-  enGeneration,
-  onAjouter,
-  enAjout,
-  contenu,
   onContenu,
 }: {
   voie: VoieContenu;
@@ -678,7 +771,7 @@ function EtapeSeance({
   onSeancePreteId: (v: string | null) => void;
   titre: string;
   onTitre: (v: string) => void;
-  /** Une séance prête à l'emploi impose aussi sa durée (étape 2 pré-remplie). */
+  /** Une séance prête à l'emploi impose aussi sa durée (écran classe pré-rempli). */
   onSeancePrete: (duree: number) => void;
   editions: EditionData[];
   editionId: string;
@@ -686,21 +779,6 @@ function EtapeSeance({
   seancesPassees: ClassSession[];
   seanceSource: ClassSession | null;
   onReutiliser: (s: ClassSession) => void;
-  consignes: string;
-  onConsignes: (v: string) => void;
-  coursDeposes: { nom: string; caracteres: number; theme: string; incertain: boolean }[];
-  onDeposer: (f: File) => void;
-  enExtraction: boolean;
-  /** Verdict thématique à signaler (refus ou acceptation douteuse), si besoin. */
-  verdict: { fichier: string; analyse: AnalyseThematique } | null;
-  onFermerVerdict: () => void;
-  mix: MixSeance;
-  onMix: (m: MixSeance) => void;
-  onGenerer: () => void;
-  enGeneration: boolean;
-  onAjouter: (m: MixSeance) => void | Promise<void>;
-  enAjout: boolean;
-  contenu: ClassSessionContent | null;
   onContenu: (c: ClassSessionContent) => void;
 }) {
   const modePerso = seancePreteId === null;
@@ -722,7 +800,7 @@ function EtapeSeance({
     onSeancePrete(sp.duree);
   };
 
-  /** Toute interaction avec la carte personnalisée reprend la main. */
+  /** Toute interaction avec une voie personnalisée reprend la main. */
   const passerEnPerso = (v: VoieContenu) => {
     onSeancePreteId(null);
     onVoie(v);
@@ -740,23 +818,22 @@ function EtapeSeance({
       </div>
 
       {/*
-        ═══ QUATRE FAÇONS, AU MÊME NIVEAU ═══
+        QUATRE FAÇONS, AU MÊME NIVEAU, DANS L'ORDRE CROISSANT DE PRÉPARATION.
 
-        Avant : deux cartes côte à côte, celle de droite contenant un second
-        choix à trois branches. L'enseignant tenait donc un arbre (2 puis 3)
-        dont tout était affiché simultanément. Ici, les quatre issues réelles
-        sont à plat — c'est bien quatre décisions possibles, pas deux.
+        L'écran posait auparavant deux cartes comparatives dont celle de droite
+        contenait un second choix à trois branches : l'enseignant tenait un
+        arbre (2 puis 3) entièrement déplié. Ce sont bien quatre issues, elles
+        sont donc présentées comme telles.
 
-        L'ordre va du moins au plus de préparation : la première ligne est celle
-        qui ne demande rien, la dernière celle qui demande le plus.
+        Chaque ligne porte juste ce qu'il faut pour CHOISIR — un sous-titre et,
+        quand il aide, un compteur. Ce que le choix implique vit à l'écran
+        suivant, pas ici.
       */}
       <div className="flex flex-col gap-2.5">
         {/* ─── (1) Séance prête : aucune préparation ─── */}
         <OptionSource
           actif={!modePerso}
           onClick={() => {
-            // Rien à présélectionner s'il n'y a pas de catalogue : on ouvre
-            // l'option, la liste vide porte alors son propre message.
             if (seancesPretes[0]) choisirPrete(seancesPretes[0]);
           }}
           icone={<Zap size={17} />}
@@ -809,133 +886,7 @@ function EtapeSeance({
           titre="Depuis mon cours"
           recommande
           texte="Les quiz portent sur VOS notions, et le rapport de séance en hérite."
-          enfants={
-            <>
-              {/*
-                LE DÉPÔT VIT DANS L'OPTION QUI LE DEMANDE.
-
-                Il occupait auparavant une carte pleine largeur SOUS les deux
-                cartes de choix : le lien entre « j'ai choisi de générer » et
-                « une zone de dépôt est apparue plus bas » n'était pas visible
-                d'un seul regard, et c'est précisément ce que le retour d'usage
-                décrivait.
-              */}
-              <div>
-                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.55 }}>
-                  Le fichier n’est pas conservé — seul son texte est indexé. Le contenu doit porter
-                  sur l’entrepreneuriat ou la gestion&nbsp;: chaque document est vérifié au dépôt.
-                </p>
-              </div>
-
-              {verdict && (
-                <RefusThematique
-                  fichier={verdict.fichier}
-                  analyse={verdict.analyse}
-                  onFermer={onFermerVerdict}
-                />
-              )}
-
-              <label
-                className="flex flex-col items-center justify-center gap-2"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (enExtraction) return;
-                  Array.from(e.dataTransfer.files).forEach((f) => onDeposer(f));
-                }}
-                style={{
-                  border: '1.5px dashed var(--color-card-border)',
-                  borderRadius: 12,
-                  padding: '26px 20px',
-                  cursor: enExtraction ? 'progress' : 'pointer',
-                  opacity: enExtraction ? 0.6 : 1,
-                  textAlign: 'center',
-                  background: '#FFFFFF',
-                }}
-              >
-                <Upload size={20} style={{ color: 'var(--color-primary)' }} />
-                <span style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
-                  {enExtraction ? (
-                    'Extraction en cours…'
-                  ) : (
-                    <>
-                      Glissez vos documents ici ou{' '}
-                      <span style={{ color: '#B87A0C', fontWeight: 700 }}>parcourez vos fichiers</span>
-                    </>
-                  )}
-                </span>
-                <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-                  PDF, DOCX, Markdown, texte · 25 Mo max par fichier
-                </span>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.md,.markdown,.txt"
-                  multiple
-                  style={{ display: 'none' }}
-                  disabled={enExtraction}
-                  onChange={(e) => {
-                    Array.from(e.target.files ?? []).forEach((f) => onDeposer(f));
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-
-              {coursDeposes.map((doc, i) => (
-                <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
-                  <FileText
-                    size={13}
-                    style={{ color: doc.incertain ? '#B87A0C' : 'var(--color-success)' }}
-                  />
-                  <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
-                    {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
-                    {/* Le thème détecté est affiché même quand il est correct : c'est
-                        la preuve que le contrôle a bien eu lieu sur CE fichier. */}
-                    {doc.theme && doc.theme !== 'indéterminé' && doc.theme !== 'inconnu' && (
-                      <span style={{ color: 'var(--color-text-muted)' }}> · {doc.theme}</span>
-                    )}
-                  </span>
-                </div>
-              ))}
-
-              <label className="flex flex-col gap-1">
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  Vos consignes <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
-                </span>
-                <textarea
-                  className="input-field"
-                  rows={2}
-                  placeholder="Ex. Insister sur le financement participatif, éviter les questions de comptabilité."
-                  value={consignes}
-                  onChange={(e) => onConsignes(e.target.value)}
-                />
-              </label>
-
-              {/*
-                Le dosage du contenu est un réglage FIN : la plupart des
-                enseignants gardent le défaut. Replié, il ne pèse plus sur la
-                décision principale tout en restant à un clic.
-              */}
-              <BlocRepliable titre="Ajuster le contenu à générer">
-                <MixContenu mix={mix} onMix={onMix} />
-                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-                  Repère&nbsp;: ≈ 1 quiz toutes les 3 minutes de jeu. Seuls les quiz alimentent le
-                  rapport de notions maîtrisées — et plus le paquet est fourni, moins les cartes
-                  reviennent en partie.
-                </p>
-              </BlocRepliable>
-
-              <button
-                type="button"
-                className="btn-primary flex items-center gap-2"
-                style={{ alignSelf: 'flex-start', fontSize: 13, opacity: coursDeposes.length === 0 || enGeneration ? 0.5 : 1 }}
-                disabled={coursDeposes.length === 0 || enGeneration}
-                onClick={onGenerer}
-              >
-                <Sparkles size={14} />
-                {enGeneration ? 'Génération en cours…' : contenu ? 'Régénérer' : 'Générer le contenu'}
-              </button>
-            </>
-          }
+          compteur="dépôt à l’étape suivante"
         />
 
         {/* ─── (3) Réutilisation d'une séance déjà générée ─── */}
@@ -945,7 +896,7 @@ function EtapeSeance({
           icone={<RefreshCw size={17} />}
           titre="Réutiliser une séance"
           texte="Repartir d’un contenu déjà généré, tel quel."
-          compteur={seancesPassees.length > 0 ? `${seancesPassees.length} séance${seancesPassees.length > 1 ? 's' : ''}` : undefined}
+          compteur={seancesPassees.length > 0 ? `${seancesPassees.length} séance${seancesPassees.length > 1 ? 's' : ''}` : 'aucune pour l’instant'}
           enfants={
             seancesPassees.length === 0 ? (
               <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
@@ -995,13 +946,13 @@ function EtapeSeance({
       </div>
 
       {/*
-        ═══ RÉGLAGES COMMUNS, REPLIÉS ═══
+        RÉGLAGES COMMUNS, REPLIÉS.
 
-        L'intitulé et l'édition thématique valent pour les quatre façons, mais
-        ils ont un défaut utilisable : l'intitulé est facultatif, et l'édition
-        est déjà positionnée (imposée par une séance prête, sinon la première).
-        Les laisser dépliés ajoutait deux décisions à un écran qui en demandait
-        déjà une — alors qu'ils ne bloquent jamais le passage à l'étape suivante.
+        L'intitulé et l'édition valent pour les quatre façons, mais ils ont tous
+        deux un défaut utilisable : l'intitulé est facultatif, l'édition est déjà
+        positionnée (imposée par une séance prête, sinon la première). Les
+        laisser dépliés ajouterait deux décisions à un écran qui n'en pose qu'une
+        — alors qu'ils ne bloquent jamais le passage à la suite.
       */}
       <BlocRepliable
         titre="Intitulé et édition thématique"
@@ -1056,26 +1007,227 @@ function EtapeSeance({
           </div>
         </div>
       </BlocRepliable>
+    </div>
+  );
+}
+
+// ===================== ÉCRAN 2 — LE CONTENU =====================
+
+/**
+ * Écran 2 — ce que la façon choisie demande, et rien d'autre.
+ *
+ * ═══ POURQUOI UN ÉCRAN SÉPARÉ ═══
+ *
+ * Ce bloc vivait sous le choix, sur le même écran. Deux conséquences : il
+ * fallait défiler pour l'atteindre après avoir cliqué, et les trois autres
+ * façons — qui n'en ont aucun usage — en subissaient la longueur.
+ *
+ * Il n'existe maintenant que pour les deux façons qui ont quelque chose à y
+ * faire : générer depuis un cours, ou relire ce qu'une séance réutilisée
+ * apporte (cf. `etapesPour`). « Séance prête » et « contenu générique » vont
+ * directement au choix de la classe.
+ *
+ * LE TITRE RAPPELLE LE CHOIX FAIT. Sur un écran séparé, l'enseignant perd de
+ * vue ce qu'il a coché à l'écran précédent ; le rappel et son bouton de retour
+ * évitent un aller-retour par le fil d'étapes pour vérifier.
+ */
+function EtapeContenu({
+  voie,
+  titre,
+  seanceSource,
+  consignes,
+  onConsignes,
+  coursDeposes,
+  onDeposer,
+  enExtraction,
+  verdict,
+  onFermerVerdict,
+  mix,
+  onMix,
+  onGenerer,
+  enGeneration,
+  onAjouter,
+  enAjout,
+  contenu,
+  onContenu,
+  onRevenirAuChoix,
+}: {
+  voie: VoieContenu;
+  titre: string;
+  seanceSource: ClassSession | null;
+  consignes: string;
+  onConsignes: (v: string) => void;
+  coursDeposes: { nom: string; caracteres: number; theme: string; incertain: boolean }[];
+  onDeposer: (f: File) => void;
+  enExtraction: boolean;
+  /** Verdict thématique à signaler (refus ou acceptation douteuse), si besoin. */
+  verdict: { fichier: string; analyse: AnalyseThematique } | null;
+  onFermerVerdict: () => void;
+  mix: MixSeance;
+  onMix: (m: MixSeance) => void;
+  onGenerer: () => void;
+  enGeneration: boolean;
+  onAjouter: (m: MixSeance) => void | Promise<void>;
+  enAjout: boolean;
+  contenu: ClassSessionContent | null;
+  onContenu: (c: ClassSessionContent) => void;
+  onRevenirAuChoix: () => void;
+}) {
+  const genere = voie === 'generation';
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <button
+          type="button"
+          onClick={onRevenirAuChoix}
+          className="flex items-center gap-1.5"
+          style={{
+            fontSize: 12, color: 'var(--color-text-muted)', background: 'none',
+            border: 'none', cursor: 'pointer', padding: 0, marginBottom: 6,
+          }}
+        >
+          <ArrowLeft size={12} />
+          {genere ? 'Depuis mon cours' : 'Réutiliser une séance'} — changer
+        </button>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          {genere ? 'Préparez le contenu de la séance' : 'Vérifiez le contenu repris'}
+        </h2>
+        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 4, lineHeight: 1.55 }}>
+          {genere ? (
+            <>
+              Déposez vos supports&nbsp;: les quiz sont générés sur vos notions et le rapport de
+              séance en hérite. Le fichier n’est pas conservé — seul son texte est indexé, et son
+              contenu doit porter sur l’entrepreneuriat ou la gestion.
+            </>
+          ) : (
+            <>
+              Le contenu de «&nbsp;{seanceSource?.title || titre || 'la séance choisie'}&nbsp;» est
+              repris tel quel. Vous pouvez le relire et l’ajuster avant de continuer.
+            </>
+          )}
+        </p>
+      </div>
+
+      {genere && (
+        <section className="glass-card p-5 flex flex-col gap-4">
+          {verdict && (
+            <RefusThematique
+              fichier={verdict.fichier}
+              analyse={verdict.analyse}
+              onFermer={onFermerVerdict}
+            />
+          )}
+
+          <label
+            className="flex flex-col items-center justify-center gap-2"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (enExtraction) return;
+              Array.from(e.dataTransfer.files).forEach((f) => onDeposer(f));
+            }}
+            style={{
+              border: '1.5px dashed var(--color-card-border)',
+              borderRadius: 12,
+              padding: '30px 20px',
+              cursor: enExtraction ? 'progress' : 'pointer',
+              opacity: enExtraction ? 0.6 : 1,
+              textAlign: 'center',
+            }}
+          >
+            <Upload size={20} style={{ color: 'var(--color-primary)' }} />
+            <span style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
+              {enExtraction ? (
+                'Extraction en cours…'
+              ) : (
+                <>
+                  Glissez vos documents ici ou{' '}
+                  <span style={{ color: '#B87A0C', fontWeight: 700 }}>parcourez vos fichiers</span>
+                </>
+              )}
+            </span>
+            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+              PDF, DOCX, Markdown, texte · 25 Mo max par fichier
+            </span>
+            <input
+              type="file"
+              accept=".pdf,.docx,.md,.markdown,.txt"
+              multiple
+              style={{ display: 'none' }}
+              disabled={enExtraction}
+              onChange={(e) => {
+                Array.from(e.target.files ?? []).forEach((f) => onDeposer(f));
+                e.target.value = '';
+              }}
+            />
+          </label>
+
+          {coursDeposes.map((doc, i) => (
+            <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
+              <FileText
+                size={13}
+                style={{ color: doc.incertain ? '#B87A0C' : 'var(--color-success)' }}
+              />
+              <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
+                {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
+                {/* Le thème détecté est affiché même quand il est correct : c'est
+                    la preuve que le contrôle a bien eu lieu sur CE fichier. */}
+                {doc.theme && doc.theme !== 'indéterminé' && doc.theme !== 'inconnu' && (
+                  <span style={{ color: 'var(--color-text-muted)' }}> · {doc.theme}</span>
+                )}
+              </span>
+            </div>
+          ))}
+
+          <label className="flex flex-col gap-1">
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              Vos consignes <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
+            </span>
+            <textarea
+              className="input-field"
+              rows={2}
+              placeholder="Ex. Insister sur le financement participatif, éviter les questions de comptabilité."
+              value={consignes}
+              onChange={(e) => onConsignes(e.target.value)}
+            />
+          </label>
+
+          {/* Le dosage est un réglage fin que la plupart gardent au défaut. */}
+          <BlocRepliable titre="Ajuster le contenu à générer">
+            <MixContenu mix={mix} onMix={onMix} />
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+              Repère&nbsp;: ≈ 1 quiz toutes les 3 minutes de jeu. Seuls les quiz alimentent le
+              rapport de notions maîtrisées — et plus le paquet est fourni, moins les cartes
+              reviennent en partie.
+            </p>
+          </BlocRepliable>
+
+          <button
+            type="button"
+            className="btn-primary flex items-center gap-2"
+            style={{ alignSelf: 'flex-start', fontSize: 13, opacity: coursDeposes.length === 0 || enGeneration ? 0.5 : 1 }}
+            disabled={coursDeposes.length === 0 || enGeneration}
+            onClick={onGenerer}
+          >
+            <Sparkles size={14} />
+            {enGeneration ? 'Génération en cours…' : contenu ? 'Régénérer' : 'Générer le contenu'}
+          </button>
+        </section>
+      )}
 
       {/*
-        * ===== Aperçu éditable — dès qu'un contenu existe =====
-        *
-        * La condition excluait `voie === 'edition'` : cette voie signifiait
-        * « édition seule, sans contenu préparé », et l'aperçu n'aurait rien eu
-        * à montrer. Une SÉANCE PRÊTE emprunte pourtant cette même voie tout en
-        * apportant son contenu — l'enseignant la choisissait et ne voyait
-        * rien, là où les deux autres voies affichent ce qu'elles ont produit.
-        *
-        * C'est donc la présence d'un contenu qui décide, pas la voie.
-        */}
+        ===== Aperçu éditable — dès qu'un contenu existe =====
+        La condition porte sur la PRÉSENCE d'un contenu, pas sur la voie : une
+        séance prête apporte le sien par une voie (`edition`) qui n'en produit
+        normalement pas, et l'enseignant ne voyait alors rien.
+      */}
       {contenu && compterCartes(contenu) > 0 && (
         <div className="glass-card p-4 flex flex-col gap-4">
           <ApercuContenuSeance contenu={contenu} onChange={onContenu} />
           {/* L'ajout n'a de sens que sur la voie génération : il repart du
               cours déposé sous CETTE séance. Une séance réutilisée n'en a pas. */}
-          {voie === 'generation' && (
-            <AjoutContenuSeance onAjouter={onAjouter} enCours={enAjout || enGeneration} />
-          )}
+          {genere && <AjoutContenuSeance onAjouter={onAjouter} enCours={enAjout || enGeneration} />}
         </div>
       )}
     </div>
