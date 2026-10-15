@@ -103,6 +103,33 @@ export function contenuNonVide(contenu: DefiContenu | null | undefined): boolean
   );
 }
 
+/**
+ * Une question du questionnaire d'idéation, posée avant de créer son entreprise.
+ *
+ * ═══ OUVERTE, PAS À CHOIX MULTIPLES ═══
+ *
+ * Le joueur ÉCRIT sa réponse. Des choix fermés produiraient des combinaisons
+ * finies, donc des idées qui se répètent d'un joueur à l'autre : sur un même
+ * défi, trois joueurs sur quatre repartiraient avec la même. Une réponse
+ * libre porte le vocabulaire du joueur, et c'est elle qui fait que les trois
+ * idées proposées lui ressemblent.
+ *
+ * C'est aussi ce qui rend l'étape formatrice : formuler soi-même le problème
+ * qu'on veut résoudre est le premier geste de l'entrepreneur.
+ */
+export interface QuestionIdeation {
+  /** Stable, pour suivre les réponses sans dépendre de l'ordre d'affichage. */
+  id: string;
+  /** La question, telle que le joueur la lit. */
+  texte: string;
+  /**
+   * Exemple affiché en gris dans le champ. Il n'est pas décoratif : devant une
+   * question ouverte, un joueur ne sait pas quelle longueur ni quel niveau de
+   * détail on attend, et répond « oui » ou laisse vide.
+   */
+  exemple?: string;
+}
+
 export interface WeeklyChallenge {
   /** Id du document. Convention : `AAAA-Sxx` (ex. `2026-S42`), lisible en base. */
   id: string;
@@ -171,6 +198,19 @@ export interface WeeklyChallenge {
    * problème que ce champ corrige, mais en silence.
    */
   contenu: DefiContenu | null;
+
+  /**
+   * Questions ouvertes posées au joueur avant qu'il crée son entreprise.
+   *
+   * Leurs réponses nourrissent la génération des trois idées proposées : ce
+   * sont elles qui ancrent les propositions dans le thème de la semaine plutôt
+   * que dans l'entrepreneuriat en général.
+   *
+   * VIDE OU ABSENT : le mobile se rabat sur les cartes d'idéation génériques
+   * (cible / mission / secteur). Un défi publié sans questionnaire reste donc
+   * jouable — le parcours ne doit pas dépendre d'un champ facultatif.
+   */
+  questionsIdeation?: QuestionIdeation[];
 
   /** Ouverture, en millisecondes epoch (UTC). */
   debutAt: number;

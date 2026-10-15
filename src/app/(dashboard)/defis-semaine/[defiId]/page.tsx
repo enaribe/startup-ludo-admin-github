@@ -38,7 +38,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, Download, FileJson, FileText, Sparkles, Upload } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Download, FileJson, FileText, Plus, Sparkles, Upload, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
   cloturerDefi,
@@ -57,6 +57,7 @@ import {
   MIX_DEFI_DEFAUT,
   type DefiScore,
   type MixDefi,
+  type QuestionIdeation,
   type StatutDefi,
   type WeeklyChallenge,
 } from '@/types/weeklyChallenge';
@@ -134,6 +135,17 @@ export default function PageDefi() {
   // envoyer une requête par frappe.
   const [titre, setTitre] = useState('');
   const [description, setDescription] = useState('');
+  /*
+    QUESTIONNAIRE D'IDÉATION — des questions OUVERTES, pas des QCM.
+
+    Le joueur ÉCRIT sa réponse, et ce sont ses mots qui nourrissent les trois
+    idées d'entreprise proposées. Des choix fermés donneraient des combinaisons
+    finies, donc des idées qui se répètent d'un joueur à l'autre.
+
+    Facultatif : sans question saisie, le mobile se rabat sur ses cartes
+    d'idéation génériques. Un défi publié sans questionnaire reste jouable.
+  */
+  const [questions, setQuestions] = useState<QuestionIdeation[]>([]);
   const [debutAt, setDebutAt] = useState(0);
   const [finAt, setFinAt] = useState(0);
   /*
@@ -176,6 +188,7 @@ export default function PageDefi() {
         setDebutAt(d.debutAt);
         setFinAt(d.finAt);
         setBannerUrl(d.bannerUrl ?? '');
+        setQuestions(d.questionsIdeation ?? []);
         // Le classement n'a de sens qu'une fois le défi lancé.
         if (d.statut !== 'brouillon') setScores(await getClassementDefi(d.id));
       }
@@ -254,6 +267,10 @@ export default function PageDefi() {
         // retire donc l'image, et c'est le comportement attendu du bouton
         // « Retirer » du champ d'upload.
         bannerUrl,
+        // Transmis depuis CET écran, qui connaît le champ : un tableau vide
+        // efface donc les questions, ce qui est le comportement attendu du
+        // bouton de suppression de la dernière ligne.
+        questionsIdeation: questions,
       });
 
       if (statut === 'ouvert') {
@@ -556,10 +573,118 @@ export default function PageDefi() {
         </div>
       </section>
 
-      {/* ═══ 2. Le contenu ═══ */}
+      {/* ═══ 2. Le questionnaire d'idéation ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
           numero={2}
+          titre="Le questionnaire d’idéation"
+          aide="Des questions OUVERTES posées au joueur avant qu’il crée son entreprise. Ses réponses nourrissent les trois idées proposées."
+          fait={questions.length > 0}
+        />
+
+        {/*
+          FACULTATIF, ET DIT COMME TEL.
+
+          Sans question, le mobile se rabat sur ses cartes génériques (cible /
+          mission / secteur) : le défi reste jouable. Le taire ferait croire à
+          une étape obligatoire et bloquerait la publication d'un défi pressé.
+        */}
+        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.55 }}>
+          Facultatif. Sans question, le joueur passe par les cartes d’idéation
+          génériques. Deux ou trois questions suffisent — au-delà, le joueur
+          abandonne avant d’avoir joué.
+        </p>
+
+        <div className="flex flex-col gap-3">
+          {questions.map((q, i) => (
+            <div
+              key={q.id}
+              style={{
+                border: '1.5px solid var(--color-card-border)',
+                borderRadius: 12,
+                padding: 14,
+                background: '#FFFFFF',
+              }}
+            >
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                  Question {i + 1}
+                </span>
+                <button
+                  type="button"
+                  disabled={clos}
+                  onClick={() => setQuestions(questions.filter((_, j) => j !== i))}
+                  title="Retirer cette question"
+                  style={{
+                    background: 'none', border: 'none', cursor: clos ? 'not-allowed' : 'pointer',
+                    color: 'var(--color-text-muted)', padding: 2, opacity: clos ? 0.4 : 1,
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <input
+                className="input-field"
+                value={q.texte}
+                disabled={clos}
+                placeholder="Quel problème veux-tu résoudre autour de toi ?"
+                onChange={(e) =>
+                  setQuestions(
+                    questions.map((x, j) => (j === i ? { ...x, texte: e.target.value } : x))
+                  )
+                }
+              />
+
+              {/*
+                L'EXEMPLE N'EST PAS DÉCORATIF.
+
+                Devant une question ouverte, un joueur ne sait pas quelle
+                longueur ni quel niveau de détail on attend : il répond « oui »,
+                ou laisse vide. L'exemple affiché en gris dans le champ montre
+                la forme attendue en une ligne.
+              */}
+              <input
+                className="input-field"
+                style={{ marginTop: 8, fontSize: 12.5 }}
+                value={q.exemple ?? ''}
+                disabled={clos}
+                placeholder="Exemple de réponse (affiché en gris dans le champ du joueur)"
+                onChange={(e) =>
+                  setQuestions(
+                    questions.map((x, j) => (j === i ? { ...x, exemple: e.target.value } : x))
+                  )
+                }
+              />
+            </div>
+          ))}
+
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={clos || questions.length >= 4}
+            style={{ alignSelf: 'flex-start', opacity: clos || questions.length >= 4 ? 0.5 : 1 }}
+            onClick={() =>
+              setQuestions([
+                ...questions,
+                // Id horodaté : stable pour React, et indépendant de l'ordre —
+                // réindexer sur la position ferait perdre les réponses déjà
+                // associées si une question est retirée du milieu.
+                { id: `q_${Date.now()}`, texte: '', exemple: '' },
+              ])
+            }
+            title={questions.length >= 4 ? 'Quatre questions au maximum' : undefined}
+          >
+            <Plus size={14} style={{ display: 'inline', marginRight: 6 }} />
+            Ajouter une question
+          </button>
+        </div>
+      </section>
+
+      {/* ═══ 3. Le contenu ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={3}
           titre="Le contenu"
           aide="Les cartes jouées pendant le défi. Importez un JSON, ou générez-le depuis un document."
           fait={cartesEnregistrees > 0}
@@ -887,10 +1012,10 @@ export default function PageDefi() {
         ) : null}
       </section>
 
-      {/* ═══ 3. Ouvrir, puis clôturer ═══ */}
+      {/* ═══ 4. Ouvrir, puis clôturer ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
-          numero={3}
+          numero={4}
           titre="Mise en ligne"
           aide="Un seul défi peut être en cours à la fois."
           fait={defi.statut !== 'brouillon'}

@@ -3,7 +3,7 @@
  *
  *  POST /api/defi/enregistrer
  *      Authorization: Bearer <idToken super admin>
- *      { id?, titre, description, statut, debutAt, finAt, bannerUrl? }
+ *      { id?, titre, description, statut, debutAt, finAt, bannerUrl?, questionsIdeation? }
  *      → 200 { ok: true, id }
  *      → 403 si l'appelant n'est pas super admin
  *      → 409 si l'ouverture entre en conflit avec un défi déjà ouvert
@@ -59,6 +59,31 @@ export async function POST(request: NextRequest) {
     ou un écran qui ne connaît pas encore le champ. On distingue donc « absent »
     (ne pas toucher) de `''` (retirer l'image).
   */
+  /*
+    QUESTIONNAIRE D'IDÉATION — des questions OUVERTES.
+
+    Même règle que `bannerUrl` juste en dessous : la clé absente laisse
+    l'existant, une clé présente remplace tout.
+
+    Les entrées sans texte sont écartées ICI et non côté écran : un champ
+    laissé vide par distraction produirait une question muette sur le téléphone
+    du joueur, qu'il ne pourrait ni comprendre ni répondre.
+  */
+  const questionsFournies = Object.prototype.hasOwnProperty.call(corps, 'questionsIdeation');
+  const brutQuestions = (corps as { questionsIdeation?: unknown }).questionsIdeation;
+  const questionsIdeation = questionsFournies
+    ? (Array.isArray(brutQuestions) ? brutQuestions : [])
+        .map((q, i) => ({
+          id: String((q as { id?: unknown })?.id ?? '').trim() || `q${i + 1}`,
+          texte: String((q as { texte?: unknown })?.texte ?? '').trim(),
+          exemple: String((q as { exemple?: unknown })?.exemple ?? '').trim(),
+        }))
+        .filter((q) => q.texte)
+        // `exemple` vide n'est pas écrit : Firestore stockerait une chaîne que
+        // le mobile afficherait comme un indice… vide.
+        .map((q) => (q.exemple ? q : { id: q.id, texte: q.texte }))
+    : null;
+
   const banniereFournie = Object.prototype.hasOwnProperty.call(corps, 'bannerUrl');
   const bannerUrl = banniereFournie
     ? String((corps as { bannerUrl?: unknown }).bannerUrl ?? '').trim() || null
@@ -174,6 +199,7 @@ export async function POST(request: NextRequest) {
       debutAt,
       finAt,
       ...(banniereFournie ? { bannerUrl } : {}),
+      ...(questionsIdeation !== null ? { questionsIdeation } : {}),
       // `champion` et `participants` ne sont JAMAIS écrits ici : ils
       // appartiennent à la clôture. Les inclure permettrait de désigner un
       // champion à la main, ce qui viderait le classement de son sens.
@@ -188,6 +214,7 @@ export async function POST(request: NextRequest) {
             // même partout : le mobile tolère la clé absente, mais un document
             // complet évite d'avoir à s'en souvenir.
             bannerUrl: null,
+            questionsIdeation: [],
             creeAt: maintenant,
           }),
       majAt: maintenant,

@@ -56,6 +56,7 @@ import {
   type DefiScore,
   type DefiSource,
   type MixDefi,
+  type QuestionIdeation,
   type WeeklyChallenge,
 } from '@/types/weeklyChallenge';
 
@@ -136,6 +137,14 @@ export interface SaisieDefi {
    * présent — sinon un appelant qui l'ignore effacerait l'image.
    */
   bannerUrl?: string | null;
+  /**
+   * Questions ouvertes du questionnaire d'idéation.
+   *
+   * ⚠️ Même règle que `bannerUrl` : OMETTRE la clé laisse les questions
+   * inchangées, un tableau vide les efface. L'écriture est un `merge`, et un
+   * appelant qui ignore ce champ ne doit pas vider le travail d'un autre.
+   */
+  questionsIdeation?: QuestionIdeation[];
 }
 
 /**
