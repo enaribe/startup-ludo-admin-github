@@ -3,8 +3,17 @@
 /**
  * Mode Classe — wizard de création d'une séance (3 étapes).
  *
- * ① La séance    — trois voies : déposer son cours et générer (voie principale),
- *                  réutiliser une séance déjà générée, ou une édition existante.
+ * ① La séance    — QUATRE façons de préparer, à plat et sur un pied d'égalité :
+ *                  séance prête à l'emploi, génération depuis son cours (voie
+ *                  principale), réutilisation d'une séance, contenu générique.
+ *
+ *                  Les réglages d'une façon vivent DANS son option et n'existent
+ *                  que si elle est choisie. L'écran portait auparavant deux
+ *                  cartes comparatives dont celle de droite contenait un second
+ *                  choix à trois branches, plus une zone de dépôt posée sous les
+ *                  deux — retour d'usage : « trop de choses sur un même écran ».
+ *                  Ce qui a un défaut utilisable (intitulé, édition, dosage du
+ *                  contenu) est replié, avec sa valeur courante sur le titre.
  * ② La classe    — classe parmi celles de l'enseignant, durée 20–45 min.
  * ③ Récapitulatif — Lancer maintenant, ou programmer.
  *
@@ -17,9 +26,10 @@
  * (SPEC §1). Il n'est volontairement pas proposé, même grisé : une option
  * désactivée dans un écran de vente donne l'impression d'un produit inachevé.
  *
- * PAS DE CODE DE SÉANCE — les élèves rattachés voient la séance depuis leur
- * profil. Le code à 6 caractères vit sur la classe et ne sert qu'au rattachement
- * (lot 4a).
+ * PAS DE CODE DANS CET ÉCRAN — le code à 6 caractères est celui de la SÉANCE,
+ * affiché une fois celle-ci lancée (salle d'attente). L'élève le saisit pour
+ * rejoindre, et s'inscrit du même geste s'il ne l'était pas encore : il n'y a
+ * plus de rattachement préalable à préparer ici.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -29,13 +39,12 @@ import {
   ArrowRight,
   CalendarClock,
   Check,
+  ChevronRight,
   FileText,
   GraduationCap,
   Info,
   Layers,
-  LayoutGrid,
   Play,
-  Plus,
   RefreshCw,
   Sparkles,
   Upload,
@@ -721,325 +730,332 @@ function EtapeSeance({
 
   return (
     <div className="flex flex-col gap-4">
-      <span className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 700, color: '#2E7D32' }}>
-        <Check size={13} /> Séances alignées sur le curriculum Startup Ludo
-      </span>
+      <div>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          Comment voulez-vous préparer cette séance&nbsp;?
+        </h2>
+        <span className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 700, color: '#2E7D32', marginTop: 4 }}>
+          <Check size={13} /> Séances alignées sur le curriculum Startup Ludo
+        </span>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        {/* ═══ Carte gauche — séance prête à l'emploi (zéro préparation) ═══ */}
-        <section
-          className="glass-card p-5 flex flex-col gap-4"
-          style={{
-            border: `2px solid ${!modePerso ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-            borderRadius: 14,
+      {/*
+        ═══ QUATRE FAÇONS, AU MÊME NIVEAU ═══
+
+        Avant : deux cartes côte à côte, celle de droite contenant un second
+        choix à trois branches. L'enseignant tenait donc un arbre (2 puis 3)
+        dont tout était affiché simultanément. Ici, les quatre issues réelles
+        sont à plat — c'est bien quatre décisions possibles, pas deux.
+
+        L'ordre va du moins au plus de préparation : la première ligne est celle
+        qui ne demande rien, la dernière celle qui demande le plus.
+      */}
+      <div className="flex flex-col gap-2.5">
+        {/* ─── (1) Séance prête : aucune préparation ─── */}
+        <OptionSource
+          actif={!modePerso}
+          onClick={() => {
+            // Rien à présélectionner s'il n'y a pas de catalogue : on ouvre
+            // l'option, la liste vide porte alors son propre message.
+            if (seancesPretes[0]) choisirPrete(seancesPretes[0]);
           }}
-        >
-          <EnTeteMode
-            icone={<Zap size={18} />}
-            titre="Séance prête à l'emploi"
-            sousTitre="Choisissez, lancez — tout est déjà réglé."
+          icone={<Zap size={17} />}
+          titre="Une séance prête à l'emploi"
+          texte="Rien à préparer — vous choisissez, vous lancez."
+          compteur={seancesPretes.length > 0 ? `${seancesPretes.length} disponible${seancesPretes.length > 1 ? 's' : ''}` : undefined}
+          enfants={
+            seancesPretes.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+                Aucune séance prête publiée pour l’instant. Choisissez une autre façon de préparer.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {seancesPretes.map((sp) => {
+                  const actif = seancePreteId === sp.id;
+                  return (
+                    <button
+                      key={sp.id}
+                      type="button"
+                      onClick={() => choisirPrete(sp)}
+                      className="flex items-center justify-between gap-3"
+                      style={{
+                        textAlign: 'left', padding: '11px 14px', borderRadius: 10, cursor: 'pointer',
+                        border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                        background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
+                      }}
+                    >
+                      <span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', display: 'block' }}>
+                          {sp.titre}
+                        </span>
+                        <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+                          {sp.duree} min · {sp.difficulte}{sp.note ? ` · ${sp.note}` : ''}
+                        </span>
+                      </span>
+                      <BadgeDifficulte difficulte={sp.difficulte} />
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          }
+        />
+
+        {/* ─── (2) Génération depuis le cours : la voie recommandée ─── */}
+        <OptionSource
+          actif={modePerso && voie === 'generation'}
+          onClick={() => passerEnPerso('generation')}
+          icone={<Sparkles size={17} />}
+          titre="Depuis mon cours"
+          recommande
+          texte="Les quiz portent sur VOS notions, et le rapport de séance en hérite."
+          enfants={
+            <>
+              {/*
+                LE DÉPÔT VIT DANS L'OPTION QUI LE DEMANDE.
+
+                Il occupait auparavant une carte pleine largeur SOUS les deux
+                cartes de choix : le lien entre « j'ai choisi de générer » et
+                « une zone de dépôt est apparue plus bas » n'était pas visible
+                d'un seul regard, et c'est précisément ce que le retour d'usage
+                décrivait.
+              */}
+              <div>
+                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.55 }}>
+                  Le fichier n’est pas conservé — seul son texte est indexé. Le contenu doit porter
+                  sur l’entrepreneuriat ou la gestion&nbsp;: chaque document est vérifié au dépôt.
+                </p>
+              </div>
+
+              {verdict && (
+                <RefusThematique
+                  fichier={verdict.fichier}
+                  analyse={verdict.analyse}
+                  onFermer={onFermerVerdict}
+                />
+              )}
+
+              <label
+                className="flex flex-col items-center justify-center gap-2"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (enExtraction) return;
+                  Array.from(e.dataTransfer.files).forEach((f) => onDeposer(f));
+                }}
+                style={{
+                  border: '1.5px dashed var(--color-card-border)',
+                  borderRadius: 12,
+                  padding: '26px 20px',
+                  cursor: enExtraction ? 'progress' : 'pointer',
+                  opacity: enExtraction ? 0.6 : 1,
+                  textAlign: 'center',
+                  background: '#FFFFFF',
+                }}
+              >
+                <Upload size={20} style={{ color: 'var(--color-primary)' }} />
+                <span style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
+                  {enExtraction ? (
+                    'Extraction en cours…'
+                  ) : (
+                    <>
+                      Glissez vos documents ici ou{' '}
+                      <span style={{ color: '#B87A0C', fontWeight: 700 }}>parcourez vos fichiers</span>
+                    </>
+                  )}
+                </span>
+                <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
+                  PDF, DOCX, Markdown, texte · 25 Mo max par fichier
+                </span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.md,.markdown,.txt"
+                  multiple
+                  style={{ display: 'none' }}
+                  disabled={enExtraction}
+                  onChange={(e) => {
+                    Array.from(e.target.files ?? []).forEach((f) => onDeposer(f));
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+
+              {coursDeposes.map((doc, i) => (
+                <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
+                  <FileText
+                    size={13}
+                    style={{ color: doc.incertain ? '#B87A0C' : 'var(--color-success)' }}
+                  />
+                  <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
+                    {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
+                    {/* Le thème détecté est affiché même quand il est correct : c'est
+                        la preuve que le contrôle a bien eu lieu sur CE fichier. */}
+                    {doc.theme && doc.theme !== 'indéterminé' && doc.theme !== 'inconnu' && (
+                      <span style={{ color: 'var(--color-text-muted)' }}> · {doc.theme}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+
+              <label className="flex flex-col gap-1">
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                  Vos consignes <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
+                </span>
+                <textarea
+                  className="input-field"
+                  rows={2}
+                  placeholder="Ex. Insister sur le financement participatif, éviter les questions de comptabilité."
+                  value={consignes}
+                  onChange={(e) => onConsignes(e.target.value)}
+                />
+              </label>
+
+              {/*
+                Le dosage du contenu est un réglage FIN : la plupart des
+                enseignants gardent le défaut. Replié, il ne pèse plus sur la
+                décision principale tout en restant à un clic.
+              */}
+              <BlocRepliable titre="Ajuster le contenu à générer">
+                <MixContenu mix={mix} onMix={onMix} />
+                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                  Repère&nbsp;: ≈ 1 quiz toutes les 3 minutes de jeu. Seuls les quiz alimentent le
+                  rapport de notions maîtrisées — et plus le paquet est fourni, moins les cartes
+                  reviennent en partie.
+                </p>
+              </BlocRepliable>
+
+              <button
+                type="button"
+                className="btn-primary flex items-center gap-2"
+                style={{ alignSelf: 'flex-start', fontSize: 13, opacity: coursDeposes.length === 0 || enGeneration ? 0.5 : 1 }}
+                disabled={coursDeposes.length === 0 || enGeneration}
+                onClick={onGenerer}
+              >
+                <Sparkles size={14} />
+                {enGeneration ? 'Génération en cours…' : contenu ? 'Régénérer' : 'Générer le contenu'}
+              </button>
+            </>
+          }
+        />
+
+        {/* ─── (3) Réutilisation d'une séance déjà générée ─── */}
+        <OptionSource
+          actif={modePerso && voie === 'reutilisation'}
+          onClick={() => passerEnPerso('reutilisation')}
+          icone={<RefreshCw size={17} />}
+          titre="Réutiliser une séance"
+          texte="Repartir d’un contenu déjà généré, tel quel."
+          compteur={seancesPassees.length > 0 ? `${seancesPassees.length} séance${seancesPassees.length > 1 ? 's' : ''}` : undefined}
+          enfants={
+            seancesPassees.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+                Aucune séance générée pour l’instant — cette option se remplira après votre
+                première séance préparée depuis un cours.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {seancesPassees.map((s) => {
+                  const actif = seanceSource?.id === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className="flex items-center justify-between gap-3"
+                      onClick={() => onReutiliser(s)}
+                      style={{
+                        padding: '10px 13px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                        border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+                        background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
+                      }}
+                    >
+                      <span style={{ fontSize: 12.5, color: 'var(--color-text-primary)' }}>
+                        {s.title || 'Séance sans titre'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                        {s.startedAt || s.createdAt
+                          ? new Date(s.startedAt ?? s.createdAt ?? 0).toLocaleDateString('fr-FR')
+                          : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          }
+        />
+
+        {/* ─── (4) Contenu générique : le repli sans préparation ─── */}
+        <OptionSource
+          actif={modePerso && voie === 'edition'}
+          onClick={() => passerEnPerso('edition')}
+          icone={<Layers size={17} />}
+          titre="Le contenu générique Startup Ludo"
+          texte="Sans aucune préparation — le rapport de séance sera moins précis."
+        />
+      </div>
+
+      {/*
+        ═══ RÉGLAGES COMMUNS, REPLIÉS ═══
+
+        L'intitulé et l'édition thématique valent pour les quatre façons, mais
+        ils ont un défaut utilisable : l'intitulé est facultatif, et l'édition
+        est déjà positionnée (imposée par une séance prête, sinon la première).
+        Les laisser dépliés ajoutait deux décisions à un écran qui en demandait
+        déjà une — alors qu'ils ne bloquent jamais le passage à l'étape suivante.
+      */}
+      <BlocRepliable
+        titre="Intitulé et édition thématique"
+        resume={[titre.trim() || 'Intitulé automatique', editions.find((e) => e.id === editionId)?.name ?? editionId]
+          .filter(Boolean)
+          .join(' · ')}
+      >
+        <label className="flex flex-col gap-1">
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Intitulé de la séance <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
+          </span>
+          <input
+            className="input-field"
+            placeholder="Ex. Le business model canvas"
+            value={titre}
+            onChange={(e) => {
+              onSeancePreteId(null);
+              onTitre(e.target.value);
+            }}
           />
-          <div className="flex flex-col gap-2">
-            {seancesPretes.map((sp) => {
-              const actif = seancePreteId === sp.id;
+        </label>
+
+        <div className="flex flex-col gap-2" style={{ marginTop: 12 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            Édition thématique
+          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {editions.length === 0 && (
+              <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+                Aucune édition disponible.
+              </span>
+            )}
+            {editions.map((e) => {
+              const actif = editionId === e.id;
               return (
                 <button
-                  key={sp.id}
+                  key={e.id}
                   type="button"
-                  onClick={() => choisirPrete(sp)}
-                  className="flex items-center justify-between gap-3"
+                  onClick={() => onEdition(e.id)}
                   style={{
-                    textAlign: 'left', padding: '12px 16px', borderRadius: 12, cursor: 'pointer',
-                    border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-                    background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
+                    fontSize: 12.5, padding: '7px 15px', borderRadius: 20, cursor: 'pointer',
+                    border: `1.5px solid ${actif ? '#0F1C2E' : 'var(--color-card-border)'}`,
+                    background: actif ? '#0F1C2E' : '#FFFFFF',
+                    color: actif ? '#FFFFFF' : 'var(--color-text-secondary)',
+                    fontWeight: actif ? 700 : 400,
                   }}
                 >
-                  <span>
-                    <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', display: 'block' }}>
-                      {sp.titre}
-                    </span>
-                    <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-                      {sp.duree} min · {sp.difficulte}{sp.note ? ` · ${sp.note}` : ''}
-                    </span>
-                  </span>
-                  <BadgeDifficulte difficulte={sp.difficulte} />
+                  {e.name || e.id}
                 </button>
               );
             })}
-            {/* La « thématique en plus » de la maquette, c'est la carte de droite :
-                on y bascule au lieu de promettre un catalogue qui n'existe pas. */}
-            <button
-              type="button"
-              onClick={() => passerEnPerso('generation')}
-              className="flex items-center justify-center gap-2"
-              style={{
-                padding: '11px 16px', borderRadius: 12, cursor: 'pointer',
-                border: '1.5px dashed var(--color-card-border)', background: 'transparent',
-                fontSize: 13, color: 'var(--color-text-secondary)',
-              }}
-            >
-              <Plus size={15} /> Ajouter une thématique de séance
-            </button>
           </div>
-        </section>
-
-        {/* ═══ Carte droite — séance personnalisée (les trois vraies sources) ═══ */}
-        <section
-          className="glass-card p-5 flex flex-col gap-4"
-          style={{
-            border: `2px solid ${modePerso ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-            borderRadius: 14,
-          }}
-        >
-          <EnTeteMode
-            icone={<LayoutGrid size={18} />}
-            titre="Séance personnalisée"
-            sousTitre="Votre thématique du jour, vos réglages."
-          />
-
-          <label className="flex flex-col gap-1">
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Intitulé de la séance <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
-            </span>
-            <input
-              className="input-field"
-              placeholder="Ex. Le business model canvas"
-              value={titre}
-              onChange={(e) => {
-                onSeancePreteId(null);
-                onTitre(e.target.value);
-              }}
-            />
-          </label>
-
-          <div className="flex flex-col gap-2">
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Source du contenu
-            </span>
-            <OptionSource
-              actif={modePerso && voie === 'generation'}
-              onClick={() => passerEnPerso('generation')}
-              icone={<Sparkles size={15} />}
-              titre="Générer depuis votre cours"
-              recommande
-              texte="Quiz et événements créés sur VOS notions — déposez le cours ci-dessous."
-            />
-            <OptionSource
-              actif={modePerso && voie === 'reutilisation'}
-              onClick={() => passerEnPerso('reutilisation')}
-              icone={<RefreshCw size={15} />}
-              titre="Réutiliser une séance"
-              texte={
-                seancesPassees.length > 0
-                  ? `${seancesPassees.length} séance${seancesPassees.length > 1 ? 's' : ''} déjà générée${seancesPassees.length > 1 ? 's' : ''}.`
-                  : 'Aucune séance générée pour l’instant.'
-              }
-            />
-            <OptionSource
-              actif={modePerso && voie === 'edition'}
-              onClick={() => passerEnPerso('edition')}
-              icone={<Layers size={15} />}
-              titre="Édition seule"
-              texte="Le contenu générique de Startup Ludo, sans préparation."
-            />
-          </div>
-
-          {/* ===== Voie (b) — réutilisation : la liste, dans la carte ===== */}
-          {modePerso && voie === 'reutilisation' && seancesPassees.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {seancesPassees.map((s) => {
-                const actif = seanceSource?.id === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className="flex items-center justify-between gap-3"
-                    onClick={() => onReutiliser(s)}
-                    style={{
-                      padding: '9px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                      border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-                      background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
-                    }}
-                  >
-                    <span style={{ fontSize: 12.5, color: 'var(--color-text-primary)' }}>
-                      {s.title || 'Séance sans titre'}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                      {s.startedAt || s.createdAt
-                        ? new Date(s.startedAt ?? s.createdAt ?? 0).toLocaleDateString('fr-FR')
-                        : ''}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Édition thématique
-            </span>
-            <div className="flex items-center gap-2 flex-wrap">
-              {editions.length === 0 && (
-                <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>
-                  Aucune édition disponible.
-                </span>
-              )}
-              {editions.map((e) => {
-                const actif = editionId === e.id;
-                return (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => onEdition(e.id)}
-                    style={{
-                      fontSize: 12.5, padding: '7px 15px', borderRadius: 20, cursor: 'pointer',
-                      border: `1.5px solid ${actif ? '#0F1C2E' : 'var(--color-card-border)'}`,
-                      background: actif ? '#0F1C2E' : '#FFFFFF',
-                      color: actif ? '#FFFFFF' : 'var(--color-text-secondary)',
-                      fontWeight: actif ? 700 : 400,
-                    }}
-                  >
-                    {e.name || e.id}
-                  </button>
-                );
-              })}
-            </div>
-            {voie === 'edition' && (
-              <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                Contenu générique : les catégories d’origine sont libres, le rapport de fin de
-                séance sera donc moins précis qu’avec un contenu généré depuis votre cours.
-              </p>
-            )}
-          </div>
-        </section>
-      </div>
-
-      {/* ═══ Documents de cours — la matière de la génération (voie a) ═══ */}
-      {voie === 'generation' && (
-        <section className="glass-card p-5 flex flex-col gap-4">
-          <div>
-            <h2 style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Documents de cours{' '}
-              <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--color-text-muted)' }}>
-                · requis pour la génération
-              </span>
-            </h2>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3, lineHeight: 1.55 }}>
-              Déposez vos supports : les quiz du jeu sont générés sur vos notions et le rapport de
-              séance en hérite. Le fichier n’est pas conservé — seul son texte est indexé.
-            </p>
-            <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 6, lineHeight: 1.55 }}>
-              Le contenu doit porter sur l’entrepreneuriat ou la gestion : chaque document est
-              vérifié au dépôt, et un support étranger au sujet est refusé.
-            </p>
-          </div>
-
-          {verdict && (
-            <RefusThematique
-              fichier={verdict.fichier}
-              analyse={verdict.analyse}
-              onFermer={onFermerVerdict}
-            />
-          )}
-
-          <label
-            className="flex flex-col items-center justify-center gap-2"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (enExtraction) return;
-              Array.from(e.dataTransfer.files).forEach((f) => onDeposer(f));
-            }}
-            style={{
-              border: '1.5px dashed var(--color-card-border)',
-              borderRadius: 12,
-              padding: '34px 20px',
-              cursor: enExtraction ? 'progress' : 'pointer',
-              opacity: enExtraction ? 0.6 : 1,
-              textAlign: 'center',
-            }}
-          >
-            <Upload size={20} style={{ color: 'var(--color-primary)' }} />
-            <span style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
-              {enExtraction ? (
-                'Extraction en cours…'
-              ) : (
-                <>
-                  Glissez vos documents ici ou{' '}
-                  <span style={{ color: '#B87A0C', fontWeight: 700 }}>parcourez vos fichiers</span>
-                </>
-              )}
-            </span>
-            <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)' }}>
-              PDF, DOCX, Markdown, texte · 25 Mo max par fichier
-            </span>
-            <input
-              type="file"
-              accept=".pdf,.docx,.md,.markdown,.txt"
-              multiple
-              style={{ display: 'none' }}
-              disabled={enExtraction}
-              onChange={(e) => {
-                Array.from(e.target.files ?? []).forEach((f) => onDeposer(f));
-                e.target.value = '';
-              }}
-            />
-          </label>
-          {coursDeposes.map((doc, i) => (
-            <div key={`${doc.nom}_${i}`} className="flex items-center gap-2">
-              <FileText
-                size={13}
-                style={{ color: doc.incertain ? '#B87A0C' : 'var(--color-success)' }}
-              />
-              <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
-                {doc.nom} — {doc.caracteres.toLocaleString('fr-FR')} caractères
-                {/* Le thème détecté est affiché même quand il est correct : c'est
-                    la preuve que le contrôle a bien eu lieu sur CE fichier. */}
-                {doc.theme && doc.theme !== 'indéterminé' && doc.theme !== 'inconnu' && (
-                  <span style={{ color: 'var(--color-text-muted)' }}> · {doc.theme}</span>
-                )}
-              </span>
-            </div>
-          ))}
-
-          <label className="flex flex-col gap-1">
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Vos consignes <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>· facultatif</span>
-            </span>
-            <textarea
-              className="input-field"
-              rows={2}
-              placeholder="Ex. Insister sur le financement participatif, éviter les questions de comptabilité."
-              value={consignes}
-              onChange={(e) => onConsignes(e.target.value)}
-            />
-          </label>
-
-          <div className="flex flex-col gap-2">
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Le contenu à générer
-            </span>
-            <MixContenu mix={mix} onMix={onMix} />
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              Repère : ≈ 1 quiz toutes les 3 minutes de jeu. Seuls les quiz alimentent le rapport
-              de notions maîtrisées — et plus le paquet est fourni, moins les cartes reviennent en
-              partie.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="btn-primary flex items-center gap-2"
-            style={{ alignSelf: 'flex-start', fontSize: 13, opacity: coursDeposes.length === 0 || enGeneration ? 0.5 : 1 }}
-            disabled={coursDeposes.length === 0 || enGeneration}
-            onClick={onGenerer}
-          >
-            <Sparkles size={14} />
-            {enGeneration ? 'Génération en cours…' : contenu ? 'Régénérer' : 'Générer le contenu'}
-          </button>
-        </section>
-      )}
+        </div>
+      </BlocRepliable>
 
       {/*
         * ===== Aperçu éditable — dès qu'un contenu existe =====
@@ -1103,33 +1119,71 @@ function MixContenu({ mix, onMix }: { mix: MixSeance; onMix: (m: MixSeance) => v
   );
 }
 
-/** En-tête d'une des deux cartes de l'étape 1 : icône sur pastille + titre + sous-titre. */
-function EnTeteMode({
-  icone,
+/**
+ * Réglage fin, replié par défaut : visible d'un clic, absent sinon.
+ *
+ * ═══ CE QUE CE COMPOSANT EST, ET N'EST PAS ═══
+ *
+ * Il ne sert QU'À ce qui a un défaut utilisable — l'intitulé (facultatif),
+ * l'édition (déjà positionnée), le dosage du contenu (rarement touché). Un
+ * champ dont l'absence bloquerait la suite n'a rien à faire ici : replier une
+ * obligation la transforme en impasse silencieuse, l'enseignant cherchant un
+ * bouton grisé sans savoir quoi remplir.
+ *
+ * `resume` montre la valeur courante sur la ligne de titre, pour qu'on sache
+ * ce qui est réglé sans déplier. Sans lui, replier ne fait que cacher.
+ */
+function BlocRepliable({
   titre,
-  sousTitre,
+  resume,
+  children,
 }: {
-  icone: React.ReactNode;
   titre: string;
-  sousTitre: string;
+  resume?: string;
+  children: React.ReactNode;
 }) {
+  const [ouvert, setOuvert] = useState(false);
+
   return (
-    <div className="flex items-center gap-3">
-      <span
-        className="flex items-center justify-center"
-        style={{
-          width: 40, height: 40, borderRadius: 11, flexShrink: 0,
-          background: 'rgba(15,28,46,0.06)', color: 'var(--color-text-primary)',
-        }}
+    <div
+      style={{
+        borderRadius: 12,
+        border: '1.5px solid var(--color-card-border)',
+        background: '#FFFFFF',
+        overflow: 'hidden',
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOuvert((v) => !v)}
+        aria-expanded={ouvert}
+        className="flex items-center gap-2 w-full"
+        style={{ padding: '11px 15px', cursor: 'pointer', textAlign: 'left', background: 'transparent', border: 'none' }}
       >
-        {icone}
-      </span>
-      <span>
-        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--color-text-primary)', display: 'block' }}>
-          {titre}
-        </span>
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{sousTitre}</span>
-      </span>
+        <ChevronRight
+          size={15}
+          style={{
+            color: 'var(--color-text-muted)',
+            transform: ouvert ? 'rotate(90deg)' : 'none',
+            transition: 'transform 120ms ease',
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>{titre}</span>
+        {resume && !ouvert && (
+          <span
+            style={{
+              fontSize: 11.5, color: 'var(--color-text-muted)', marginLeft: 'auto',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%',
+            }}
+          >
+            {resume}
+          </span>
+        )}
+      </button>
+      {ouvert && (
+        <div style={{ padding: '2px 15px 15px' }}>{children}</div>
+      )}
     </div>
   );
 }
@@ -1155,6 +1209,26 @@ function BadgeDifficulte({ difficulte }: { difficulte: string }) {
 }
 
 /** Rangée de choix d'une source de contenu, dans la carte personnalisée. */
+/**
+ * Une façon de préparer la séance, et SEULEMENT ce qu'elle demande.
+ *
+ * ═══ POURQUOI UNE OPTION QUI S'OUVRE ═══
+ *
+ * L'étape affichait tout en même temps : deux cartes côte à côte, dont celle
+ * de droite contenait un second choix à trois branches, plus une zone de dépôt
+ * de documents posée SOUS les cartes — à 600 pixels du clic qui l'avait fait
+ * apparaître. Retour d'usage : « trop de choses sur un même écran, on peut se
+ * perdre ». L'enseignant devait tenir un choix à deux branches dont l'une se
+ * subdivisait en trois, tout visible d'un coup.
+ *
+ * Ici, les quatre façons sont à PLAT et sur un pied d'égalité, et les réglages
+ * d'une option vivent DANS l'option, révélés par son choix. Ce qui n'est pas
+ * choisi n'occupe que sa ligne de titre.
+ *
+ * `enfants` n'est rendu que lorsque `actif` : non pour l'esthétique, mais pour
+ * que les champs d'une voie non retenue ne soient ni lus par un lecteur
+ * d'écran, ni atteignables au clavier, ni soumis.
+ */
 function OptionSource({
   actif,
   onClick,
@@ -1162,6 +1236,8 @@ function OptionSource({
   titre,
   texte,
   recommande = false,
+  compteur,
+  enfants,
 }: {
   actif: boolean;
   onClick: () => void;
@@ -1169,33 +1245,70 @@ function OptionSource({
   titre: string;
   texte: string;
   recommande?: boolean;
+  /** Chiffre discret sur le titre (« 3 séances »), quand il aide à choisir. */
+  compteur?: string;
+  /** Réglages propres à cette option — montrés seulement si elle est choisie. */
+  enfants?: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-start gap-3"
+    <div
       style={{
-        padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+        borderRadius: 12,
         border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
-        background: actif ? 'rgba(255,188,64,0.09)' : '#FFFFFF',
+        background: actif ? 'rgba(255,188,64,0.06)' : '#FFFFFF',
+        overflow: 'hidden',
       }}
     >
-      <span style={{ color: 'var(--color-text-primary)', marginTop: 1 }}>{icone}</span>
-      <span>
-        <span className="flex items-center gap-2">
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>{titre}</span>
-          {recommande && (
-            <span className="badge badge-info" style={{ fontSize: 10 }}>
-              recommandé
-            </span>
-          )}
+      <button
+        type="button"
+        onClick={onClick}
+        aria-expanded={enfants ? actif : undefined}
+        className="flex items-start gap-3 w-full"
+        style={{ padding: '13px 15px', cursor: 'pointer', textAlign: 'left', background: 'transparent', border: 'none' }}
+      >
+        <span style={{ color: actif ? 'var(--color-primary)' : 'var(--color-text-secondary)', marginTop: 1 }}>
+          {icone}
         </span>
-        <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', display: 'block', marginTop: 2, lineHeight: 1.45 }}>
-          {texte}
+        <span style={{ flex: 1 }}>
+          <span className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)' }}>{titre}</span>
+            {recommande && (
+              <span className="badge badge-info" style={{ fontSize: 10 }}>
+                recommandé
+              </span>
+            )}
+            {compteur && (
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{compteur}</span>
+            )}
+          </span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', display: 'block', marginTop: 2, lineHeight: 1.45 }}>
+            {texte}
+          </span>
         </span>
-      </span>
-    </button>
+        {/* Pastille de sélection : dit lequel des quatre est retenu sans avoir
+            à comparer des bordures de couleur entre elles. */}
+        <span
+          aria-hidden
+          style={{
+            width: 16, height: 16, borderRadius: 8, flexShrink: 0, marginTop: 2,
+            border: `1.5px solid ${actif ? 'var(--color-primary)' : 'var(--color-card-border)'}`,
+            background: actif ? 'var(--color-primary)' : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          {actif && <Check size={10} strokeWidth={3} style={{ color: '#FFFFFF' }} />}
+        </span>
+      </button>
+
+      {actif && enfants && (
+        <div
+          className="flex flex-col gap-4"
+          style={{ padding: '4px 15px 15px', borderTop: '1px solid var(--color-card-border)', marginTop: 2, paddingTop: 15 }}
+        >
+          {enfants}
+        </div>
+      )}
+    </div>
   );
 }
 
