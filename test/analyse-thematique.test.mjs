@@ -582,3 +582,63 @@ test('un texte source VIDE n’est jamais interprété comme hors-sujet', () => 
     }
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RÉGLAGES DU MODÈLE — un verdict doit être reproductible
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('le contrôle thématique est rendu à température 0', async () => {
+  const { PROMPTS } = await import('../src/lib/ai-prompts.ts');
+  assert.equal(
+    PROMPTS.analyse_thematique.temperature,
+    0,
+    'une température non nulle rend le verdict aléatoire : un enseignant refusé ' +
+      'repasse en redéposant le même document, ce qui annule le filtre'
+  );
+});
+
+test('le plafond de sortie du contrôle laisse place au motif rédigé', async () => {
+  const { PROMPTS } = await import('../src/lib/ai-prompts.ts');
+  const plafond = PROMPTS.analyse_thematique.maxTokens;
+  assert.ok(plafond !== undefined, 'le contrôle thématique déclare son propre plafond');
+  // Borne basse : `motif` et `notions` sont du français lu par l'enseignant, et
+  // un JSON tronqué tombe en « incertain », donc en acceptation silencieuse.
+  assert.ok(plafond >= 300, `plafond trop serré (${plafond}) : le JSON risque d'être tronqué`);
+  assert.ok(plafond <= 1000, `plafond inutilement large (${plafond}) pour un verdict`);
+});
+
+test('les générations qui ÉCRIVENT du contenu gardent le réglage par défaut', async () => {
+  const { PROMPTS } = await import('../src/lib/ai-prompts.ts');
+  // Le défaut (0.8 / 16384) vit dans la route ; un prompt qui ne déclare rien
+  // doit le recevoir. Ce test échoue si quelqu'un applique par mégarde le
+  // réglage du classifieur à la génération de contenu, qui a besoin de varier.
+  for (const [type, config] of Object.entries(PROMPTS)) {
+    if (type === 'analyse_thematique') continue;
+    assert.equal(
+      config.temperature,
+      undefined,
+      `${type} ne doit pas figer sa température : le contenu de jeu doit varier`
+    );
+    assert.equal(config.maxTokens, undefined, `${type} ne doit pas figer son plafond`);
+  }
+});
+
+test('la route résout les réglages avec ?? et non || (0 est falsy)', async () => {
+  const source = await import('node:fs').then((fs) =>
+    fs.readFileSync('src/app/api/generate/route.ts', 'utf8')
+  );
+  // `temperature: 0 || 0.8` vaut 0.8 : le réglage serait ignoré SANS AUCUN
+  // signe — ni erreur, ni log, et le verdict redeviendrait aléatoire. Ce test
+  // lit la source parce que le défaut n'est observable qu'à l'exécution de la
+  // route, qui exige une clé API et un appel réseau.
+  assert.match(
+    source,
+    /temperature:\s*promptConfig\.temperature\s*\?\?/,
+    'la température doit être résolue avec ?? — avec ||, temperature: 0 retomberait à 0.8'
+  );
+  assert.doesNotMatch(
+    source,
+    /temperature:\s*promptConfig\.temperature\s*\|\|/,
+    '|| écraserait silencieusement temperature: 0'
+  );
+});

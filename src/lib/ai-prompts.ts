@@ -61,6 +61,28 @@ interface PromptConfig {
   label: string;
   placeholder: string;
   description: string;
+  /**
+   * Température d'échantillonnage, quand le défaut ne convient pas.
+   *
+   * Le défaut de la route (0.8) est calibré pour ÉCRIRE : des quiz variés, des
+   * défis qui ne se répètent pas. Une génération qui CLASSE veut l'inverse —
+   * un même document doit recevoir le même verdict à chaque dépôt, sinon un
+   * refus se contourne en redéposant le fichier.
+   *
+   * Réglage porté par le prompt et non par la route : c'est une propriété de la
+   * tâche, et un `if` sur le type dans la route s'éloignerait du prompt qu'il
+   * concerne, donc se périmerait en silence.
+   */
+  temperature?: number;
+  /**
+   * Plafond de tokens de sortie, quand le défaut (16 384) est hors de propos.
+   *
+   * Utile pour une réponse brève et bornée : un verdict de classement fait une
+   * centaine de tokens. Le plafond ne réduit pas la facture (seuls les tokens
+   * produits sont payés) mais il coupe net une réponse qui dérive, au lieu de
+   * laisser le modèle dépenser et l'appelant attendre.
+   */
+  maxTokens?: number;
 }
 
 const BASE_SYSTEM = `Tu es un assistant specialise dans la creation de contenu pour "Startup Ludo", un jeu de plateau educatif sur l'entrepreneuriat en Afrique. Le jeu enseigne la creation de startups, le financement, la strategie business, etc.
@@ -763,6 +785,27 @@ AUTRES REGLES :
     label: 'Contrôle thématique',
     placeholder: '',
     description: 'Vérifie qu’un document déposé traite bien d’entrepreneuriat',
+    /*
+      ═══ UN VERDICT SE REND À L'IDENTIQUE ═══
+
+      Seule génération du module qui CLASSE au lieu d'écrire, donc seule à
+      vouloir ces deux réglages.
+
+      `temperature: 0` — à 0.8, le même document pouvait recevoir deux verdicts
+      différents. Conséquence concrète : un enseignant refusé redépose son
+      fichier et passe au second essai. Un filtre qu'on contourne en cliquant
+      deux fois ne filtre pas. L'enjeu n'est pas la facture, c'est que le
+      verdict soit le même à chaque dépôt.
+
+      `maxTokens: 400` — le verdict JSON fait une centaine de tokens ; 16 384
+      étaient réservés. Aucune économie (seuls les tokens produits sont payés),
+      mais une réponse qui dérive est coupée net au lieu de faire attendre.
+      400 et non 150 : `motif` et `notions` sont rédigés en français et lus
+      par l'enseignant, et un JSON tronqué tomberait en `incertain` — donc en
+      acceptation silencieuse, le contraire du but.
+    */
+    temperature: 0,
+    maxTokens: 400,
     systemPrompt: `Tu es un classificateur de documents pedagogiques. Tu ne generes aucun contenu, tu rends un VERDICT.
 
 On te soumet un extrait du support de cours d'un enseignant. Tu dois dire s'il traite d'ENTREPRENEURIAT ou de gestion d'entreprise.

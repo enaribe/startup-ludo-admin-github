@@ -73,10 +73,17 @@ export async function POST(request: NextRequest) {
 
     let generatedText: string;
 
+    // Le prompt porte ses propres réglages quand le défaut ne lui convient pas
+    // (cf. `PromptConfig.temperature` / `.maxTokens`).
+    const reglages: ReglagesModele = {
+      temperature: promptConfig.temperature ?? REGLAGES_PAR_DEFAUT.temperature,
+      maxTokens: promptConfig.maxTokens ?? REGLAGES_PAR_DEFAUT.maxTokens,
+    };
+
     if (openaiKey) {
-      generatedText = await callOpenAI(openaiKey, systemPrompt, userPrompt);
+      generatedText = await callOpenAI(openaiKey, systemPrompt, userPrompt, reglages);
     } else if (anthropicKey) {
-      generatedText = await callAnthropic(anthropicKey, systemPrompt, userPrompt);
+      generatedText = await callAnthropic(anthropicKey, systemPrompt, userPrompt, reglages);
     } else {
       return NextResponse.json(
         { error: 'Aucune cle API configuree. Ajoutez OPENAI_API_KEY ou ANTHROPIC_API_KEY dans .env.local' },
@@ -102,9 +109,40 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Réglages d'échantillonnage transmis au fournisseur.
+ *
+ * Les deux valeurs viennent du prompt (`PROMPTS[type]`), avec les défauts
+ * ci-dessous quand il n'en déclare pas. Les 15 types qui ÉCRIVENT du contenu
+ * de jeu gardent ainsi leur comportement exact ; seul le contrôle thématique,
+ * qui CLASSE, les redéclare.
+ *
+ * ⚠️ `temperature` ne survivrait pas à un modèle de RAISONNEMENT OpenAI
+ * (série o, gpt-5-nano…) : ces modèles refusent toute valeur autre que leur
+ * défaut et exigent `max_completion_tokens` au lieu de `max_tokens`. Changer
+ * de modèle ici demande donc de revoir ces deux champs — et le contrôle
+ * thématique traitant toute panne en « incertain », l'erreur 400 passerait
+ * inaperçue en désarmant le filtre.
+ */
+interface ReglagesModele {
+  temperature: number;
+  maxTokens: number;
+}
+
+/** Calibrés pour ÉCRIRE : contenu de jeu varié, réponses longues. */
+const REGLAGES_PAR_DEFAUT: ReglagesModele = {
+  temperature: 0.8,
+  maxTokens: 16384,
+};
+
 // ===== OpenAI =====
 
-async function callOpenAI(apiKey: string, system: string, user: string): Promise<string> {
+async function callOpenAI(
+  apiKey: string,
+  system: string,
+  user: string,
+  reglages: ReglagesModele
+): Promise<string> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -117,8 +155,8 @@ async function callOpenAI(apiKey: string, system: string, user: string): Promise
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      temperature: 0.8,
-      max_tokens: 16384,
+      temperature: reglages.temperature,
+      max_tokens: reglages.maxTokens,
     }),
   });
 
@@ -133,7 +171,12 @@ async function callOpenAI(apiKey: string, system: string, user: string): Promise
 
 // ===== Anthropic =====
 
-async function callAnthropic(apiKey: string, system: string, user: string): Promise<string> {
+async function callAnthropic(
+  apiKey: string,
+  system: string,
+  user: string,
+  reglages: ReglagesModele
+): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -145,8 +188,8 @@ async function callAnthropic(apiKey: string, system: string, user: string): Prom
       model: 'claude-3-5-haiku-20241022',
       system,
       messages: [{ role: 'user', content: user }],
-      max_tokens: 16384,
-      temperature: 0.8,
+      max_tokens: reglages.maxTokens,
+      temperature: reglages.temperature,
     }),
   });
 
