@@ -162,8 +162,10 @@ export async function POST(request: NextRequest) {
             nom: String((p as { nom?: unknown })?.nom ?? '').trim(),
             description: String((p as { description?: unknown })?.description ?? '').trim(),
             pourQui: String((p as { pourQui?: unknown })?.pourQui ?? '').trim(),
+            revenu: String((p as { revenu?: unknown })?.revenu ?? '').trim(),
           }))
-          .filter((p) => p.nom),
+          .filter((p) => p.nom)
+          .map((p) => (p.revenu ? p : { id: p.id, nom: p.nom, description: p.description, pourQui: p.pourQui })),
       }
     : null;
 

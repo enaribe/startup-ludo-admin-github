@@ -1154,6 +1154,19 @@ export default function PageDefi() {
                     setPistes(pistes.map((x, j) => (j === i ? { ...x, pourQui: e.target.value } : x)))
                   }
                 />
+                {/* Comment l'entreprise gagne de l'argent. Affiché sur la carte
+                    du joueur, sous la cible : « pour qui » et « qui paie » sont
+                    les deux questions qu'on se pose devant une idée. */}
+                <input
+                  className="input-field"
+                  style={{ marginTop: 8, fontSize: 12.5 }}
+                  value={p.revenu ?? ''}
+                  disabled={clos}
+                  placeholder="Service à la demande"
+                  onChange={(e) =>
+                    setPistes(pistes.map((x, j) => (j === i ? { ...x, revenu: e.target.value } : x)))
+                  }
+                />
               </div>
             ))}
             <button

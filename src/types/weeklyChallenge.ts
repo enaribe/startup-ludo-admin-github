@@ -212,6 +212,15 @@ export interface PisteDefi {
   /** « Ménages des quartiers inondés ». */
   pourQui: string;
   /**
+   * Comment l'entreprise gagne de l'argent : « Vente », « Abonnement »,
+   * « Service à la demande ».
+   *
+   * Facultatif. Affiché sur la carte quand il est là — savoir QUI paie est la
+   * première question qu'on se pose devant une idée, et la maquette le met
+   * sur la même ligne que la cible.
+   */
+  revenu?: string;
+  /**
    * Pourquoi cette piste tient : « La demande revient à chaque hivernage ».
    * C'est ce qui distingue une proposition d'une liste de noms.
    */
