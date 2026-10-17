@@ -56,8 +56,11 @@ import {
   type DefiScore,
   type DefiSource,
   type MixDefi,
-  type ProjetDefi,
-  type QuestionIdeation,
+  type ChiffreDefi,
+  type IdeationDefi,
+  type LotDefi,
+  type VideoDefi,
+  type ZoneDefi,
   type WeeklyChallenge,
 } from '@/types/weeklyChallenge';
 
@@ -145,9 +148,29 @@ export interface SaisieDefi {
    * inchangées, un tableau vide les efface. L'écriture est un `merge`, et un
    * appelant qui ignore ce champ ne doit pas vider le travail d'un autre.
    */
-  questionsIdeation?: QuestionIdeation[];
-  /** Projets tout faits du défi. Même règle que `questionsIdeation`. */
-  projets?: ProjetDefi[];
+  /*
+    ═══ CHAMPS DU CYCLE HEBDOMADAIRE (lot 2) ═══
+
+    Tous optionnels, et la règle d'écriture est celle de `bannerUrl` : la clé
+    ABSENTE du corps laisse la valeur existante, une clé présente la remplace.
+    Un appelant qui ignore un champ ne doit pas effacer le travail d'un autre.
+
+    Les objets composés acceptent `null` pour un retrait explicite : sans lui,
+    on ne pourrait jamais supprimer une vidéo une fois posée.
+  */
+  zone?: ZoneDefi | null;
+  semaine?: number;
+  fuseau?: string;
+  resultatsAt?: number;
+  themeAvecArticle?: string;
+  themeAvecDe?: string;
+  beneficiaires?: string;
+  problemePourAdia?: string;
+  faitsPourAdia?: string[];
+  chiffres?: ChiffreDefi[];
+  video?: VideoDefi | null;
+  ideation?: IdeationDefi;
+  lot?: LotDefi | null;
 }
 
 /**

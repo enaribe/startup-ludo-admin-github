@@ -57,8 +57,8 @@ import {
   MIX_DEFI_DEFAUT,
   type DefiScore,
   type MixDefi,
-  type ProjetDefi,
-  type QuestionIdeation,
+  type ChiffreDefi,
+  type PisteDefi,
   type StatutDefi,
   type WeeklyChallenge,
 } from '@/types/weeklyChallenge';
@@ -83,6 +83,70 @@ function nbCartes(c: ClassSessionContent | null | undefined): number {
 }
 
 /** En-tête de section : le numéro porte l'ordre, le sous-titre dit l'attendu. */
+/**
+ * Une liste de textes courts, éditable en place.
+ *
+ * Sert aux angles, cibles, missions et faits : des listes de 5 à 8 entrées
+ * d'une ligne. Un champ par entrée plutôt qu'un textarea à lignes séparées —
+ * le textarea semble plus simple, mais il oblige à deviner la règle (une par
+ * ligne ? séparées par des virgules ?) et perd silencieusement une entrée qui
+ * contient le séparateur.
+ *
+ * L'ordre compte : il est repris tel quel dans l'application.
+ */
+function ListeTexte({
+  valeurs,
+  onChange,
+  clos,
+  placeholder,
+  maximum,
+}: {
+  valeurs: string[];
+  onChange: (v: string[]) => void;
+  clos: boolean;
+  placeholder: string;
+  maximum: number;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {valeurs.map((v, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            className="input-field"
+            value={v}
+            disabled={clos}
+            placeholder={placeholder}
+            onChange={(e) => onChange(valeurs.map((x, j) => (j === i ? e.target.value : x)))}
+          />
+          <button
+            type="button"
+            disabled={clos}
+            onClick={() => onChange(valeurs.filter((_, j) => j !== i))}
+            title="Retirer"
+            style={{
+              background: 'none', border: 'none', cursor: clos ? 'not-allowed' : 'pointer',
+              color: 'var(--color-text-muted)', padding: 4, flexShrink: 0, opacity: clos ? 0.4 : 1,
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={clos || valeurs.length >= maximum}
+        style={{ alignSelf: 'flex-start', opacity: clos || valeurs.length >= maximum ? 0.5 : 1 }}
+        onClick={() => onChange([...valeurs, ''])}
+        title={valeurs.length >= maximum ? `${maximum} au maximum` : undefined}
+      >
+        <Plus size={13} style={{ display: 'inline', marginRight: 5 }} />
+        Ajouter
+      </button>
+    </div>
+  );
+}
+
 function TitreSection({
   numero,
   titre,
@@ -146,16 +210,47 @@ export default function PageDefi() {
     Facultatif : sans question saisie, le mobile se rabat sur ses cartes
     d'idéation génériques. Un défi publié sans questionnaire reste jouable.
   */
-  const [questions, setQuestions] = useState<QuestionIdeation[]>([]);
   /*
-    PROJETS TOUT FAITS, écrits pour LE THÈME de la semaine.
+    ═══ IDÉATION — TROIS TOURS DE CHOIX GUIDÉS ═══
 
-    Ils ne remplacent pas les projets génériques du jeu : ils existent pour
-    qu'un joueur pressé parte avec une entreprise qui a quelque chose à voir
-    avec le défi. Sans eux, le mobile n'affiche pas cette voie — et ne se
-    rabat PAS sur les projets du plateau, qui ignorent le thème.
+    Remplace les questions ouvertes et la liste de projets du lot précédent.
+
+    Pourquoi guidé : des réponses libres donnaient des idées qui se
+    ressemblaient d'un joueur à l'autre, parce que le modèle recevait trois
+    phrases vagues. Des angles écrits POUR le thème ancrent les propositions
+    dans le défi de la semaine.
+
+    Les pistes express sont le filet : si le modèle ne répond pas (quota,
+    réseau, clé absente), ce sont elles que le joueur voit. Sans elles, une
+    panne d'API laisse l'écran vide.
   */
-  const [projets, setProjets] = useState<ProjetDefi[]>([]);
+  const [angles, setAngles] = useState<string[]>([]);
+  const [cibles, setCibles] = useState<string[]>([]);
+  const [missions, setMissions] = useState<string[]>([]);
+  const [pistes, setPistes] = useState<PisteDefi[]>([]);
+
+  /* ─── Zone, calendrier, médias (lot 2) ─── */
+  const [zoneCode, setZoneCode] = useState('');
+  const [zoneNom, setZoneNom] = useState('');
+  const [zoneArticle, setZoneArticle] = useState('');
+  const [zoneDrapeau, setZoneDrapeau] = useState('');
+  const [semaine, setSemaine] = useState<number | ''>('');
+  const [fuseau, setFuseau] = useState('');
+  const [resultatsAt, setResultatsAt] = useState(0);
+
+  const [themeAvecArticle, setThemeAvecArticle] = useState('');
+  const [themeAvecDe, setThemeAvecDe] = useState('');
+  const [beneficiaires, setBeneficiaires] = useState('');
+  const [problemePourAdia, setProblemePourAdia] = useState('');
+  const [faitsPourAdia, setFaitsPourAdia] = useState<string[]>([]);
+
+  const [chiffres, setChiffres] = useState<ChiffreDefi[]>([]);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoPoster, setVideoPoster] = useState('');
+  const [videoSousTitres, setVideoSousTitres] = useState('');
+  const [lotCourt, setLotCourt] = useState('');
+  const [lotLong, setLotLong] = useState('');
+
   const [debutAt, setDebutAt] = useState(0);
   const [finAt, setFinAt] = useState(0);
   /*
@@ -198,8 +293,28 @@ export default function PageDefi() {
         setDebutAt(d.debutAt);
         setFinAt(d.finAt);
         setBannerUrl(d.bannerUrl ?? '');
-        setQuestions(d.questionsIdeation ?? []);
-        setProjets(d.projets ?? []);
+        setAngles(d.ideation?.angles ?? []);
+        setCibles(d.ideation?.cibles ?? []);
+        setMissions(d.ideation?.missions ?? []);
+        setPistes(d.ideation?.pistesExpress ?? []);
+        setZoneCode(d.zone?.code ?? '');
+        setZoneNom(d.zone?.nom ?? '');
+        setZoneArticle(d.zone?.avecArticle ?? '');
+        setZoneDrapeau(d.zone?.drapeau ?? '');
+        setSemaine(d.semaine ?? '');
+        setFuseau(d.fuseau ?? '');
+        setResultatsAt(d.resultatsAt ?? 0);
+        setThemeAvecArticle(d.themeAvecArticle ?? '');
+        setThemeAvecDe(d.themeAvecDe ?? '');
+        setBeneficiaires(d.beneficiaires ?? '');
+        setProblemePourAdia(d.problemePourAdia ?? '');
+        setFaitsPourAdia(d.faitsPourAdia ?? []);
+        setChiffres(d.chiffres ?? []);
+        setVideoUrl(d.video?.url ?? '');
+        setVideoPoster(d.video?.posterUrl ?? '');
+        setVideoSousTitres(d.video?.sousTitresUrl ?? '');
+        setLotCourt(d.lot?.court ?? '');
+        setLotLong(d.lot?.long ?? '');
         // Le classement n'a de sens qu'une fois le défi lancé.
         if (d.statut !== 'brouillon') setScores(await getClassementDefi(d.id));
       }
@@ -281,8 +396,41 @@ export default function PageDefi() {
         // Transmis depuis CET écran, qui connaît le champ : un tableau vide
         // efface donc les questions, ce qui est le comportement attendu du
         // bouton de suppression de la dernière ligne.
-        questionsIdeation: questions,
-        projets,
+        // Les objets composés ne sont transmis que s'ils portent quelque
+        // chose : écrire `{ code: '', nom: '' }` créerait une zone vide que le
+        // mobile prendrait pour une zone réelle.
+        ...(zoneCode.trim()
+          ? {
+              zone: {
+                code: zoneCode.trim().toUpperCase(),
+                nom: zoneNom.trim(),
+                avecArticle: zoneArticle.trim(),
+                ...(zoneDrapeau.trim() ? { drapeau: zoneDrapeau.trim() } : {}),
+              },
+            }
+          : {}),
+        ...(semaine !== '' ? { semaine: Number(semaine) } : {}),
+        ...(fuseau.trim() ? { fuseau: fuseau.trim() } : {}),
+        ...(resultatsAt > 0 ? { resultatsAt } : {}),
+        themeAvecArticle: themeAvecArticle.trim(),
+        themeAvecDe: themeAvecDe.trim(),
+        beneficiaires: beneficiaires.trim(),
+        problemePourAdia: problemePourAdia.trim(),
+        faitsPourAdia: faitsPourAdia.map((x) => x.trim()).filter(Boolean),
+        chiffres,
+        ...(videoUrl.trim()
+          ? {
+              video: {
+                url: videoUrl.trim(),
+                ...(videoPoster.trim() ? { posterUrl: videoPoster.trim() } : {}),
+                ...(videoSousTitres.trim() ? { sousTitresUrl: videoSousTitres.trim() } : {}),
+              },
+            }
+          : { video: null }),
+        ideation: { angles, cibles, missions, pistesExpress: pistes },
+        ...(lotCourt.trim()
+          ? { lot: { court: lotCourt.trim(), ...(lotLong.trim() ? { long: lotLong.trim() } : {}) } }
+          : { lot: null }),
       });
 
       if (statut === 'ouvert') {
@@ -506,8 +654,28 @@ export default function PageDefi() {
     debutAt !== defi.debutAt ||
     finAt !== defi.finAt ||
     bannerUrl !== (defi.bannerUrl ?? '') ||
-    !memeListe(questions, defi.questionsIdeation ?? []) ||
-    !memeListe(projets, defi.projets ?? []);
+    !memeListe(angles, defi.ideation?.angles ?? []) ||
+    !memeListe(cibles, defi.ideation?.cibles ?? []) ||
+    !memeListe(missions, defi.ideation?.missions ?? []) ||
+    !memeListe(pistes, defi.ideation?.pistesExpress ?? []) ||
+    !memeListe(chiffres, defi.chiffres ?? []) ||
+    !memeListe(faitsPourAdia, defi.faitsPourAdia ?? []) ||
+    zoneCode !== (defi.zone?.code ?? '') ||
+    zoneNom !== (defi.zone?.nom ?? '') ||
+    zoneArticle !== (defi.zone?.avecArticle ?? '') ||
+    zoneDrapeau !== (defi.zone?.drapeau ?? '') ||
+    semaine !== (defi.semaine ?? '') ||
+    fuseau !== (defi.fuseau ?? '') ||
+    resultatsAt !== (defi.resultatsAt ?? 0) ||
+    themeAvecArticle !== (defi.themeAvecArticle ?? '') ||
+    themeAvecDe !== (defi.themeAvecDe ?? '') ||
+    beneficiaires !== (defi.beneficiaires ?? '') ||
+    problemePourAdia !== (defi.problemePourAdia ?? '') ||
+    videoUrl !== (defi.video?.url ?? '') ||
+    videoPoster !== (defi.video?.posterUrl ?? '') ||
+    videoSousTitres !== (defi.video?.sousTitresUrl ?? '') ||
+    lotCourt !== (defi.lot?.court ?? '') ||
+    lotLong !== (defi.lot?.long ?? '');
   const aEnregistrer = !clos && (themeModifie || brouillonContenu !== null);
 
   return (
@@ -598,157 +766,207 @@ export default function PageDefi() {
         </div>
       </section>
 
-      {/* ═══ 2. Le questionnaire d'idéation ═══ */}
+      {/* ═══ 2. La zone et le calendrier ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
           numero={2}
-          titre="Le questionnaire d’idéation"
-          aide="Des questions OUVERTES posées au joueur avant qu’il crée son entreprise. Ses réponses nourrissent les trois idées proposées."
-          fait={questions.length > 0}
+          titre="La zone et le calendrier"
+          aide="Un défi appartient à un pays. Le classement et les dates en dépendent."
+          fait={!!zoneCode && !!fuseau}
         />
 
-        {/*
-          FACULTATIF, ET DIT COMME TEL.
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="label">Code pays</label>
+            <input
+              className="input-field"
+              value={zoneCode}
+              disabled={clos}
+              placeholder="SN"
+              maxLength={2}
+              onChange={(e) => setZoneCode(e.target.value.toUpperCase())}
+            />
+          </div>
+          <div>
+            <label className="label">Nom du pays</label>
+            <input
+              className="input-field"
+              value={zoneNom}
+              disabled={clos}
+              placeholder="Sénégal"
+              onChange={(e) => setZoneNom(e.target.value)}
+            />
+          </div>
+        </div>
 
-          Sans question, le mobile se rabat sur ses cartes génériques (cible /
-          mission / secteur) : le défi reste jouable. Le taire ferait croire à
-          une étape obligatoire et bloquerait la publication d'un défi pressé.
-        */}
-        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.55 }}>
-          Facultatif. Sans question, le joueur passe par les cartes d’idéation
-          génériques. Deux ou trois questions suffisent — au-delà, le joueur
-          abandonne avant d’avoir joué.
-        </p>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            {/*
+              « au Sénégal », pas « Sénégal ». L'app écrit « 1 240 joueurs au
+              Sénégal » : sans la forme avec article, il faudrait une règle de
+              grammaire par pays dans le code (au Sénégal, en Côte d'Ivoire,
+              au Mali, aux Comores…).
+            */}
+            <label className="label">Avec article</label>
+            <input
+              className="input-field"
+              value={zoneArticle}
+              disabled={clos}
+              placeholder="le Sénégal"
+              onChange={(e) => setZoneArticle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Drapeau</label>
+            <input
+              className="input-field"
+              value={zoneDrapeau}
+              disabled={clos}
+              placeholder="🇸🇳"
+              maxLength={8}
+              onChange={(e) => setZoneDrapeau(e.target.value)}
+            />
+          </div>
+        </div>
 
-        <div className="flex flex-col gap-3">
-          {questions.map((q, i) => (
-            <div
-              key={q.id}
-              style={{
-                border: '1.5px solid var(--color-card-border)',
-                borderRadius: 12,
-                padding: 14,
-                background: '#FFFFFF',
-              }}
-            >
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)' }}>
-                  Question {i + 1}
-                </span>
-                <button
-                  type="button"
-                  disabled={clos}
-                  onClick={() => setQuestions(questions.filter((_, j) => j !== i))}
-                  title="Retirer cette question"
-                  style={{
-                    background: 'none', border: 'none', cursor: clos ? 'not-allowed' : 'pointer',
-                    color: 'var(--color-text-muted)', padding: 2, opacity: clos ? 0.4 : 1,
-                  }}
-                >
-                  <X size={15} />
-                </button>
-              </div>
-
-              <input
-                className="input-field"
-                value={q.texte}
-                disabled={clos}
-                placeholder="Quel problème veux-tu résoudre autour de toi ?"
-                onChange={(e) =>
-                  setQuestions(
-                    questions.map((x, j) => (j === i ? { ...x, texte: e.target.value } : x))
-                  )
-                }
-              />
-
-              {/*
-                L'EXEMPLE N'EST PAS DÉCORATIF.
-
-                Devant une question ouverte, un joueur ne sait pas quelle
-                longueur ni quel niveau de détail on attend : il répond « oui »,
-                ou laisse vide. L'exemple affiché en gris dans le champ montre
-                la forme attendue en une ligne.
-              */}
-              <input
-                className="input-field"
-                style={{ marginTop: 8, fontSize: 12.5 }}
-                value={q.exemple ?? ''}
-                disabled={clos}
-                placeholder="Exemple de réponse (affiché en gris dans le champ du joueur)"
-                onChange={(e) =>
-                  setQuestions(
-                    questions.map((x, j) => (j === i ? { ...x, exemple: e.target.value } : x))
-                  )
-                }
-              />
-            </div>
-          ))}
-
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={clos || questions.length >= 4}
-            style={{ alignSelf: 'flex-start', opacity: clos || questions.length >= 4 ? 0.5 : 1 }}
-            onClick={() =>
-              setQuestions([
-                ...questions,
-                // Id horodaté : stable pour React, et indépendant de l'ordre —
-                // réindexer sur la position ferait perdre les réponses déjà
-                // associées si une question est retirée du milieu.
-                { id: `q_${Date.now()}`, texte: '', exemple: '' },
-              ])
-            }
-            title={questions.length >= 4 ? 'Quatre questions au maximum' : undefined}
-          >
-            <Plus size={14} style={{ display: 'inline', marginRight: 6 }} />
-            Ajouter une question
-          </button>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Semaine</label>
+            <input
+              type="number"
+              className="input-field"
+              value={semaine}
+              disabled={clos}
+              placeholder="43"
+              min={1}
+              max={53}
+              onChange={(e) => setSemaine(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </div>
+          <div>
+            {/*
+              Le fuseau n'est pas décoratif : J-n, le plafond de parties par
+              jour et l'heure de clôture se calculent dedans. Sans lui, un
+              joueur de Dakar et un serveur en UTC ne sont pas le même jour.
+            */}
+            <label className="label">Fuseau horaire</label>
+            <input
+              className="input-field"
+              value={fuseau}
+              disabled={clos}
+              placeholder="Africa/Dakar"
+              onChange={(e) => setFuseau(e.target.value)}
+            />
+          </div>
         </div>
       </section>
 
-      {/* ═══ 3. Les projets tout faits ═══ */}
+      {/* ═══ 3. Les mots du thème ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
           numero={3}
-          titre="Les projets proposés"
-          aide="Des entreprises toutes prêtes, pour le joueur qui ne veut pas construire son idée."
-          fait={projets.length > 0}
+          titre="Les mots du thème"
+          aide="Les déclinaisons servent à composer les phrases de l’app sans les réécrire."
+          fait={!!themeAvecArticle && !!beneficiaires}
         />
 
-        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.55 }}>
-          Facultatif, mais écrivez-les pour LE thème de la semaine. Sans projet
-          ici, cette voie n’est pas proposée au joueur — l’application ne se
-          rabat pas sur les projets génériques du jeu, qui seraient hors sujet.
-        </p>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="label">Avec article</label>
+            <input
+              className="input-field"
+              value={themeAvecArticle}
+              disabled={clos}
+              placeholder="les inondations"
+              onChange={(e) => setThemeAvecArticle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Forme « à »</label>
+            <input
+              className="input-field"
+              value={themeAvecDe}
+              disabled={clos}
+              placeholder="aux inondations"
+              onChange={(e) => setThemeAvecDe(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="label">Bénéficiaires</label>
+          <input
+            className="input-field"
+            value={beneficiaires}
+            disabled={clos}
+            placeholder="les quartiers inondés"
+            onChange={(e) => setBeneficiaires(e.target.value)}
+          />
+        </div>
 
         {/*
-          AVERTISSEMENT PLUTÔT QUE BLOCAGE.
+          ═══ CE QU'ADIA A LE DROIT DE SAVOIR ═══
 
-          Un défi sans question ET sans projet ne laisse au joueur aucune façon
-          de créer son entreprise : il arriverait sur un écran vide. On le dit
-          ici, au moment où l'admin peut encore corriger, plutôt que de refuser
-          l'ouverture et le laisser chercher pourquoi.
+          Ces deux champs ne sont jamais montrés au joueur : ils sont donnés au
+          modèle. Le contexte lui permet de parler du problème avec justesse ;
+          la liste de faits borne ce qu'elle peut CITER.
+
+          Laisser la liste vide est un choix valable — Adia ne citera alors
+          aucun chiffre. C'est préférable à un chiffre inventé dans une
+          application utilisée en classe.
         */}
-        {questions.length === 0 && projets.length === 0 ? (
-          <div
-            className="flex items-start gap-2 mb-4"
-            style={{
-              padding: '10px 12px', borderRadius: 10,
-              background: 'rgba(255,188,64,0.1)', border: '1px solid rgba(255,188,64,0.3)',
-            }}
-          >
-            <AlertTriangle size={15} style={{ color: '#B87A0C', flexShrink: 0, marginTop: 1 }} />
-            <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-              Ni question ni projet : le joueur n’aura aucune façon de créer son
-              entreprise. Remplissez au moins une des deux sections.
-            </span>
-          </div>
-        ) : null}
+        <div className="mb-3">
+          <label className="label">Contexte pour Adia</label>
+          <textarea
+            className="input-field"
+            rows={3}
+            value={problemePourAdia}
+            disabled={clos}
+            placeholder="Pendant l’hivernage, de fortes pluies inondent des quartiers de Dakar et de sa banlieue…"
+            onChange={(e) => setProblemePourAdia(e.target.value)}
+          />
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            Jamais affiché au joueur. Sert à Adia pour parler du problème avec justesse.
+          </p>
+        </div>
 
+        <div>
+          <label className="label">Faits vérifiés qu’Adia peut citer</label>
+          <ListeTexte
+            valeurs={faitsPourAdia}
+            onChange={setFaitsPourAdia}
+            clos={clos}
+            placeholder="Un fait, avec sa source"
+            maximum={8}
+          />
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            Vide : Adia ne cite aucun chiffre. Mieux qu’un chiffre inventé.
+          </p>
+        </div>
+      </section>
+
+      {/* ═══ 4. Pourquoi ça compte ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={4}
+          titre="Pourquoi ça compte"
+          aide="Les trois chiffres d’impact de l’écran de présentation. Chacun avec sa source."
+          fait={chiffres.length > 0 && chiffres.every((c) => c.source.trim())}
+        />
+
+        {/*
+          LA SOURCE EST EXIGÉE, PAS SUGGÉRÉE.
+
+          Un chiffre sans source n'est pas affiché dans l'app. C'est volontaire :
+          ces chiffres parlent de familles sinistrées et de paludisme, devant
+          des élèves. Un champ facultatif aurait laissé passer des valeurs
+          d'exemple jusqu'en production — elles sont d'ailleurs marquées
+          « A_SOURCER » dans le fichier de configuration fourni.
+        */}
         <div className="flex flex-col gap-3">
-          {projets.map((p, i) => (
+          {chiffres.map((c, i) => (
             <div
-              key={p.id}
+              key={i}
               style={{
                 border: '1.5px solid var(--color-card-border)',
                 borderRadius: 12,
@@ -758,13 +976,13 @@ export default function PageDefi() {
             >
               <div className="flex items-start justify-between gap-3 mb-2">
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)' }}>
-                  Projet {i + 1}
+                  Chiffre {i + 1}
                 </span>
                 <button
                   type="button"
                   disabled={clos}
-                  onClick={() => setProjets(projets.filter((_, j) => j !== i))}
-                  title="Retirer ce projet"
+                  onClick={() => setChiffres(chiffres.filter((_, j) => j !== i))}
+                  title="Retirer"
                   style={{
                     background: 'none', border: 'none', cursor: clos ? 'not-allowed' : 'pointer',
                     color: 'var(--color-text-muted)', padding: 2, opacity: clos ? 0.4 : 1,
@@ -773,57 +991,256 @@ export default function PageDefi() {
                   <X size={15} />
                 </button>
               </div>
-
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  className="input-field"
+                  value={c.valeur}
+                  disabled={clos}
+                  placeholder="40 000"
+                  onChange={(e) =>
+                    setChiffres(chiffres.map((x, j) => (j === i ? { ...x, valeur: e.target.value } : x)))
+                  }
+                />
+                <input
+                  className="input-field col-span-2"
+                  value={c.libelle}
+                  disabled={clos}
+                  placeholder="ménages touchés"
+                  onChange={(e) =>
+                    setChiffres(chiffres.map((x, j) => (j === i ? { ...x, libelle: e.target.value } : x)))
+                  }
+                />
+              </div>
               <input
                 className="input-field"
-                value={p.nom}
-                disabled={clos}
-                placeholder="AgriLink"
-                onChange={(e) =>
-                  setProjets(projets.map((x, j) => (j === i ? { ...x, nom: e.target.value } : x)))
-                }
-              />
-              <textarea
-                className="input-field"
                 style={{ marginTop: 8, fontSize: 12.5 }}
-                rows={2}
-                value={p.description}
+                value={c.source}
                 disabled={clos}
-                placeholder="Ce que fait l’entreprise, en une ou deux phrases."
+                placeholder="Source — obligatoire, sinon le chiffre n’est pas affiché"
                 onChange={(e) =>
-                  setProjets(
-                    projets.map((x, j) => (j === i ? { ...x, description: e.target.value } : x))
-                  )
+                  setChiffres(chiffres.map((x, j) => (j === i ? { ...x, source: e.target.value } : x)))
                 }
               />
+              {!c.source.trim() ? (
+                <span style={{ fontSize: 12, color: '#B87A0C', display: 'block', marginTop: 5 }}>
+                  Sans source, ce chiffre ne sera pas affiché dans l’application.
+                </span>
+              ) : null}
             </div>
           ))}
 
           <button
             type="button"
             className="btn-secondary"
-            disabled={clos || projets.length >= 6}
-            style={{ alignSelf: 'flex-start', opacity: clos || projets.length >= 6 ? 0.5 : 1 }}
-            onClick={() =>
-              setProjets([
-                ...projets,
-                // Id horodaté : stable pour React et indépendant de la position,
-                // pour qu'un retrait au milieu ne redistribue pas les ids.
-                { id: `p_${Date.now()}`, nom: '', description: '' },
-              ])
-            }
-            title={projets.length >= 6 ? 'Six projets au maximum' : undefined}
+            disabled={clos || chiffres.length >= 3}
+            style={{ alignSelf: 'flex-start', opacity: clos || chiffres.length >= 3 ? 0.5 : 1 }}
+            onClick={() => setChiffres([...chiffres, { valeur: '', libelle: '', source: '' }])}
+            title={chiffres.length >= 3 ? 'Trois chiffres au maximum' : undefined}
           >
             <Plus size={14} style={{ display: 'inline', marginRight: 6 }} />
-            Ajouter un projet
+            Ajouter un chiffre
           </button>
         </div>
       </section>
 
-      {/* ═══ 4. Le contenu ═══ */}
+      {/* ═══ 5. L'idéation ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
-          numero={4}
+          numero={5}
+          titre="L’idéation"
+          aide="Les choix proposés au joueur pour construire son idée, et les pistes de secours."
+          fait={angles.length > 0 && cibles.length > 0 && missions.length > 0}
+        />
+
+        <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.55 }}>
+          Trois tours : par où attaquer le problème, qui aider, quoi changer
+          pour eux. Écrivez-les pour CE thème — c’est ce qui ancre les idées
+          générées dans le défi de la semaine.
+        </p>
+
+        <div className="mb-4">
+          <label className="label">Angles d’attaque</label>
+          <ListeTexte valeurs={angles} onChange={setAngles} clos={clos} placeholder="Prévenir" maximum={6} />
+        </div>
+        <div className="mb-4">
+          <label className="label">Cibles</label>
+          <ListeTexte valeurs={cibles} onChange={setCibles} clos={clos} placeholder="Ménages" maximum={6} />
+        </div>
+        <div className="mb-4">
+          <label className="label">Missions</label>
+          <ListeTexte
+            valeurs={missions}
+            onChange={setMissions}
+            clos={clos}
+            placeholder="Protéger la santé"
+            maximum={6}
+          />
+        </div>
+
+        {/*
+          LES PISTES DE SECOURS NE SONT PAS UN LUXE.
+
+          Elles s'affichent quand le modèle ne répond pas : quota dépassé,
+          réseau coupé, clé absente. Sans elles, une panne d'API laisse le
+          joueur devant une liste vide au milieu de son parcours — et il n'a
+          aucun moyen de comprendre pourquoi.
+        */}
+        <div>
+          <label className="label">Pistes de secours</label>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>
+            Affichées si Adia ne répond pas. Trois suffisent.
+          </p>
+          <div className="flex flex-col gap-3">
+            {pistes.map((p, i) => (
+              <div
+                key={p.id}
+                style={{
+                  border: '1.5px solid var(--color-card-border)',
+                  borderRadius: 12,
+                  padding: 14,
+                  background: '#FFFFFF',
+                }}
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                    Piste {i + 1}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={clos}
+                    onClick={() => setPistes(pistes.filter((_, j) => j !== i))}
+                    title="Retirer"
+                    style={{
+                      background: 'none', border: 'none', cursor: clos ? 'not-allowed' : 'pointer',
+                      color: 'var(--color-text-muted)', padding: 2, opacity: clos ? 0.4 : 1,
+                    }}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <input
+                  className="input-field"
+                  value={p.nom}
+                  disabled={clos}
+                  placeholder="Kit Puits Propre"
+                  onChange={(e) => setPistes(pistes.map((x, j) => (j === i ? { ...x, nom: e.target.value } : x)))}
+                />
+                <textarea
+                  className="input-field"
+                  style={{ marginTop: 8, fontSize: 12.5 }}
+                  rows={2}
+                  value={p.description}
+                  disabled={clos}
+                  placeholder="Désinfection des puits après les crues."
+                  onChange={(e) =>
+                    setPistes(pistes.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))
+                  }
+                />
+                <input
+                  className="input-field"
+                  style={{ marginTop: 8, fontSize: 12.5 }}
+                  value={p.pourQui}
+                  disabled={clos}
+                  placeholder="Ménages des quartiers inondés"
+                  onChange={(e) =>
+                    setPistes(pistes.map((x, j) => (j === i ? { ...x, pourQui: e.target.value } : x)))
+                  }
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={clos || pistes.length >= 5}
+              style={{ alignSelf: 'flex-start', opacity: clos || pistes.length >= 5 ? 0.5 : 1 }}
+              onClick={() =>
+                setPistes([...pistes, { id: `p_${Date.now()}`, nom: '', description: '', pourQui: '' }])
+              }
+            >
+              <Plus size={14} style={{ display: 'inline', marginRight: 6 }} />
+              Ajouter une piste
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ 6. Vidéo et lot ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={6}
+          titre="Vidéo et récompense"
+          aide="La vidéo de 30 s et le lot du podium. Les deux sont facultatifs."
+          fait={!!videoUrl || !!lotCourt}
+        />
+
+        <div className="mb-4">
+          <label className="label">Vidéo (URL)</label>
+          <input
+            className="input-field"
+            value={videoUrl}
+            disabled={clos}
+            placeholder="https://…/defi-inondations_30s.mp4"
+            onChange={(e) => setVideoUrl(e.target.value)}
+          />
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            Sans URL, le bloc vidéo n’est pas affiché. Le parcours n’est jamais
+            bloqué par la vidéo.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="label">Image d’attente</label>
+            <input
+              className="input-field"
+              value={videoPoster}
+              disabled={clos}
+              placeholder="https://…/poster.jpg"
+              onChange={(e) => setVideoPoster(e.target.value)}
+            />
+          </div>
+          <div>
+            {/* La vidéo doit se comprendre sans le son : beaucoup de joueurs
+                la regardent en classe ou dans un lieu public. */}
+            <label className="label">Sous-titres (VTT)</label>
+            <input
+              className="input-field"
+              value={videoSousTitres}
+              disabled={clos}
+              placeholder="https://…/sous-titres-fr.vtt"
+              onChange={(e) => setVideoSousTitres(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Lot — version courte</label>
+            <input
+              className="input-field"
+              value={lotCourt}
+              disabled={clos}
+              placeholder="lot + accompagnement CONCREE"
+              onChange={(e) => setLotCourt(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Lot — version longue</label>
+            <input
+              className="input-field"
+              value={lotLong}
+              disabled={clos}
+              placeholder="Kit de démarrage + 3 mois d’accompagnement"
+              onChange={(e) => setLotLong(e.target.value)}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ 7. Le contenu ═══ */}
+      <section className="glass-card p-5 mb-3">
+        <TitreSection
+          numero={7}
           titre="Le contenu"
           aide="Les cartes jouées pendant le défi. Importez un JSON, ou générez-le depuis un document."
           fait={cartesEnregistrees > 0}
@@ -1151,7 +1568,7 @@ export default function PageDefi() {
         ) : null}
       </section>
 
-      {/* ═══ 5. Ouvrir, puis clôturer ═══ */}
+      {/* ═══ 8. Ouvrir, puis clôturer ═══ */}
       <section className="glass-card p-5 mb-3">
         <TitreSection
           numero={5}

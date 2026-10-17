@@ -103,54 +103,254 @@ export function contenuNonVide(contenu: DefiContenu | null | undefined): boolean
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DÉFI DE LA SEMAINE — CYCLE HEBDOMADAIRE PAR ZONE
+//
+// Ajouts du lot 2. Tout est OPTIONNEL sur `WeeklyChallenge` : une version de
+// l'app déjà installée ignore ces champs, et un défi créé avant eux reste
+// lisible. C'est la contrainte n°4 de la spec — les anciennes versions ne
+// doivent rien casser.
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
- * Une question du questionnaire d'idéation, posée avant de créer son entreprise.
+ * Zone d'un défi : un pays.
  *
- * ═══ OUVERTE, PAS À CHOIX MULTIPLES ═══
+ * ⚠️ À NE PAS CONFONDRE AVEC `profile.region`, qui existe déjà et désigne une
+ * région INTERNE servant au ciblage des campagnes sponsors (Dakar, Thiès…).
+ * La zone est le pays, et c'est elle qui découpe les classements.
  *
- * Le joueur ÉCRIT sa réponse. Des choix fermés produiraient des combinaisons
- * finies, donc des idées qui se répètent d'un joueur à l'autre : sur un même
- * défi, trois joueurs sur quatre repartiraient avec la même. Une réponse
- * libre porte le vocabulaire du joueur, et c'est elle qui fait que les trois
- * idées proposées lui ressemblent.
- *
- * C'est aussi ce qui rend l'étape formatrice : formuler soi-même le problème
- * qu'on veut résoudre est le premier geste de l'entrepreneur.
+ * Les déclinaisons (`nom`, `avecArticle`) évitent de recomposer les phrases à
+ * la main : « 1 240 joueurs au Sénégal » n'est pas « 1 240 joueurs Sénégal ».
  */
-export interface QuestionIdeation {
-  /** Stable, pour suivre les réponses sans dépendre de l'ordre d'affichage. */
-  id: string;
-  /** La question, telle que le joueur la lit. */
-  texte: string;
-  /**
-   * Exemple affiché en gris dans le champ. Il n'est pas décoratif : devant une
-   * question ouverte, un joueur ne sait pas quelle longueur ni quel niveau de
-   * détail on attend, et répond « oui » ou laisse vide.
-   */
-  exemple?: string;
+export interface ZoneDefi {
+  /** ISO 3166-1 alpha-2, en majuscules : « SN ». */
+  code: string;
+  /** « Sénégal ». */
+  nom: string;
+  /** « le Sénégal » — pour « … au Sénégal ». */
+  avecArticle: string;
+  /** Emoji drapeau, affiché sur la pastille de la carte d'accueil. */
+  drapeau?: string;
 }
 
 /**
- * Un projet tout fait, proposé au joueur qui ne veut pas construire son idée.
+ * État d'un défi dans son cycle, du point de vue du client.
  *
- * ═══ PROPRE AU DÉFI, ET FACULTATIF ═══
+ * Distinct de `StatutDefi` (`brouillon` | `ouvert` | `clos`), qui reste le
+ * statut ÉDITORIAL piloté depuis le back-office. Celui-ci se DÉDUIT des dates
+ * et du statut : il n'est pas stocké, pour qu'un défi ne puisse pas rester
+ * « ouvert » en base après sa date de clôture.
  *
- * Ces projets sont écrits pour LE THÈME de la semaine. Ils ne remplacent pas
- * les projets génériques du jeu : ils existent pour qu'un joueur pressé parte
- * avec une entreprise qui a quelque chose à voir avec le défi.
- *
- * Absents, le mobile n'affiche RIEN à leur place — pas de repli sur les projets
- * génériques du plateau. Proposer « AgriLink » sur un défi consacré au pitch
- * donnerait une liste hors sujet, et le joueur croirait que c'est voulu.
+ * - `a_venir`   : publié, avant l'ouverture.
+ * - `ouvert`    : on joue, on marque des points.
+ * - `en_calcul` : clôturé, note de qualité et classement en cours.
+ * - `resultats` : résultats publiés, jusqu'à l'ouverture du défi suivant.
  */
-export interface ProjetDefi {
-  /** Stable, pour que le choix d'un joueur ne dépende pas de l'ordre. */
-  id: string;
-  /** Un vrai nom de marque, court. */
-  nom: string;
-  /** Une à deux phrases. Ce que fait l'entreprise. */
-  description: string;
+export type EtatDefi = 'a_venir' | 'ouvert' | 'en_calcul' | 'resultats';
+
+/**
+ * Un chiffre d'impact affiché sur la présentation (« 40 000 ménages touchés »).
+ *
+ * ⚠️ `source` EST OBLIGATOIRE, et c'est délibéré. La spec interdit à Adia de
+ * citer un chiffre non vérifié, et l'écran affiche la source sous les trois
+ * chiffres. Un champ facultatif aurait laissé passer des chiffres orphelins
+ * dans une application qui s'adresse à des enseignants et à des élèves.
+ */
+export interface ChiffreDefi {
+  /** « 40 000 », « ×2 », « 3 mois ». Une chaîne : l'unité fait partie du sens. */
+  valeur: string;
+  /** « ménages touchés ». */
+  libelle: string;
+  /** D'où vient ce chiffre. Vide = le chiffre n'est pas affiché. */
+  source: string;
 }
+
+/** Vidéo de présentation du défi, facultative. */
+export interface VideoDefi {
+  /** URL du fichier. Absente, le bloc vidéo n'est pas affiché. */
+  url: string;
+  /** Image affichée avant lecture — jamais de lecture automatique. */
+  posterUrl?: string;
+  /** Durée en secondes, annoncée au joueur. */
+  dureeS?: number;
+  /** Poids en Mo, annoncé : le réseau se paie, ici. */
+  poidsMo?: number;
+  /** Piste de sous-titres WebVTT. La vidéo doit se comprendre sans le son. */
+  sousTitresUrl?: string;
+}
+
+/**
+ * Les listes d'idéation, propres à CE défi.
+ *
+ * Trois tours de choix guidés — angle, cible, mission — puis génération de
+ * trois pistes. Remplace les questions ouvertes du lot précédent : des
+ * réponses libres donnaient des idées qui se ressemblaient d'un joueur à
+ * l'autre, là où des angles écrits pour le thème ancrent les propositions.
+ *
+ * `pistesExpress` est le FILET : si le modèle ne répond pas (quota, réseau,
+ * clé absente), ces pistes écrites à la main prennent le relais. Sans elles,
+ * une panne d'API laisserait le joueur sans aucune idée à choisir.
+ */
+export interface IdeationDefi {
+  /** « Prévenir », « Assainir »… Six environ, affichés en cartes. */
+  angles: string[];
+  /** « Ménages », « Écoles »… Affichés en pastilles. */
+  cibles: string[];
+  /** « Protéger la santé », « Réduire les coûts »… */
+  missions: string[];
+  /** Repli hors-ligne, et secours en cas de panne du modèle. */
+  pistesExpress?: PisteDefi[];
+}
+
+/** Une proposition d'idée : par Adia, ou écrite d'avance pour le repli. */
+export interface PisteDefi {
+  id: string;
+  /** Nom de marque, court. */
+  nom: string;
+  /** Ce que fait l'entreprise, en une phrase. */
+  description: string;
+  /** « Ménages des quartiers inondés ». */
+  pourQui: string;
+  /**
+   * Pourquoi cette piste tient : « La demande revient à chaque hivernage ».
+   * C'est ce qui distingue une proposition d'une liste de noms.
+   */
+  interet?: string;
+}
+
+/** Le lot promis au podium, configurable par défi. */
+export interface LotDefi {
+  /** « lot + accompagnement CONCREE » — tient sur une ligne. */
+  court: string;
+  /** « Kit de démarrage + 3 mois d'accompagnement CONCREE ». */
+  long?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// L'IDÉE DU JOUEUR, ET SES BRIQUES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Les cinq parties d'une idée, dans l'ordre où elles se posent.
+ *
+ * Ordre FIXE et identique pour tous les défis : une partie terminée pose la
+ * brique suivante, sans que le joueur ait à choisir laquelle. Le choix
+ * ajouterait une décision à un moment — la fin de partie — où le joueur veut
+ * voir son score, pas remplir un formulaire.
+ */
+export const BRIQUES_IDEE = [
+  'probleme',
+  'cible',
+  'solution',
+  'revenu',
+  'convaincre',
+] as const;
+
+export type TypeBrique = (typeof BRIQUES_IDEE)[number];
+
+/** Nombre de briques d'une idée complète. Dérivé, jamais écrit en dur. */
+export const NOMBRE_BRIQUES = BRIQUES_IDEE.length;
+
+/**
+ * Une brique posée à la fin d'une partie.
+ *
+ * `texteAdia` est conservé À CÔTÉ de `texteFinal` : si le joueur corrige, on
+ * garde ce que le modèle avait proposé. C'est la seule façon de mesurer plus
+ * tard si Adia écrit juste — en comparant ce qu'elle propose à ce que les
+ * joueurs gardent.
+ */
+export interface BriqueIdee {
+  type: TypeBrique;
+  /** Rédigé par Adia, 160 caractères au plus. */
+  texteAdia: string;
+  /** Ce que le joueur a validé. Égal à `texteAdia` s'il n'a rien touché. */
+  texteFinal: string;
+  /** Vrai si le joueur a réécrit la brique. */
+  corrigee: boolean;
+  /** Partie qui l'a posée — trace, et garde-fou contre un double comptage. */
+  gameId: string;
+  poseeAt: number;
+}
+
+/** D'où vient l'idée : une piste proposée, ou le joueur lui-même. */
+export type OrigineIdee = 'piste' | 'personnelle';
+
+/**
+ * L'idée de solution d'un joueur pour un défi.
+ *
+ * UNE SEULE idée active par joueur et par défi. Changer d'idée désactive la
+ * précédente sans la supprimer : les briques déjà payées restent, et c'est ce
+ * qui permet de ne pas repayer les mêmes points (décision D3 de la spec).
+ */
+export interface IdeeDefi {
+  /** `{defiId}_{userId}` — un document par joueur et par défi. */
+  id: string;
+  defiId: string;
+  userId: string;
+  /** Zone FIGÉE à la création : déménager en cours de semaine ne doit pas
+   *  déplacer un joueur d'un classement à l'autre en milieu de défi. */
+  zoneCode: string;
+
+  nom: string;
+  description: string;
+  pourQui: string;
+
+  /** Les trois choix de l'idéation, conservés pour la note de qualité. */
+  angle?: string;
+  cible?: string;
+  mission?: string;
+
+  origine: OrigineIdee;
+  /** Fausse pour une idée remplacée. On ne supprime jamais. */
+  active: boolean;
+
+  briques: BriqueIdee[];
+
+  creeAt: number;
+  majAt: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BARÈME
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Points du défi.
+ *
+ * ⚠️ ÉCART ASSUMÉ AVEC LA SPEC, qui proposait 20 / 30. Dans le reste du jeu,
+ * gagner rapporte 50 XP contre 10 pour une partie jouée : la victoire vaut
+ * cinq fois la participation. Appliquer 20 / 30 aurait fait du défi le seul
+ * endroit où gagner ne compte presque pas — sur un jeu de plateau, c'est dire
+ * au joueur que sa partie est un prétexte.
+ *
+ * Une brique vaut autant qu'une victoire, pas davantage : avancer son idée et
+ * bien jouer sont deux façons également valables de monter au classement.
+ */
+export const POINTS_DEFI = {
+  /** Partie terminée, gagnée ou non. */
+  partie: 20,
+  /** Partie gagnée, en plus de la participation. */
+  victoire: 60,
+  /** Brique posée. Cinq au total sur la semaine. */
+  brique: 60,
+  /** Note de qualité d'Adia à la clôture, de 0 à ce plafond. */
+  qualiteMax: 200,
+} as const;
+
+/**
+ * Parties COMPTÉES par jour.
+ *
+ * Au-delà, on peut continuer de jouer — la partie se déroule normalement et
+ * les XP ordinaires sont gagnés — mais elle ne rapporte plus de points de
+ * défi. L'écran doit l'annoncer AVANT la partie : découvrir après coup que
+ * rien n'a compté est la pire façon de l'apprendre.
+ *
+ * Pas de durée minimale de partie, contrairement à la spec : deux garde-fous
+ * suffisent (une partie abandonnée ne pose pas de brique, et ce plafond borne
+ * le gain quotidien). Un seuil de durée mal calibré punirait un joueur rapide,
+ * et il ne comprendrait pas pourquoi.
+ */
+export const PARTIES_COMPTEES_PAR_JOUR = 3;
 
 export interface WeeklyChallenge {
   /** Id du document. Convention : `AAAA-Sxx` (ex. `2026-S42`), lisible en base. */
@@ -221,30 +421,42 @@ export interface WeeklyChallenge {
    */
   contenu: DefiContenu | null;
 
-  /**
-   * Questions ouvertes posées au joueur avant qu'il crée son entreprise.
-   *
-   * Leurs réponses nourrissent la génération des trois idées proposées : ce
-   * sont elles qui ancrent les propositions dans le thème de la semaine plutôt
-   * que dans l'entrepreneuriat en général.
-   *
-   * VIDE OU ABSENT : le mobile se rabat sur les cartes d'idéation génériques
-   * (cible / mission / secteur). Un défi publié sans questionnaire reste donc
-   * jouable — le parcours ne doit pas dépendre d'un champ facultatif.
-   */
-  questionsIdeation?: QuestionIdeation[];
+  // ─── Cycle hebdomadaire par zone (lot 2) ───
+  // Tous optionnels : un défi créé avant ces champs reste lisible, et une
+  // version de l'app déjà installée les ignore.
 
+  /** Pays du défi. Absent = défi hérité, traité comme sans zone. */
+  zone?: ZoneDefi;
+  /** Numéro de semaine ISO, affiché (« SEMAINE 43 »). */
+  semaine?: number;
+  /** IANA, pour que J-n et le plafond quotidien se calculent chez le joueur. */
+  fuseau?: string;
+  /** Publication des résultats, en ms epoch. Après la clôture. */
+  resultatsAt?: number;
+
+  /** Déclinaisons du thème, pour composer les textes sans les réécrire. */
+  themeAvecArticle?: string;
+  /** « aux inondations » — pour « des solutions aux inondations ». */
+  themeAvecDe?: string;
+  /** « les quartiers inondés ». */
+  beneficiaires?: string;
+
+  /** Contexte donné à Adia. Jamais affiché tel quel au joueur. */
+  problemePourAdia?: string;
   /**
-   * Projets tout faits proposés pour CE défi.
-   *
-   * VIDE OU ABSENT : le mobile n'affiche pas la voie « projet tout fait ». Il
-   * ne se rabat PAS sur les projets génériques du plateau — ils ignorent le
-   * thème de la semaine, et une liste hors sujet est pire que pas de liste.
-   *
-   * Un défi sans projets ET sans questions ne propose donc aucune voie : c'est
-   * au back-office d'en fournir au moins une, et l'écran le dit.
+   * Faits VÉRIFIÉS qu'Adia peut citer. Vide, elle n'en cite aucun : mieux vaut
+   * une réponse sans chiffre qu'un chiffre inventé.
    */
-  projets?: ProjetDefi[];
+  faitsPourAdia?: string[];
+
+  /** Trois chiffres d'impact, chacun avec sa source. */
+  chiffres?: ChiffreDefi[];
+  /** Vidéo de 30 s. Absente, le bloc n'est pas affiché. */
+  video?: VideoDefi;
+  /** Angles, cibles, missions et pistes de repli. */
+  ideation?: IdeationDefi;
+  /** Lot du podium. */
+  lot?: LotDefi;
 
   /** Ouverture, en millisecondes epoch (UTC). */
   debutAt: number;

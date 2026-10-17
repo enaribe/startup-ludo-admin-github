@@ -3,7 +3,7 @@
  *
  *  POST /api/defi/enregistrer
  *      Authorization: Bearer <idToken super admin>
- *      { id?, titre, description, statut, debutAt, finAt, bannerUrl?, questionsIdeation?, projets? }
+ *      { id?, titre, description, statut, debutAt, finAt, bannerUrl?, zone?, semaine?, fuseau?, chiffres?, video?, ideation?, lot?… }
  *      → 200 { ok: true, id }
  *      → 403 si l'appelant n'est pas super admin
  *      → 409 si l'ouverture entre en conflit avec un défi déjà ouvert
@@ -60,48 +60,131 @@ export async function POST(request: NextRequest) {
     (ne pas toucher) de `''` (retirer l'image).
   */
   /*
-    QUESTIONNAIRE D'IDÉATION — des questions OUVERTES.
+    ═══ CHAMPS DU CYCLE HEBDOMADAIRE (lot 2) ═══
 
-    Même règle que `bannerUrl` juste en dessous : la clé absente laisse
-    l'existant, une clé présente remplace tout.
+    Tous suivent la règle de `bannerUrl` ci-dessous : la clé ABSENTE du corps
+    laisse la valeur existante, une clé présente la remplace. Sans cette règle,
+    un appelant qui ignore un champ effacerait le travail d'un autre.
 
-    Les entrées sans texte sont écartées ICI et non côté écran : un champ
-    laissé vide par distraction produirait une question muette sur le téléphone
-    du joueur, qu'il ne pourrait ni comprendre ni répondre.
+    Les validations se font ICI et non côté écran : la route est le seul
+    passage obligé, et une donnée malformée écrite en base se retrouve sur le
+    téléphone des joueurs sans qu'aucun écran ne puisse la rattraper.
   */
-  const questionsFournies = Object.prototype.hasOwnProperty.call(corps, 'questionsIdeation');
-  const brutQuestions = (corps as { questionsIdeation?: unknown }).questionsIdeation;
-  const questionsIdeation = questionsFournies
-    ? (Array.isArray(brutQuestions) ? brutQuestions : [])
-        .map((q, i) => ({
-          id: String((q as { id?: unknown })?.id ?? '').trim() || `q${i + 1}`,
-          texte: String((q as { texte?: unknown })?.texte ?? '').trim(),
-          exemple: String((q as { exemple?: unknown })?.exemple ?? '').trim(),
-        }))
-        .filter((q) => q.texte)
-        // `exemple` vide n'est pas écrit : Firestore stockerait une chaîne que
-        // le mobile afficherait comme un indice… vide.
-        .map((q) => (q.exemple ? q : { id: q.id, texte: q.texte }))
+  const litListeTextes = (cle: string): string[] | null => {
+    if (!Object.prototype.hasOwnProperty.call(corps, cle)) return null;
+    const brut = (corps as Record<string, unknown>)[cle];
+    return (Array.isArray(brut) ? brut : [])
+      .map((x) => String(x ?? '').trim())
+      .filter(Boolean);
+  };
+
+  const litTexte = (cle: string): string | null => {
+    if (!Object.prototype.hasOwnProperty.call(corps, cle)) return null;
+    return String((corps as Record<string, unknown>)[cle] ?? '').trim();
+  };
+
+  /* La zone est le PAYS du défi, pas la région de ciblage sponsor. Son code
+     est normalisé en majuscules : « sn » et « SN » doivent désigner la même
+     zone, sinon deux classements coexisteraient pour un seul pays. */
+  const zoneFournie = Object.prototype.hasOwnProperty.call(corps, 'zone');
+  const brutZone = (corps as { zone?: unknown }).zone as Record<string, unknown> | null | undefined;
+  const zone = zoneFournie
+    ? brutZone && String(brutZone.code ?? '').trim()
+      ? {
+          code: String(brutZone.code).trim().toUpperCase(),
+          nom: String(brutZone.nom ?? '').trim(),
+          avecArticle: String(brutZone.avecArticle ?? '').trim(),
+          ...(String(brutZone.drapeau ?? '').trim()
+            ? { drapeau: String(brutZone.drapeau).trim() }
+            : {}),
+        }
+      : null
     : null;
 
-  /*
-    PROJETS TOUT FAITS — même traitement que le questionnaire.
-
-    Une entrée sans nom est écartée : elle produirait une carte muette que le
-    joueur ne pourrait pas distinguer des autres. La description, elle, est
-    tolérée vide — un nom seul reste choisissable.
-  */
-  const projetsFournis = Object.prototype.hasOwnProperty.call(corps, 'projets');
-  const brutProjets = (corps as { projets?: unknown }).projets;
-  const projets = projetsFournis
-    ? (Array.isArray(brutProjets) ? brutProjets : [])
-        .map((p, i) => ({
-          id: String((p as { id?: unknown })?.id ?? '').trim() || `p${i + 1}`,
-          nom: String((p as { nom?: unknown })?.nom ?? '').trim(),
-          description: String((p as { description?: unknown })?.description ?? '').trim(),
+  /* Un chiffre SANS SOURCE est écarté. L'écran l'annonce déjà, mais c'est ici
+     que la garantie tient : ces chiffres parlent de familles sinistrées devant
+     des élèves, et une valeur d'exemple ne doit pas atteindre la production. */
+  const chiffresFournis = Object.prototype.hasOwnProperty.call(corps, 'chiffres');
+  const brutChiffres = (corps as { chiffres?: unknown }).chiffres;
+  const chiffres = chiffresFournis
+    ? (Array.isArray(brutChiffres) ? brutChiffres : [])
+        .map((c) => ({
+          valeur: String((c as { valeur?: unknown })?.valeur ?? '').trim(),
+          libelle: String((c as { libelle?: unknown })?.libelle ?? '').trim(),
+          source: String((c as { source?: unknown })?.source ?? '').trim(),
         }))
-        .filter((p) => p.nom)
+        .filter((c) => c.valeur && c.libelle && c.source)
     : null;
+
+  /* `url` vide = retrait de la vidéo. Le parcours n'est jamais bloqué par
+     elle : sans URL, le bloc n'est simplement pas affiché. */
+  const videoFournie = Object.prototype.hasOwnProperty.call(corps, 'video');
+  const brutVideo = (corps as { video?: unknown }).video as Record<string, unknown> | null | undefined;
+  const video = videoFournie
+    ? brutVideo && String(brutVideo.url ?? '').trim()
+      ? {
+          url: String(brutVideo.url).trim(),
+          ...(String(brutVideo.posterUrl ?? '').trim()
+            ? { posterUrl: String(brutVideo.posterUrl).trim() }
+            : {}),
+          ...(String(brutVideo.sousTitresUrl ?? '').trim()
+            ? { sousTitresUrl: String(brutVideo.sousTitresUrl).trim() }
+            : {}),
+        }
+      : null
+    : null;
+
+  const ideationFournie = Object.prototype.hasOwnProperty.call(corps, 'ideation');
+  const brutIdeation = (corps as { ideation?: unknown }).ideation as
+    | Record<string, unknown>
+    | undefined;
+  const listeDe = (v: unknown): string[] =>
+    (Array.isArray(v) ? v : []).map((x) => String(x ?? '').trim()).filter(Boolean);
+  const ideation = ideationFournie
+    ? {
+        angles: listeDe(brutIdeation?.angles),
+        cibles: listeDe(brutIdeation?.cibles),
+        missions: listeDe(brutIdeation?.missions),
+        // Une piste sans nom produirait une carte muette, impossible à
+        // distinguer des autres au moment de choisir.
+        pistesExpress: (Array.isArray(brutIdeation?.pistesExpress)
+          ? (brutIdeation.pistesExpress as unknown[])
+          : []
+        )
+          .map((p, i) => ({
+            id: String((p as { id?: unknown })?.id ?? '').trim() || `p${i + 1}`,
+            nom: String((p as { nom?: unknown })?.nom ?? '').trim(),
+            description: String((p as { description?: unknown })?.description ?? '').trim(),
+            pourQui: String((p as { pourQui?: unknown })?.pourQui ?? '').trim(),
+          }))
+          .filter((p) => p.nom),
+      }
+    : null;
+
+  const lotFourni = Object.prototype.hasOwnProperty.call(corps, 'lot');
+  const brutLot = (corps as { lot?: unknown }).lot as Record<string, unknown> | null | undefined;
+  const lot = lotFourni
+    ? brutLot && String(brutLot.court ?? '').trim()
+      ? {
+          court: String(brutLot.court).trim(),
+          ...(String(brutLot.long ?? '').trim() ? { long: String(brutLot.long).trim() } : {}),
+        }
+      : null
+    : null;
+
+  const semaineFournie = Object.prototype.hasOwnProperty.call(corps, 'semaine');
+  const semaine = semaineFournie ? Number((corps as { semaine?: unknown }).semaine) : null;
+  const resultatsFournis = Object.prototype.hasOwnProperty.call(corps, 'resultatsAt');
+  const resultatsAt = resultatsFournis
+    ? Number((corps as { resultatsAt?: unknown }).resultatsAt)
+    : null;
+
+  const fuseau = litTexte('fuseau');
+  const themeAvecArticle = litTexte('themeAvecArticle');
+  const themeAvecDe = litTexte('themeAvecDe');
+  const beneficiaires = litTexte('beneficiaires');
+  const problemePourAdia = litTexte('problemePourAdia');
+  const faitsPourAdia = litListeTextes('faitsPourAdia');
 
   const banniereFournie = Object.prototype.hasOwnProperty.call(corps, 'bannerUrl');
   const bannerUrl = banniereFournie
@@ -218,8 +301,19 @@ export async function POST(request: NextRequest) {
       debutAt,
       finAt,
       ...(banniereFournie ? { bannerUrl } : {}),
-      ...(questionsIdeation !== null ? { questionsIdeation } : {}),
-      ...(projets !== null ? { projets } : {}),
+      ...(zoneFournie ? { zone } : {}),
+      ...(semaine !== null && Number.isFinite(semaine) ? { semaine } : {}),
+      ...(fuseau !== null ? { fuseau } : {}),
+      ...(resultatsAt !== null && Number.isFinite(resultatsAt) ? { resultatsAt } : {}),
+      ...(themeAvecArticle !== null ? { themeAvecArticle } : {}),
+      ...(themeAvecDe !== null ? { themeAvecDe } : {}),
+      ...(beneficiaires !== null ? { beneficiaires } : {}),
+      ...(problemePourAdia !== null ? { problemePourAdia } : {}),
+      ...(faitsPourAdia !== null ? { faitsPourAdia } : {}),
+      ...(chiffres !== null ? { chiffres } : {}),
+      ...(videoFournie ? { video } : {}),
+      ...(ideation !== null ? { ideation } : {}),
+      ...(lotFourni ? { lot } : {}),
       // `champion` et `participants` ne sont JAMAIS écrits ici : ils
       // appartiennent à la clôture. Les inclure permettrait de désigner un
       // champion à la main, ce qui viderait le classement de son sens.
@@ -234,8 +328,11 @@ export async function POST(request: NextRequest) {
             // même partout : le mobile tolère la clé absente, mais un document
             // complet évite d'avoir à s'en souvenir.
             bannerUrl: null,
-            questionsIdeation: [],
-            projets: [],
+            zone: null,
+            chiffres: [],
+            video: null,
+            ideation: { angles: [], cibles: [], missions: [], pistesExpress: [] },
+            lot: null,
             creeAt: maintenant,
           }),
       majAt: maintenant,
