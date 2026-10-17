@@ -130,6 +130,12 @@ export async function POST(request: NextRequest) {
           ...(String(brutVideo.sousTitresUrl ?? '').trim()
             ? { sousTitresUrl: String(brutVideo.sousTitresUrl).trim() }
             : {}),
+          ...(Number.isFinite(Number(brutVideo.dureeS)) && Number(brutVideo.dureeS) > 0
+            ? { dureeS: Number(brutVideo.dureeS) }
+            : {}),
+          ...(Number.isFinite(Number(brutVideo.poidsMo)) && Number(brutVideo.poidsMo) > 0
+            ? { poidsMo: Number(brutVideo.poidsMo) }
+            : {}),
         }
       : null
     : null;

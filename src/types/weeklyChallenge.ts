@@ -518,6 +518,25 @@ export interface DefiScore {
   /** Parties jouées sur ce défi. Sert à départager à XP égal. */
   parties: number;
 
+  /**
+   * Jour (AAAA-MM-JJ, fuseau du défi) des parties comptées ci-dessous.
+   *
+   * Stocké en clair plutôt qu'en horodatage : la comparaison est une égalité
+   * de chaînes, sans calcul de fuseau à chaque lecture. C'est le fuseau du
+   * DÉFI qui fait foi — un joueur en déplacement ne doit pas gagner un
+   * quatrième créneau en changeant d'heure locale.
+   */
+  jourCompte?: string;
+  /**
+   * Parties déjà comptées ce jour-là.
+   *
+   * Au-delà du plafond, on peut continuer de jouer : la partie se déroule
+   * normalement et les XP ordinaires sont gagnés, mais elle ne rapporte plus
+   * de points de défi. L'écran l'annonce AVANT — découvrir après coup que
+   * rien n'a compté est la pire façon de l'apprendre.
+   */
+  partiesDuJour?: number;
+
   majAt: number;
 }
 

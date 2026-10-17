@@ -248,6 +248,8 @@ export default function PageDefi() {
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPoster, setVideoPoster] = useState('');
   const [videoSousTitres, setVideoSousTitres] = useState('');
+  const [videoDuree, setVideoDuree] = useState<number | ''>('');
+  const [videoPoids, setVideoPoids] = useState<number | ''>('');
   const [lotCourt, setLotCourt] = useState('');
   const [lotLong, setLotLong] = useState('');
 
@@ -313,6 +315,8 @@ export default function PageDefi() {
         setVideoUrl(d.video?.url ?? '');
         setVideoPoster(d.video?.posterUrl ?? '');
         setVideoSousTitres(d.video?.sousTitresUrl ?? '');
+        setVideoDuree(d.video?.dureeS ?? '');
+        setVideoPoids(d.video?.poidsMo ?? '');
         setLotCourt(d.lot?.court ?? '');
         setLotLong(d.lot?.long ?? '');
         // Le classement n'a de sens qu'une fois le défi lancé.
@@ -424,6 +428,8 @@ export default function PageDefi() {
                 url: videoUrl.trim(),
                 ...(videoPoster.trim() ? { posterUrl: videoPoster.trim() } : {}),
                 ...(videoSousTitres.trim() ? { sousTitresUrl: videoSousTitres.trim() } : {}),
+                ...(videoDuree !== '' ? { dureeS: Number(videoDuree) } : {}),
+                ...(videoPoids !== '' ? { poidsMo: Number(videoPoids) } : {}),
               },
             }
           : { video: null }),
@@ -674,6 +680,8 @@ export default function PageDefi() {
     videoUrl !== (defi.video?.url ?? '') ||
     videoPoster !== (defi.video?.posterUrl ?? '') ||
     videoSousTitres !== (defi.video?.sousTitresUrl ?? '') ||
+    videoDuree !== (defi.video?.dureeS ?? '') ||
+    videoPoids !== (defi.video?.poidsMo ?? '') ||
     lotCourt !== (defi.lot?.court ?? '') ||
     lotLong !== (defi.lot?.long ?? '');
   const aEnregistrer = !clos && (themeModifie || brouillonContenu !== null);
@@ -1209,6 +1217,34 @@ export default function PageDefi() {
               disabled={clos}
               placeholder="https://…/sous-titres-fr.vtt"
               onChange={(e) => setVideoSousTitres(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* La durée et le poids sont ANNONCÉS au joueur avant qu'il lance la
+            vidéo : sur un forfait compté, 2 Mo qui partent sans prévenir sont
+            une dépense qu'il n'a pas demandée. */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="label">Durée (secondes)</label>
+            <input
+              type="number"
+              className="input-field"
+              value={videoDuree}
+              disabled={clos}
+              placeholder="30"
+              onChange={(e) => setVideoDuree(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="label">Poids (Mo)</label>
+            <input
+              type="number"
+              className="input-field"
+              value={videoPoids}
+              disabled={clos}
+              placeholder="2"
+              onChange={(e) => setVideoPoids(e.target.value === '' ? '' : Number(e.target.value))}
             />
           </div>
         </div>
