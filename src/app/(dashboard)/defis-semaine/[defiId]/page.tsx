@@ -654,6 +654,19 @@ export default function PageDefi() {
     plus) et leurs champs sont des chaînes, donc l'ordre des clés est stable.
   */
   const memeListe = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+  /*
+    Les listes d'idéation encore vides, nommées pour l'avertissement.
+
+    On lit l'état du formulaire et non `defi.ideation` : l'ouverture
+    enregistre le brouillon avant d'ouvrir, donc des listes saisies mais pas
+    encore sauvegardées doivent compter comme remplies.
+  */
+  const listesManquantes = [
+    angles.length === 0 ? 'angles d’attaque' : null,
+    cibles.length === 0 ? 'cibles' : null,
+    missions.length === 0 ? 'missions' : null,
+  ].filter((v): v is string => v !== null);
   const themeModifie =
     titre !== defi.titre ||
     description !== defi.description ||
@@ -1650,6 +1663,24 @@ export default function PageDefi() {
               <p style={{ fontSize: 12.5, color: '#B9791A' }}>
                 Importez d’abord le contenu : sans cartes, le défi n’a pas
                 d’épreuve à faire jouer.
+              </p>
+            ) : listesManquantes.length > 0 ? (
+              /*
+                L'IDÉATION INCOMPLÈTE BLOQUE L'OUVERTURE.
+
+                Une liste vide ne laisse pas l'écran vide côté joueur :
+                l'application retombe sur une liste GÉNÉRIQUE écrite en dur.
+                Le défi s'ouvre donc sans erreur visible, et les joueurs
+                construisent leur idée sur des choix qui n'ont rien à voir
+                avec le thème — sans que personne ne s'en aperçoive.
+
+                C'est précisément pour cela que l'avertissement bloque au lieu
+                de prévenir : un oubli silencieux ne se corrige jamais.
+              */
+              <p style={{ fontSize: 12.5, color: '#B9791A' }}>
+                Complétez l’idéation ({listesManquantes.join(', ')}) : sans
+                ces listes, les joueurs construisent leur idée sur des choix
+                génériques, sans rapport avec le thème.
               </p>
             ) : (
               <button
