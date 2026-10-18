@@ -649,4 +649,25 @@ export interface DefiGameContext {
    * doit pas compter — le champion est déjà figé.
    */
   finAt: number;
+  /**
+   * Nom de la zone avec son article (« au Sénégal »), pour « rang au Sénégal ».
+   *
+   * Recopié comme `titre` : l'écran de fin ne doit pas relire le défi pour
+   * afficher trois mots.
+   */
+  zone?: string;
+  /**
+   * Rang du joueur AVANT cette partie, pour afficher « #62 → #47 ».
+   *
+   * ═══ EN MÉMOIRE, ET C'EST ASSUMÉ ═══
+   *
+   * Lu au lancement de la partie et transporté dans le contexte, pas écrit en
+   * base : une écriture par partie pour une flèche serait cher payé. Si
+   * l'application est tuée en pleine partie, le contexte disparaît et l'écran
+   * de fin n'affiche que le rang final — c'est le seul cas dégradé, et il ne
+   * coûte rien.
+   *
+   * Absent aussi à la toute première partie : le joueur n'avait pas de rang.
+   */
+  rangAvant?: number;
 }
