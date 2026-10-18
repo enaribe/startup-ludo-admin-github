@@ -354,6 +354,17 @@ export interface IdeeDefi {
   mission?: string;
 
   origine: OrigineIdee;
+  /**
+   * Nombre de fois que le joueur a changé d'idée sur ce défi.
+   *
+   * Le changement n'est permis QU'UNE FOIS, et seulement avant J-3 : passé
+   * ce seuil, une idée neuve n'aurait plus assez de parties devant elle pour
+   * poser ses cinq briques, et le classement opposerait des idées construites
+   * à des idées à peine nées.
+   *
+   * Absent sur les idées créées avant ce champ : vaut zéro.
+   */
+  changementsIdee?: number;
   /** Fausse pour une idée remplacée. On ne supprime jamais. */
   active: boolean;
 
