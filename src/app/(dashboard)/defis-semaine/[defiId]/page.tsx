@@ -270,6 +270,8 @@ export default function PageDefi() {
   */
   const [bannerUrl, setBannerUrl] = useState('');
   const [enregistrement, setEnregistrement] = useState(false);
+  /** Nouvelle date de clôture, pour rouvrir un défi clos trop tôt. */
+  const [nouvelleFin, setNouvelleFin] = useState('');
 
   const [depot, setDepot] = useState(false);
   const [mix, setMix] = useState<MixDefi>(MIX_DEFI_DEFAUT);
@@ -374,13 +376,50 @@ export default function PageDefi() {
    * @param statut Statut à forcer — `'ouvert'` depuis le bouton de mise en
    *   ligne. Sinon le statut courant est conservé.
    */
-  async function sauver(statut?: StatutDefi) {
+  /**
+   * @param finForcee Clôture à écrire à la place de celle de l'état.
+   *   Nécessaire à la réouverture : `setFinAt` n'a pas encore pris effet au
+   *   moment de l'appel, et on enverrait l'ancienne date — déjà passée.
+   */
+  /**
+   * Rouvre un défi clos, avec une nouvelle date de clôture.
+   *
+   * ═══ RIEN N'EST REMIS À ZÉRO ═══
+   *
+   * Scores et idées restent en base : les joueurs reprennent exactement où
+   * ils en étaient, rang compris. Le champion enregistré à la clôture reste
+   * lui aussi — il sera recalculé au prochain passage à « clos », sur les
+   * scores d'alors.
+   *
+   * L'invariant « un seul défi ouvert » est vérifié côté serveur : la route
+   * refuse avec un 409 si un autre défi est déjà ouvert.
+   */
+  async function rouvrir() {
+    if (!defi || !nouvelleFin) return;
+    // 23:00 comme le champ de clôture : `resetWeeklyStats` tourne le lundi à
+    // minuit UTC, et clôturer à minuit pile courrait contre elle.
+    const fin = Date.parse(`${nouvelleFin}T23:00:00Z`);
+    if (!Number.isFinite(fin)) {
+      toast.error('Date de clôture invalide');
+      return;
+    }
+    if (fin <= Date.now()) {
+      toast.error('La nouvelle clôture doit être dans le futur');
+      return;
+    }
+    setFinAt(fin);
+    await sauver('ouvert', fin);
+    setNouvelleFin('');
+  }
+
+  async function sauver(statut?: StatutDefi, finForcee?: number) {
     if (!defi) return;
     if (!titre.trim()) {
       toast.error('Le thème est requis');
       return;
     }
-    if (finAt <= debutAt) {
+    const finEffective = finForcee ?? finAt;
+    if (finEffective <= debutAt) {
       toast.error('La clôture doit suivre l’ouverture');
       return;
     }
@@ -410,7 +449,7 @@ export default function PageDefi() {
         description,
         statut: statut ?? defi.statut,
         debutAt,
-        finAt,
+        finAt: finEffective,
         // Toujours transmis depuis CET écran, qui connaît le champ : `''`
         // retire donc l'image, et c'est le comportement attendu du bouton
         // « Retirer » du champ d'upload.
@@ -1870,6 +1909,58 @@ export default function PageDefi() {
             ) : (
               <span style={{ color: 'var(--color-text-muted)' }}>Clos sans participant.</span>
             )}
+
+            {/*
+              ═══ ROUVRIR AVEC UNE NOUVELLE DATE ═══
+
+              Un défi clos trop tôt — clôture manuelle par erreur, ou date de
+              fin mal saisie — n'avait aucun recours : tous les champs sont
+              verrouillés dès que le statut passe à « clos ».
+
+              La réouverture repose le statut à « ouvert » et repousse la
+              clôture. Les scores et les idées ne sont pas touchés : les
+              joueurs reprennent où ils en étaient, avec leur rang.
+
+              Le champion enregistré reste en base. Il sera recalculé à la
+              prochaine clôture, sur les scores d'alors.
+            */}
+            <div
+              style={{
+                marginTop: 16,
+                paddingTop: 16,
+                borderTop: '1px solid var(--color-card-border)',
+              }}
+            >
+              <label className="label">Rouvrir jusqu’au (UTC)</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="date"
+                  className="input-field"
+                  style={{ flex: 1 }}
+                  value={nouvelleFin}
+                  onChange={(e) => setNouvelleFin(e.target.value)}
+                />
+                <button
+                  className="btn-secondary"
+                  disabled={!nouvelleFin || enregistrement}
+                  style={{ opacity: !nouvelleFin || enregistrement ? 0.5 : 1 }}
+                  onClick={() => void rouvrir()}
+                >
+                  Rouvrir le défi
+                </button>
+              </div>
+              <p
+                style={{
+                  fontSize: 12,
+                  color: 'var(--color-text-muted)',
+                  marginTop: 8,
+                  lineHeight: 1.5,
+                }}
+              >
+                Les scores et les idées des joueurs sont conservés. Un seul défi
+                peut être ouvert à la fois : clôturez l’autre d’abord.
+              </p>
+            </div>
           </div>
         ) : defi.statut === 'brouillon' ? (
           <>
