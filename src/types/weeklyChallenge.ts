@@ -291,6 +291,35 @@ export type OrigineIdee = 'piste' | 'personnelle';
  * précédente sans la supprimer : les briques déjà payées restent, et c'est ce
  * qui permet de ne pas repayer les mêmes points (décision D3 de la spec).
  */
+/**
+ * Les badges d'un défi, dans l'ordre d'affichage.
+ *
+ * ═══ QUATRE, PAS CINQ ═══
+ *
+ * La spécification en listait cinq ; la maquette en montre quatre et affiche
+ * « 2/4 ». Le cinquième (« Bâtisseur de solutions », décerné à la clôture)
+ * n'apparaît nulle part dans les écrans — il est écarté tant qu'aucun design
+ * ne le porte, plutôt que d'ajouter une case vide au compteur.
+ *
+ * L'ordre est celui de la difficulté croissante : on gagne le premier à sa
+ * première partie, le dernier seulement au classement final.
+ */
+export const BADGES_DEFI = ['premiere_partie', 'fidele', 'idee_prete', 'top3'] as const;
+
+export type TypeBadge = (typeof BADGES_DEFI)[number];
+
+/**
+ * Un badge obtenu par un joueur sur un défi.
+ *
+ * Stocké dans l'idée plutôt que dans une collection à part : les badges d'un
+ * défi meurent avec lui, et les lire demanderait sinon une requête de plus à
+ * chaque ouverture de l'Espace Défi.
+ */
+export interface BadgeObtenu {
+  type: TypeBadge;
+  gagneAt: number;
+}
+
 export interface IdeeDefi {
   /** `{defiId}_{userId}` — un document par joueur et par défi. */
   id: string;
@@ -304,6 +333,21 @@ export interface IdeeDefi {
   description: string;
   pourQui: string;
 
+  /**
+   * L'entreprise du portefeuille créée à partir de cette idée.
+   *
+   * ═══ POURQUOI CE LIEN EXISTE ═══
+   *
+   * L'idée et l'entreprise étaient deux objets sans rapport : seul le NOM les
+   * rapprochait. En ligne, le joueur se retrouvait donc à choisir son projet
+   * parmi tout son portefeuille — y compris des entreprises d'un autre défi,
+   * ou des projets génériques — alors qu'un défi n'autorise qu'une idée.
+   *
+   * Facultatif : les idées créées avant ce champ n'en ont pas, et le code
+   * retombe alors sur une recherche par nom.
+   */
+  startupId?: string;
+
   /** Les trois choix de l'idéation, conservés pour la note de qualité. */
   angle?: string;
   cible?: string;
@@ -314,6 +358,14 @@ export interface IdeeDefi {
   active: boolean;
 
   briques: BriqueIdee[];
+  /**
+   * Badges gagnés sur ce défi.
+   *
+   * Dans l'idée et non dans une collection à part : ils meurent avec le défi,
+   * et les lire ailleurs coûterait une requête de plus à chaque ouverture de
+   * l'Espace Défi.
+   */
+  badges?: BadgeObtenu[];
 
   creeAt: number;
   majAt: number;
