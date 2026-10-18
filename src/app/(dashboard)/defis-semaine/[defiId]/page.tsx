@@ -54,6 +54,11 @@ import {
 } from '@/lib/weekly-challenge-service';
 import { modeleContenuJson, type AnomalieImport } from '@/lib/defi-json-import';
 import {
+  importerFicheJson,
+  modeleFicheJson,
+  type AnomalieFiche,
+} from '@/lib/defi-fiche-import';
+import {
   MIX_DEFI_DEFAUT,
   type DefiScore,
   type MixDefi,
@@ -280,6 +285,19 @@ export default function PageDefi() {
     au même niveau redonnerait à l'écran l'encombrement qu'on vient d'en retirer.
   */
   const [voirGeneration, setVoirGeneration] = useState(false);
+
+  /*
+    ─── Remplissage par collage d'un JSON ───
+
+    Le texte collé reste ici tant qu'il n'est pas appliqué : on ne touche aux
+    champs du formulaire qu'au clic. Coller devrait pouvoir être annulé d'un
+    Cmd+Z, et un remplissage au fil de la frappe écraserait la saisie en cours
+    à chaque caractère.
+  */
+  const [ficheCollee, setFicheCollee] = useState('');
+  const [anomaliesFiche, setAnomaliesFiche] = useState<AnomalieFiche[]>([]);
+  const [remplisFiche, setRemplisFiche] = useState<string[]>([]);
+  const [voirCollage, setVoirCollage] = useState(false);
 
   const [scores, setScores] = useState<DefiScore[]>([]);
   const [aCloturer, setACloturer] = useState(false);
@@ -555,6 +573,87 @@ export default function PageDefi() {
   }
 
   /** Déclenche le téléchargement d'un contenu texte. */
+  /**
+   * Pose le JSON collé dans les champs du formulaire.
+   *
+   * ═══ RIEN N'EST ÉCRIT EN BASE ═══
+   *
+   * Cette fonction ne fait que des `setX` : les champs se remplissent comme
+   * sous les doigts, le bouton d'enregistrement s'allume, et l'auteur relit
+   * avant de valider. Écrire directement ferait partir en production un
+   * collage que personne n'a relu.
+   *
+   * ═══ UNE CLÉ ABSENTE NE VIDE RIEN ═══
+   *
+   * Chaque champ n'est touché que si le JSON le porte. C'est ce qui rend un
+   * collage partiel utilisable : coller la seule idéation ne doit pas effacer
+   * le thème et les chiffres déjà saisis.
+   */
+  function appliquerFiche() {
+    const r = importerFicheJson(ficheCollee);
+    setAnomaliesFiche(r.anomalies);
+    setRemplisFiche(r.remplis);
+
+    if (!r.fiche) {
+      toast.error('Rien n’a pu être importé');
+      return;
+    }
+    const f = r.fiche;
+
+    if (f.titre !== undefined) setTitre(f.titre);
+    if (f.description !== undefined) setDescription(f.description);
+
+    if (f.zone !== undefined) {
+      setZoneCode(f.zone.code);
+      setZoneNom(f.zone.nom);
+      setZoneArticle(f.zone.avecArticle);
+      if (f.zone.drapeau !== undefined) setZoneDrapeau(f.zone.drapeau);
+    }
+    if (f.semaine !== undefined) setSemaine(f.semaine);
+    if (f.fuseau !== undefined) setFuseau(f.fuseau);
+
+    if (f.themeAvecArticle !== undefined) setThemeAvecArticle(f.themeAvecArticle);
+    if (f.themeAvecDe !== undefined) setThemeAvecDe(f.themeAvecDe);
+    if (f.beneficiaires !== undefined) setBeneficiaires(f.beneficiaires);
+    if (f.problemePourAdia !== undefined) setProblemePourAdia(f.problemePourAdia);
+    if (f.faitsPourAdia !== undefined) setFaitsPourAdia(f.faitsPourAdia);
+
+    if (f.chiffres !== undefined) setChiffres(f.chiffres);
+
+    /*
+      Les trois listes d'idéation sont remplacées INDÉPENDAMMENT.
+
+      L'importeur rend toujours les trois (le type les exige), mais une liste
+      vide signifie « non fournie » et ne doit pas écraser celle déjà saisie.
+      Sans ce test, coller les seuls angles effacerait les cibles.
+    */
+    if (f.ideation !== undefined) {
+      if (f.ideation.angles.length > 0) setAngles(f.ideation.angles);
+      if (f.ideation.cibles.length > 0) setCibles(f.ideation.cibles);
+      if (f.ideation.missions.length > 0) setMissions(f.ideation.missions);
+      if (f.ideation.pistesExpress?.length) setPistes(f.ideation.pistesExpress);
+    }
+
+    if (f.video !== undefined) {
+      setVideoUrl(f.video.url);
+      if (f.video.posterUrl !== undefined) setVideoPoster(f.video.posterUrl);
+      if (f.video.sousTitresUrl !== undefined) setVideoSousTitres(f.video.sousTitresUrl);
+      if (f.video.dureeS !== undefined) setVideoDuree(f.video.dureeS);
+      if (f.video.poidsMo !== undefined) setVideoPoids(f.video.poidsMo);
+    }
+    if (f.lot !== undefined) {
+      setLotCourt(f.lot.court);
+      if (f.lot.long !== undefined) setLotLong(f.lot.long);
+    }
+
+    const bloquantes = r.anomalies.filter((a) => a.bloquant).length;
+    if (bloquantes === 0 && r.anomalies.length === 0) {
+      toast.success(`${r.remplis.length} champ(s) remplis — relisez, puis enregistrez`);
+    } else {
+      toast.success(`${r.remplis.length} champ(s) remplis, ${r.anomalies.length} à vérifier`);
+    }
+  }
+
   function telecharger(contenu: string, nom: string) {
     const blob = new Blob([contenu], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -708,6 +807,125 @@ export default function PageDefi() {
         </button>
         <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{defi.id}</span>
       </div>
+
+      {/*
+        ═══ REMPLIR TOUTE LA FICHE EN COLLANT UN JSON ═══
+
+        Replié par défaut, et placé AVANT la première section : c'est un
+        raccourci vers le formulaire entier, pas une étape de plus. Déplié au
+        même niveau que les sections, il ferait croire qu'il faut y passer.
+
+        Il ne couvre pas les cartes — elles ont leur propre import, section 7,
+        avec un validateur qui refuse tout plutôt qu'importer à moitié.
+      */}
+      {!clos ? (
+        <details
+          className="glass-card p-5 mb-3"
+          open={voirCollage}
+          onToggle={(e) => setVoirCollage((e.target as HTMLDetailsElement).open)}
+        >
+          <summary
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              userSelect: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <FileJson size={15} />
+            Remplir la fiche depuis un JSON
+            <span style={{ fontWeight: 500, color: 'var(--color-text-muted)', fontSize: 12 }}>
+              — tout sauf les cartes
+            </span>
+          </summary>
+
+          <div style={{ marginTop: 14 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.55 }}>
+              Collez un JSON : les champs se remplissent, vous relisez, puis
+              vous enregistrez. Une clé absente laisse son champ inchangé, donc
+              un JSON partiel ne fait rien perdre.
+            </p>
+
+            <textarea
+              className="input-field"
+              rows={8}
+              value={ficheCollee}
+              placeholder='{ "titre": "Entreprendre face aux inondations", "zone": { … } }'
+              onChange={(e) => setFicheCollee(e.target.value)}
+              style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, resize: 'vertical' }}
+            />
+
+            <div className="flex items-center gap-3" style={{ marginTop: 10 }}>
+              <button
+                className="btn-primary"
+                disabled={!ficheCollee.trim()}
+                style={{ opacity: ficheCollee.trim() ? 1 : 0.5 }}
+                onClick={appliquerFiche}
+              >
+                Remplir les champs
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setFicheCollee(modeleFicheJson());
+                  setAnomaliesFiche([]);
+                  setRemplisFiche([]);
+                }}
+              >
+                Charger un exemple
+              </button>
+              {ficheCollee ? (
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setFicheCollee('');
+                    setAnomaliesFiche([]);
+                    setRemplisFiche([]);
+                  }}
+                >
+                  Effacer
+                </button>
+              ) : null}
+            </div>
+
+            {/* ─── Ce qui a été rempli ─── */}
+            {remplisFiche.length > 0 ? (
+              <p style={{ fontSize: 12.5, color: '#2EA043', marginTop: 12, lineHeight: 1.5 }}>
+                Rempli : {remplisFiche.join(' · ')}. Relisez les sections
+                ci-dessous, puis enregistrez.
+              </p>
+            ) : null}
+
+            {/*
+              ─── Ce qui a été écarté ───
+
+              Chaque anomalie porte son chemin dans le JSON. Un message sans
+              position obligerait l'auteur à relire tout son fichier pour
+              trouver la ligne en cause.
+            */}
+            {anomaliesFiche.length > 0 ? (
+              <ul style={{ marginTop: 12, paddingLeft: 0, listStyle: 'none' }}>
+                {anomaliesFiche.map((a, i) => (
+                  <li
+                    key={`${a.ou}_${i}`}
+                    style={{
+                      fontSize: 12.5,
+                      color: a.bloquant ? '#D1242F' : '#B87A0C',
+                      lineHeight: 1.5,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <strong>{a.ou}</strong> — {a.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
 
       {/* ═══ 1. Le thème ═══ */}
       <section className="glass-card p-5 mb-3">
