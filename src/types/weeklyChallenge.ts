@@ -1,12 +1,6 @@
 /**
  * Défi de la semaine — modèle partagé mobile / back-office.
  *
- * ⚠️ COPIE SYNCHRONE de `startup-ludo/src/types/weeklyChallenge.ts`. Les deux
- * dépôts sont séparés et ne partagent aucun paquet : toute modification ici
- * doit être reportée là-bas, et inversement. Le modèle décrit des documents
- * Firestore communs aux deux — une divergence se traduirait par des champs lus
- * mais jamais écrits, sans erreur de compilation d'aucun côté.
- *
  * Un thème entrepreneurial par semaine, ouvert le lundi et clos le dimanche à
  * 23:00 UTC. Les parties jouées SUR le défi alimentent un classement propre au
  * défi, d'où sort le champion de la semaine.
@@ -533,6 +527,16 @@ export interface WeeklyChallenge {
   /** Lot du podium. */
   lot?: LotDefi;
 
+  /**
+   * Formulaire d'avis, ouvert depuis l'écran de clôture.
+   *
+   * Une URL externe et non un écran : l'app n'a pas de formulaire d'enquête,
+   * et en écrire un ferait de l'écran de résultat un écran de saisie. Absente,
+   * le lien « Donner mon avis » ne s'affiche pas — un lien mort vaut moins
+   * que pas de lien.
+   */
+  avisUrl?: string;
+
   /** Ouverture, en millisecondes epoch (UTC). */
   debutAt: number;
   /** Clôture, en millisecondes epoch. Dimanche 23:00 UTC. */
@@ -636,6 +640,23 @@ export interface DefiScore {
    * petit.
    */
   joursJoues?: string[];
+
+  /**
+   * Numéro WhatsApp confirmé par un lauréat du podium, à la clôture.
+   *
+   * ═══ POURQUOI SUR LE SCORE, ET PAS AU PROFIL ═══
+   *
+   * Le profil ne porte aucun téléphone, et lui en ajouter un demanderait ce
+   * numéro à TOUS les joueurs pour servir trois lauréats par défi. Ici il
+   * n'est demandé qu'à qui a gagné un lot, et il meurt avec le défi.
+   *
+   * ⚠️ Donnée personnelle : l'écran de clôture est le seul à l'afficher, et
+   * seulement à son propriétaire — les règles de `defiScores` n'ouvrent
+   * l'écriture qu'au joueur lui-même.
+   */
+  telephoneLot?: string;
+  /** Le lauréat a confirmé son numéro : l'écran cesse de le réclamer. */
+  lotConfirmeAt?: number;
 
   majAt: number;
 }

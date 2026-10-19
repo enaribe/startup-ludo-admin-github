@@ -200,6 +200,16 @@ test('une vidéo sans url est écartée', () => {
   assert.match(douces(r)[0].message, /url/);
 });
 
+test('une URL d’avis en https est reprise', () => {
+  const r = importerFicheJson('{ "titre": "T", "avisUrl": "https://forms.gle/abc" }');
+  assert.equal(r.fiche.avisUrl, 'https://forms.gle/abc');
+});
+
+test('une URL d’avis en http est écartée — Android la bloquerait', () => {
+  const r = importerFicheJson('{ "titre": "T", "avisUrl": "http://forms.gle/abc" }');
+  assert.equal(r.fiche.avisUrl, undefined);
+});
+
 test('un lot sans version courte est écarté', () => {
   const r = importerFicheJson('{ "titre": "T", "lot": { "long": "Long seul" } }');
   assert.equal(r.fiche.lot, undefined);

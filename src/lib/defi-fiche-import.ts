@@ -56,6 +56,7 @@ export interface FicheDefi {
   ideation?: IdeationDefi;
   video?: VideoDefi;
   lot?: LotDefi;
+  avisUrl?: string;
 }
 
 /** Un champ écarté, et la raison — affichée telle quelle à l'auteur. */
@@ -498,6 +499,27 @@ export function importerFicheJson(brut: unknown): ResultatFiche {
         };
         remplis.push('lot');
       }
+    }
+  }
+
+  /*
+    Le formulaire d'avis, ouvert depuis l'écran de clôture.
+
+    Seul `https://` est accepté : un `http://` serait bloqué par Android, et
+    un schéma quelconque (`javascript:`, `file:`) n'a rien à faire dans un
+    champ que l'app ouvre sans le relire.
+  */
+  if (src.avisUrl !== undefined) {
+    const url = texte(src.avisUrl);
+    if (!url || !url.startsWith('https://')) {
+      anomalies.push({
+        bloquant: false,
+        ou: 'avisUrl',
+        message: 'Attendu une URL https://. Ignorée.',
+      });
+    } else {
+      fiche.avisUrl = url;
+      remplis.push('avisUrl');
     }
   }
 
