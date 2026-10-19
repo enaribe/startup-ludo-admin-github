@@ -304,6 +304,9 @@ export type OrigineIdee = 'piste' | 'personnelle';
  * L'ordre est celui de la difficulté croissante : on gagne le premier à sa
  * première partie, le dernier seulement au classement final.
  */
+/** Jours de jeu distincts exigés par le badge « Fidèle au défi ». */
+export const JOURS_FIDELE = 3;
+
 export const BADGES_DEFI = ['premiere_partie', 'fidele', 'idee_prete', 'top3'] as const;
 
 export type TypeBadge = (typeof BADGES_DEFI)[number];
@@ -608,6 +611,20 @@ export interface DefiScore {
    * rien n'a compté est la pire façon de l'apprendre.
    */
   partiesDuJour?: number;
+  /**
+   * Les jours où le joueur a joué, en AAAA-MM-JJ du fuseau du défi.
+   *
+   * ═══ POURQUOI UNE LISTE, ET PAS UN COMPTEUR ═══
+   *
+   * Le badge « Fidèle au défi » promet « trois jours d'affilée ». Un simple
+   * compteur de parties se gagnerait en une seule journée, et l'écran
+   * mentirait. `jourCompte` ne retient que le dernier jour : il ne permet
+   * pas de savoir si l'on est revenu.
+   *
+   * Sept entrées au plus — la durée d'un défi — donc le document reste
+   * petit.
+   */
+  joursJoues?: string[];
 
   majAt: number;
 }
