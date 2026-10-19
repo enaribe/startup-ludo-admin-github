@@ -58,6 +58,7 @@ export interface FicheDefi {
   lot?: LotDefi;
   avisUrl?: string;
   badgeIcone?: string;
+  problemesSuggeres?: string[];
 }
 
 /** Un champ écarté, et la raison — affichée telle quelle à l'auteur. */
@@ -500,6 +501,26 @@ export function importerFicheJson(brut: unknown): ResultatFiche {
         };
         remplis.push('lot');
       }
+    }
+  }
+
+  /*
+    Les thèmes proposés au formulaire d'avis : « un problème pour un prochain
+    défi ? ». Six au plus — au-delà, la question devient une liste à lire
+    plutôt qu'un choix à faire.
+  */
+  if (src.problemesSuggeres !== undefined) {
+    const { valeurs, ignores } = listeTextes(src.problemesSuggeres, 6);
+    if (valeurs.length > 0) {
+      fiche.problemesSuggeres = valeurs;
+      remplis.push(`${valeurs.length} problème(s) suggéré(s)`);
+    }
+    if (ignores > 0) {
+      anomalies.push({
+        bloquant: false,
+        ou: 'problemesSuggeres',
+        message: `${ignores} entrée(s) vide(s), en double ou au-delà de 6. Ignorée(s).`,
+      });
     }
   }
 

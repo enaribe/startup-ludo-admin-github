@@ -528,6 +528,15 @@ export interface WeeklyChallenge {
   lot?: LotDefi;
 
   /**
+   * Thèmes proposés au formulaire d'avis : « quel problème pour un prochain
+   * défi ? ». Propres au défi, parce qu'ils dépendent de l'actualité.
+   *
+   * Vides, la question ne s'affiche pas — elle est facultative, et une liste
+   * de choix sans choix n'est qu'un titre orphelin.
+   */
+  problemesSuggeres?: string[];
+
+  /**
    * Pictogramme du badge de clôture — un nom d'icône Ionicons.
    *
    * Il porte le THÈME du défi : une maison dans l'eau pour les inondations,
@@ -670,6 +679,76 @@ export interface DefiScore {
   lotConfirmeAt?: number;
 
   majAt: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// L'AVIS DU JOUEUR, À LA CLÔTURE
+//
+// Cinq questions, posées une fois le défi terminé. Elles servent à préparer
+// le défi SUIVANT : ce qui a aidé, si la difficulté était juste, quel thème
+// traiter ensuite.
+//
+// ═══ POURQUOI LES LISTES SONT DANS LE CODE ═══
+//
+// `aides` et `difficultes` nomment des parties du jeu — Adia, les briques, le
+// classement, les badges. Elles ne changent pas d'un défi à l'autre, et les
+// mettre au back-office obligerait à les ressaisir chaque semaine à
+// l'identique, avec le risque qu'une semaine en oublie une et rende le
+// dépouillement incomparable.
+//
+// `problemesSuggeres`, elle, est propre au défi : les thèmes à proposer pour
+// la semaine suivante dépendent de l'actualité. Elle vit donc sur le défi.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Ce qui a le plus aidé le joueur. Plusieurs réponses possibles. */
+export const AIDES_DEFI = ['adia', 'briques', 'amis', 'classement', 'badges'] as const;
+
+export type AideDefi = (typeof AIDES_DEFI)[number];
+
+/** La difficulté ressentie. Une seule réponse. */
+export const DIFFICULTES_DEFI = ['facile', 'juste', 'difficile'] as const;
+
+export type DifficulteDefi = (typeof DIFFICULTES_DEFI)[number];
+
+/** Bornes de la note de satisfaction — cinq visages, de 1 à 5. */
+export const NOTE_AVIS_MIN = 1;
+export const NOTE_AVIS_MAX = 5;
+
+/**
+ * L'avis d'un joueur sur un défi (`defiAvis/{defiId}_{uid}`).
+ *
+ * Seule `note` est obligatoire : c'est la question à laquelle tout le monde
+ * répond, et exiger les quatre autres ferait abandonner le formulaire à
+ * l'endroit exact où il devient facultatif.
+ */
+export interface AvisDefi {
+  /** `{defiId}_{userId}` */
+  id: string;
+  defiId: string;
+  userId: string;
+
+  /** De 1 (pas du tout) à 5 (beaucoup). */
+  note: number;
+  /** Ce qui a aidé. Vide si le joueur n'a rien coché. */
+  aides: AideDefi[];
+  /** La difficulté ressentie, ou absente. */
+  difficulte?: DifficulteDefi;
+  /**
+   * Le thème souhaité pour un prochain défi.
+   *
+   * Une chaîne libre et non un index : la liste proposée vient du défi et
+   * peut changer, un index ne voudrait plus rien dire au dépouillement.
+   */
+  problemeSuivant?: string;
+  /** Texte libre, 500 caractères au plus. */
+  idee?: string;
+
+  creeAt: number;
+}
+
+/** Id de document d'un avis, à utiliser partout plutôt que de concaténer. */
+export function idDefiAvis(defiId: string, userId: string): string {
+  return `${defiId}_${userId}`;
 }
 
 /** Id de document d'un score, à utiliser partout plutôt que de concaténer à la main. */
