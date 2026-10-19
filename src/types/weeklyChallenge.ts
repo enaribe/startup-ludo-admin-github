@@ -528,6 +528,17 @@ export interface WeeklyChallenge {
   lot?: LotDefi;
 
   /**
+   * Pictogramme du badge de clôture — un nom d'icône Ionicons.
+   *
+   * Il porte le THÈME du défi : une maison dans l'eau pour les inondations,
+   * autre chose la semaine suivante. Un PNG figerait ce thème, et le défi
+   * suivant aurait un sceau qui ne parle pas de lui.
+   *
+   * Absent, l'écran retombe sur `home` — neutre, jamais vide.
+   */
+  badgeIcone?: string;
+
+  /**
    * Formulaire d'avis, ouvert depuis l'écran de clôture.
    *
    * Une URL externe et non un écran : l'app n'a pas de formulaire d'enquête,

@@ -57,6 +57,7 @@ export interface FicheDefi {
   video?: VideoDefi;
   lot?: LotDefi;
   avisUrl?: string;
+  badgeIcone?: string;
 }
 
 /** Un champ écarté, et la raison — affichée telle quelle à l'auteur. */
@@ -499,6 +500,27 @@ export function importerFicheJson(brut: unknown): ResultatFiche {
         };
         remplis.push('lot');
       }
+    }
+  }
+
+  /*
+    Le pictogramme du badge de clôture : un nom d'icône Ionicons.
+
+    Pas de liste fermée ici — le jeu d'icônes en compte plus d'un millier, et
+    la recopier vieillirait mal. Un nom inconnu ne casse rien : l'écran
+    retombe sur `home`.
+  */
+  if (src.badgeIcone !== undefined) {
+    const icone = texte(src.badgeIcone);
+    if (!icone) {
+      anomalies.push({
+        bloquant: false,
+        ou: 'badgeIcone',
+        message: 'Attendu un nom d’icône Ionicons. Ignoré.',
+      });
+    } else {
+      fiche.badgeIcone = icone;
+      remplis.push('badgeIcone');
     }
   }
 
