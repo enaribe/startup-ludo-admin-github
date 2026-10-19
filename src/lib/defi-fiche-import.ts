@@ -59,6 +59,7 @@ export interface FicheDefi {
   avisUrl?: string;
   badgeIcone?: string;
   problemesSuggeres?: string[];
+  plateauCentreUrl?: string;
 }
 
 /** Un champ écarté, et la raison — affichée telle quelle à l'auteur. */
@@ -501,6 +502,24 @@ export function importerFicheJson(brut: unknown): ResultatFiche {
         };
         remplis.push('lot');
       }
+    }
+  }
+
+  /*
+    L'image du centre du plateau. Même exigence que `avisUrl` : https:// seul,
+    puisque l'app la charge sans la relire.
+  */
+  if (src.plateauCentreUrl !== undefined) {
+    const url = texte(src.plateauCentreUrl);
+    if (!url || !url.startsWith('https://')) {
+      anomalies.push({
+        bloquant: false,
+        ou: 'plateauCentreUrl',
+        message: 'Attendu une URL https://. Ignorée.',
+      });
+    } else {
+      fiche.plateauCentreUrl = url;
+      remplis.push('image du centre du plateau');
     }
   }
 

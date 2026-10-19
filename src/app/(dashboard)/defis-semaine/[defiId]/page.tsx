@@ -269,6 +269,7 @@ export default function PageDefi() {
     au-dessus attendrait encore — deux comportements dans un même formulaire.
   */
   const [bannerUrl, setBannerUrl] = useState('');
+  const [plateauCentreUrl, setPlateauCentreUrl] = useState('');
   const [enregistrement, setEnregistrement] = useState(false);
   /** Nouvelle date de clôture, pour rouvrir un défi clos trop tôt. */
   const [nouvelleFin, setNouvelleFin] = useState('');
@@ -315,6 +316,7 @@ export default function PageDefi() {
         setDebutAt(d.debutAt);
         setFinAt(d.finAt);
         setBannerUrl(d.bannerUrl ?? '');
+        setPlateauCentreUrl(d.plateauCentreUrl ?? '');
         setAngles(d.ideation?.angles ?? []);
         setCibles(d.ideation?.cibles ?? []);
         setMissions(d.ideation?.missions ?? []);
@@ -454,6 +456,7 @@ export default function PageDefi() {
         // retire donc l'image, et c'est le comportement attendu du bouton
         // « Retirer » du champ d'upload.
         bannerUrl,
+        plateauCentreUrl,
         // Transmis depuis CET écran, qui connaît le champ : un tableau vide
         // efface donc les questions, ce qui est le comportement attendu du
         // bouton de suppression de la dernière ligne.
@@ -811,6 +814,7 @@ export default function PageDefi() {
     debutAt !== defi.debutAt ||
     finAt !== defi.finAt ||
     bannerUrl !== (defi.bannerUrl ?? '') ||
+    plateauCentreUrl !== (defi.plateauCentreUrl ?? '') ||
     !memeListe(angles, defi.ideation?.angles ?? []) ||
     !memeListe(cibles, defi.ideation?.cibles ?? []) ||
     !memeListe(missions, defi.ideation?.missions ?? []) ||
@@ -1013,6 +1017,21 @@ export default function PageDefi() {
             Optionnelle : sans image, la carte s’affiche sur un dégradé ambre.
             Le thème et la description se superposent au visuel, en blanc —
             préférez une image sans texte et plutôt sombre.
+          </p>
+
+          <ImageUploadField
+            label="Image du centre du plateau"
+            value={plateauCentreUrl}
+            onChange={setPlateauCentreUrl}
+            storagePath={`weeklyChallenges/${defi.id}/plateau-centre`}
+            aspectRatio="square"
+            disabled={clos}
+          />
+          <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: -8 }}>
+            Optionnelle : sans image, le centre du plateau garde le logo
+            Startup Ludo. Elle est CARRÉE et vue à travers un carré d’environ
+            150 px — un logo et deux mots, jamais une photographie. Elle porte
+            son propre fond : elle remplit la zone, bords compris.
           </p>
 
           <div className="flex gap-4">

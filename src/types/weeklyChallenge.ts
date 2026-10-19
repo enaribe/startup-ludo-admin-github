@@ -537,6 +537,21 @@ export interface WeeklyChallenge {
   problemesSuggeres?: string[];
 
   /**
+   * Image affichée au CENTRE DU PLATEAU pendant une partie du défi.
+   *
+   * ═══ CE N'EST PAS `bannerUrl` ═══
+   *
+   * `bannerUrl` est la bannière large de la carte d'accueil. Celle-ci est
+   * carrée, vue à travers un carré d'environ 150 px au milieu du plateau, et
+   * elle doit rester lisible à cette taille : un logo et deux mots, pas une
+   * photographie.
+   *
+   * Absente, le centre garde le logo Startup Ludo — le plateau n'est jamais
+   * vide, et un défi créé sans image reste jouable.
+   */
+  plateauCentreUrl?: string;
+
+  /**
    * Pictogramme du badge de clôture — un nom d'icône Ionicons.
    *
    * Il porte le THÈME du défi : une maison dans l'eau pour les inondations,
@@ -806,6 +821,16 @@ export interface DefiGameContext {
    * afficher trois mots.
    */
   zone?: string;
+  /**
+   * Image du centre du plateau, recopiée comme `titre` et `zone`.
+   *
+   * Le plateau ne connaît pas le défi : il reçoit un contexte, pas un id à
+   * résoudre. Faire relire Firestore au composant central pour une image
+   * ajouterait une requête à chaque partie — et un plateau qui attend le
+   * réseau pour se dessiner.
+   */
+  plateauCentreUrl?: string;
+
   /**
    * Rang du joueur AVANT cette partie, pour afficher « #62 → #47 ».
    *

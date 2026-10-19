@@ -142,6 +142,13 @@ export interface SaisieDefi {
    */
   bannerUrl?: string | null;
   /**
+   * Image affichée au centre du plateau pendant une partie du défi.
+   *
+   * ⚠️ Même règle que `bannerUrl` : OMETTRE la clé laisse l'image inchangée,
+   * une chaîne vide l'efface.
+   */
+  plateauCentreUrl?: string | null;
+  /**
    * Questions ouvertes du questionnaire d'idéation.
    *
    * ⚠️ Même règle que `bannerUrl` : OMETTRE la clé laisse les questions

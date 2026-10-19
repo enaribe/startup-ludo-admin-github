@@ -198,6 +198,11 @@ export async function POST(request: NextRequest) {
   const bannerUrl = banniereFournie
     ? String((corps as { bannerUrl?: unknown }).bannerUrl ?? '').trim() || null
     : null;
+  /* Même règle que la bannière : absent du corps, le champ reste inchangé. */
+  const centreFourni = Object.prototype.hasOwnProperty.call(corps, 'plateauCentreUrl');
+  const plateauCentreUrl = centreFourni
+    ? String((corps as { plateauCentreUrl?: unknown }).plateauCentreUrl ?? '').trim() || null
+    : null;
   const debutAt = Number(corps.debutAt);
   const finAt = Number(corps.finAt);
 
@@ -309,6 +314,7 @@ export async function POST(request: NextRequest) {
       debutAt,
       finAt,
       ...(banniereFournie ? { bannerUrl } : {}),
+      ...(centreFourni ? { plateauCentreUrl } : {}),
       ...(zoneFournie ? { zone } : {}),
       ...(semaine !== null && Number.isFinite(semaine) ? { semaine } : {}),
       ...(fuseau !== null ? { fuseau } : {}),
@@ -336,6 +342,7 @@ export async function POST(request: NextRequest) {
             // même partout : le mobile tolère la clé absente, mais un document
             // complet évite d'avoir à s'en souvenir.
             bannerUrl: null,
+            plateauCentreUrl: null,
             zone: null,
             chiffres: [],
             video: null,
