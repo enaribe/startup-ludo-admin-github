@@ -69,6 +69,7 @@ import {
 } from '@/types/weeklyChallenge';
 import type { ClassSessionContent } from '@/types';
 import ImageUploadField from '@/components/ui/ImageUploadField';
+import VideoSourceField from '@/components/ui/VideoSourceField';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
@@ -1484,29 +1485,25 @@ export default function PageDefi() {
         />
 
         <div className="mb-4">
-          <label className="label">Vidéo (URL)</label>
-          <input
-            className="input-field"
+          <VideoSourceField
             value={videoUrl}
+            onChange={setVideoUrl}
+            storagePath={`weeklyChallenges/${defi.id}/video`}
             disabled={clos}
-            placeholder="https://…/defi-inondations_30s.mp4"
-            onChange={(e) => setVideoUrl(e.target.value)}
           />
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
-            Sans URL, le bloc vidéo n’est pas affiché. Le parcours n’est jamais
-            bloqué par la vidéo.
-          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
-            <label className="label">Image d’attente</label>
-            <input
-              className="input-field"
+            {/* Téléversable comme la vidéo : elle vient presque toujours du
+                même endroit qu'elle — une capture de la vidéo. */}
+            <ImageUploadField
+              label="Image d’attente"
               value={videoPoster}
+              onChange={setVideoPoster}
+              storagePath={`weeklyChallenges/${defi.id}/video-poster`}
+              aspectRatio="banner"
               disabled={clos}
-              placeholder="https://…/poster.jpg"
-              onChange={(e) => setVideoPoster(e.target.value)}
             />
           </div>
           <div>
