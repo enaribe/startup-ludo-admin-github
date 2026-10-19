@@ -41,6 +41,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Download, FileJson, FileText, Plus, Sparkles, Upload, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import {
+  ajouterJoueursFictifs,
+  supprimerJoueursFictifs,
   cloturerDefi,
   deposerDocumentDefi,
   enregistrerContenuDefi,
@@ -70,6 +72,7 @@ import {
 import type { ClassSessionContent } from '@/types';
 import ImageUploadField from '@/components/ui/ImageUploadField';
 import VideoSourceField from '@/components/ui/VideoSourceField';
+import { estJoueurFictif } from '@/lib/joueurs-fictifs';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
@@ -271,6 +274,11 @@ export default function PageDefi() {
   */
   const [bannerUrl, setBannerUrl] = useState('');
   const [plateauCentreUrl, setPlateauCentreUrl] = useState('');
+
+  /* Amorçage du classement — voir l'encart sous la liste des scores. */
+  const [nbFictifs, setNbFictifs] = useState(100);
+  const [maxXpFictifs, setMaxXpFictifs] = useState(600);
+  const [fictifsEnCours, setFictifsEnCours] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
   /** Nouvelle date de clôture, pour rouvrir un défi clos trop tôt. */
   const [nouvelleFin, setNouvelleFin] = useState('');
@@ -717,6 +725,38 @@ export default function PageDefi() {
   function exporter() {
     if (!defi) return;
     telecharger(exporterContenuJson(defi), `defi-${defi.id}.json`);
+  }
+
+  /* Combien de fictifs sont déjà là — pour n'afficher le retrait que s'il
+     y a quelque chose à retirer. */
+  const nbFictifsPresents = scores.filter((sc) => estJoueurFictif(sc.userId)).length;
+
+  async function ajouterFictifs() {
+    if (!defi) return;
+    setFictifsEnCours(true);
+    try {
+      const { crees, total } = await ajouterJoueursFictifs(defi.id, nbFictifs, maxXpFictifs);
+      toast.success(`${crees} joueurs fictifs ajoutés — ${total} au classement`);
+      await charger();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Ajout impossible');
+    } finally {
+      setFictifsEnCours(false);
+    }
+  }
+
+  async function retirerFictifs() {
+    if (!defi) return;
+    setFictifsEnCours(true);
+    try {
+      const supprimes = await supprimerJoueursFictifs(defi.id);
+      toast.success(`${supprimes} joueurs fictifs retirés`);
+      await charger();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Suppression impossible');
+    } finally {
+      setFictifsEnCours(false);
+    }
   }
 
   async function confirmerCloture() {
@@ -2050,6 +2090,22 @@ export default function PageDefi() {
                       {i + 1}.
                     </strong>
                     {s.displayName}
+                    {/* Marqué, parce qu'un faux joueur qu'on ne distingue plus
+                        d'un vrai est un faux joueur définitif. */}
+                    {estJoueurFictif(s.userId) ? (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 10.5,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          background: 'rgba(255,188,64,0.14)',
+                          color: '#FFBC40',
+                        }}
+                      >
+                        fictif
+                      </span>
+                    ) : null}
                   </span>
                   <span style={{ fontWeight: 700 }}>
                     {s.xp} XP
@@ -2064,6 +2120,86 @@ export default function PageDefi() {
               ))}
             </div>
           )}
+
+          {/*
+            ═══ AMORCER LE CLASSEMENT ═══
+
+            Un défi qui ouvre à trois participants n'a pas de podium, pas de
+            « autour de toi », et un rang qui ne raconte rien. Les premiers
+            joueurs en concluent que personne ne joue — ce qui devient vrai.
+
+            ⚠️ Ces joueurs COMPTENT dans le classement réel et peuvent occuper
+            le podium. La clôture ne les filtre pas : elle désigne le premier,
+            fictif ou non. D'où le bouton de retrait, à utiliser avant de
+            clore si un lot est en jeu.
+          */}
+          {!clos ? (
+            <div
+              style={{
+                marginTop: 16,
+                paddingTop: 14,
+                borderTop: '1px solid var(--color-card-border)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'flex-end',
+                gap: 10,
+              }}
+            >
+              <div style={{ width: 110 }}>
+                <label className="label">Joueurs à ajouter</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  min={1}
+                  max={300}
+                  value={nbFictifs}
+                  onChange={(e) => setNbFictifs(Number(e.target.value))}
+                />
+              </div>
+              <div style={{ width: 130 }}>
+                <label className="label">Score maximum</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  min={20}
+                  max={5000}
+                  value={maxXpFictifs}
+                  onChange={(e) => setMaxXpFictifs(Number(e.target.value))}
+                />
+              </div>
+              <button
+                className="btn-secondary"
+                disabled={fictifsEnCours}
+                onClick={() => void ajouterFictifs()}
+              >
+                {fictifsEnCours ? 'En cours…' : 'Ajouter des joueurs fictifs'}
+              </button>
+              {nbFictifsPresents > 0 ? (
+                <button
+                  className="btn-secondary"
+                  disabled={fictifsEnCours}
+                  onClick={() => void retirerFictifs()}
+                  style={{ color: '#f44336', borderColor: 'rgba(244,67,54,0.3)' }}
+                >
+                  Retirer les {nbFictifsPresents} fictifs
+                </button>
+              ) : null}
+              <p
+                style={{
+                  fontSize: 11.5,
+                  color: 'var(--color-text-muted)',
+                  margin: 0,
+                  flexBasis: '100%',
+                }}
+              >
+                Pseudos sénégalais, scores répartis de façon réaliste — quelques
+                gros, beaucoup de moyens. Le score maximum borne le haut du
+                classement : au-dessus des scores réels, le podium devient
+                entièrement fictif. Relancer remplace les mêmes joueurs, sans
+                les empiler.
+              </p>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

@@ -221,6 +221,41 @@ export async function cloturerDefi(
 }
 
 /**
+ * Ajoute des joueurs fictifs au classement d'un défi.
+ *
+ * ⚠️ Ce sont de VRAIS scores : ils comptent dans le classement de tous les
+ * joueurs et peuvent occuper le podium. À retirer avant la clôture, sinon un
+ * joueur fictif bloquerait un lot — voir `supprimerJoueursFictifs`.
+ *
+ * Rejouable : les mêmes identifiants sont réécrits, pas empilés.
+ */
+export async function ajouterJoueursFictifs(
+  id: string,
+  nombre: number,
+  maxXp: number
+): Promise<{ crees: number; total: number }> {
+  const reponse = await fetch('/api/defi/joueurs-fictifs', {
+    method: 'POST',
+    headers: await enTetesAuth(),
+    body: JSON.stringify({ id, nombre, maxXp }),
+  });
+  const donnees = await reponse.json();
+  if (!reponse.ok) throw new Error(donnees.error || 'Ajout impossible');
+  return { crees: donnees.crees ?? 0, total: donnees.total ?? 0 };
+}
+
+/** Retire tous les joueurs fictifs d'un défi. Les vrais scores ne bougent pas. */
+export async function supprimerJoueursFictifs(id: string): Promise<number> {
+  const reponse = await fetch(`/api/defi/joueurs-fictifs?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: await enTetesAuth(),
+  });
+  const donnees = await reponse.json();
+  if (!reponse.ok) throw new Error(donnees.error || 'Suppression impossible');
+  return donnees.supprimes ?? 0;
+}
+
+/**
  * Bornes de la semaine prochaine : lundi 00:00 UTC → dimanche 23:00 UTC.
  *
  * ⚠️ LA CLÔTURE EST À 23:00, PAS À MINUIT. `resetWeeklyStats` tourne le lundi à
