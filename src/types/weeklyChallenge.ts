@@ -588,6 +588,17 @@ export interface DefiScore {
   /** Avatar dénormalisé, même raison. `null` si le joueur n'en a pas. */
   avatarUrl: string | null;
 
+  /**
+   * L'idée du joueur et son avancement, recopiés ici.
+   *
+   * Même raison que `displayName` et `avatarUrl` : le classement les affiche
+   * sous chaque ligne, et les lire depuis `defiIdees` est impossible — les
+   * règles réservent la lecture d'une idée à son propriétaire, à juste
+   * titre. Rafraîchis à chaque écriture de score.
+   */
+  ideeNom?: string;
+  briquesPosees?: number;
+
   /** XP cumulés sur ce défi uniquement. */
   xp: number;
   /** Parties jouées sur ce défi. Sert à départager à XP égal. */
