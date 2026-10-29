@@ -1,3 +1,18 @@
+> **Dépôt archivé — ne plus déployer depuis ici.**
+>
+> Depuis le 29/10/2026, le back-office vit dans le dépôt `startupludoweb`
+> (Bitbucket : `abdoul-sy/startupludoweb`), à l'intérieur du route group
+> `src/app/(admin)/`. Les deux sites sont fusionnés : `startupludo.io/login`
+> et `startupludo.io/admin` servent le back-office, et `admin.startupludo.io`
+> redirige en 301 vers `startupludo.io/login`.
+>
+> Le workflow de déploiement a été retiré de ce dépôt : il envoyait le code
+> vers `/srv/startupludo/admin` sur le VPS, chemin qui n'est plus servi par
+> nginx. Un déploiement depuis ici remettrait en ligne l'ancien back-office
+> Next 15 et n'aurait aucun effet visible, ou écraserait du travail.
+>
+> Ce dépôt est conservé pour l'historique uniquement.
+
 # startup-ludo-admin
 
 ## Déploiement sur Vercel
